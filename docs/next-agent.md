@@ -10,6 +10,7 @@ The repository was initialized from a loose folder, not from an existing local g
 - new app package in `src/book2mp3/`
 - documentation in `docs/`
 - runtime bootstrap script in `scripts/bootstrap_runtime.py`
+- portable launchers in `start.sh` and `start.bat`
 
 ## What the first rewrite already does
 
@@ -24,6 +25,7 @@ The repository was initialized from a loose folder, not from an existing local g
 - can optionally concatenate segments into one MP3
 - writes detailed diagnostics to `workspace/logs/app.log` and per-job `job.log`
 - exposes quality presets and a first Voice Lab dialog
+- includes a defined portable bundle layout with app-local Python requirement
 
 ## Important constraints
 
@@ -36,8 +38,8 @@ The repository was initialized from a loose folder, not from an existing local g
 
 1. Add a voice management screen that discovers installed voices and offers guided download.
 2. Add an XTTS backend that consumes `workspace/voice_profiles/`.
-3. Extend automated smoke coverage beyond the current queue/resume script.
-4. Create platform-specific build scripts with `pyside6-deploy`.
+3. Create platform-specific bundle builders that actually populate `python/linux/` and `python/windows/`.
+4. Extend automated smoke coverage beyond the current queue/resume script.
 
 ## Files to read first
 

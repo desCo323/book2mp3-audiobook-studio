@@ -64,6 +64,22 @@ Current user-facing features:
 
 ## Quick start
 
+For a finished end-user bundle, users should start the app directly with:
+
+```bash
+./start.sh
+```
+
+or on Windows:
+
+```bat
+start.bat
+```
+
+Those launchers are intended for the self-contained bundle that includes Python inside the app folder.
+
+For source checkout development, the current setup is still:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -99,11 +115,12 @@ The bootstrap now installs a starter pack of standard female voices by default w
 
 ## Packaging direction
 
-The intended packaging target is folder-based desktop deployment, not a single giant executable:
+The intended packaging target is folder-based desktop deployment, not a single giant executable. The portable release must include app-local Python:
 
 - Windows: `pyside6-deploy` / Nuitka one-folder
 - Linux: `pyside6-deploy` / Nuitka one-folder
 - runtime assets stored next to the app in `runtime/` and `voices/`
+- bundled Python stored in `python/<platform>/`
 
 That fits the toolchain constraints better than a one-file build and keeps large TTS assets replaceable by the user.
 
@@ -111,6 +128,7 @@ That fits the toolchain constraints better than a one-file build and keeps large
 
 - [User Guide](docs/user-guide.md)
 - [Architecture](docs/architecture.md)
+- [Portable Distribution](docs/portable-distribution.md)
 - [Roadmap](docs/roadmap.md)
 - [Voice Strategy](docs/voice-strategy.md)
 - [Next Agent Handover](docs/next-agent.md)
@@ -121,4 +139,10 @@ For a queue and resume smoke test without the GUI:
 
 ```bash
 python scripts/smoke_queue_resume.py
+```
+
+To validate a built portable bundle:
+
+```bash
+python scripts/check_portable_bundle.py /path/to/bundle
 ```

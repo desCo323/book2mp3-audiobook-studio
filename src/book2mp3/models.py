@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from book2mp3.presets import get_preset
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -56,6 +58,10 @@ class JobState:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "JobState":
         payload = dict(payload)
+        preset = get_preset(payload.get("preset_id", "balanced"))
+        payload.setdefault("preset_id", preset.preset_id)
+        payload.setdefault("sentence_silence", preset.sentence_silence)
+        payload.setdefault("length_scale", preset.length_scale)
         payload["chunks"] = [ChunkRecord(**chunk) for chunk in payload.get("chunks", [])]
         return cls(**payload)
 

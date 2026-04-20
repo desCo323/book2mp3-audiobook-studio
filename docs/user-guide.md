@@ -19,6 +19,15 @@ That means jobs can be stopped and resumed safely.
 
 ## First Start
 
+For the final portable release:
+
+- on Linux: run `./start.sh`
+- on Windows: run `start.bat`
+
+That release is intended to include Python inside the application folder.
+
+For the current source repository state, the development bootstrap is still:
+
 Install the runtime and starter voices:
 
 ```bash
@@ -151,6 +160,7 @@ python scripts/smoke_queue_resume.py
 - custom voice synthesis backend is not implemented yet
 - chapter-aware export is not finished yet
 - packaged desktop builds are not finished yet
+- the repo source tree is not yet the final bundled release folder
 
 ## Status Rule
 
