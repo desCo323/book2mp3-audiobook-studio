@@ -157,6 +157,8 @@ python scripts/smoke_single_file.py
 python scripts/smoke_state_migration.py
 python scripts/smoke_preview_queue.py
 python scripts/smoke_bundle_build.py
+python scripts/smoke_portable_linux_runtime.py
+python scripts/smoke_linux_release_build.py
 ```
 
 Current validated smoke coverage:
@@ -177,4 +179,16 @@ To assemble a portable bundle skeleton:
 
 ```bash
 python scripts/build_portable_bundle.py dist/book2mp3-portable --clean
+```
+
+To turn that into a local Linux self-contained bundle from the current machine:
+
+```bash
+python scripts/populate_bundle_python_linux.py dist/book2mp3-portable
+```
+
+Or do the larger Linux release step in one command:
+
+```bash
+python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --archive
 ```

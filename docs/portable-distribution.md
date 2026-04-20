@@ -62,6 +62,9 @@ This repository now includes:
 - `start.bat`
 - `scripts/check_portable_bundle.py`
 - `scripts/build_portable_bundle.py`
+- `scripts/populate_bundle_python_linux.py`
+- `scripts/install_windows_embeddable.py`
+- `scripts/build_linux_portable_release.py`
 
 These launchers already target the final portable structure and intentionally fail if the bundle-local Python runtime is missing.
 
@@ -94,6 +97,26 @@ python scripts/build_portable_bundle.py dist/book2mp3-portable \
   --clean \
   --python-linux /path/to/linux-python \
   --python-windows /path/to/windows-python
+```
+
+For a development-oriented Linux bundle from the current machine:
+
+```bash
+python scripts/build_portable_bundle.py dist/book2mp3-portable --clean
+python scripts/populate_bundle_python_linux.py dist/book2mp3-portable
+```
+
+For one larger Linux release step that assembles, populates and validates in one run:
+
+```bash
+python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --archive
+```
+
+For Windows, install the official embeddable package into an existing bundle:
+
+```bash
+python scripts/install_windows_embeddable.py dist/book2mp3-portable \
+  --url "https://www.python.org/ftp/python/.../python-<version>-embed-amd64.zip"
 ```
 
 ## Sources
