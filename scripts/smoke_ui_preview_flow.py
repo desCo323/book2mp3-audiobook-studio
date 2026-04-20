@@ -32,6 +32,7 @@ def main() -> int:
         QMessageBox.warning = staticmethod(lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
         window = MainWindow(paths)
         window.refresh_voice_list()
+        window.maybe_start_next_job = lambda: None
 
         voice_items = [window.voice_combo.itemText(i) for i in range(window.voice_combo.count())]
         if not voice_items or voice_items[0] == "No voices found":
@@ -44,19 +45,21 @@ def main() -> int:
             raise AssertionError("Preview session was not created")
 
         session = {item.session_id: item for item in list_preview_sessions(paths)}[dialog.current_session_id]
-        if not session.tests:
-            raise AssertionError("Preview session contains no test cases")
+        if not session.preview_excerpt:
+            raise AssertionError("Preview session contains no excerpt")
 
-        dialog.queue_tests()
+        dialog.setting_name.setText("Smoke UI Voice")
+        dialog.save_setting()
+        dialog.render_preview()
         jobs = window.manager.list_jobs()
         if not jobs:
-            raise AssertionError("Queue tests did not create jobs")
+            raise AssertionError("Preview render did not create jobs")
 
         summary = {
             "voice_count": len(voice_items),
             "first_voice": voice_items[0],
             "preview_session_id": session.session_id,
-            "preview_tests": len(session.tests),
+            "excerpt_length": len(session.preview_excerpt),
             "queued_jobs": len(jobs),
             "first_job_status": jobs[0].status,
         }

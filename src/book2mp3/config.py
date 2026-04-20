@@ -27,6 +27,7 @@ class AppPaths:
     voices: Path
     logs: Path
     voice_profiles: Path
+    voice_settings: Path
     preview_sessions: Path
 
     @classmethod
@@ -40,6 +41,7 @@ class AppPaths:
             voices=_prefer_local_or_parent(root, "voices"),
             logs=workspace / "logs",
             voice_profiles=workspace / "voice_profiles",
+            voice_settings=workspace / "voice_settings",
             preview_sessions=workspace / "preview_sessions",
         )
 
@@ -51,6 +53,7 @@ class AppPaths:
             self.voices,
             self.logs,
             self.voice_profiles,
+            self.voice_settings,
             self.preview_sessions,
         ):
             path.mkdir(parents=True, exist_ok=True)

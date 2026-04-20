@@ -69,6 +69,24 @@ The preset controls chunk size and Piper narration behavior.
 - `Balanciert`: the recommended default
 - `Natuerlich`: slightly slower and calmer reading, more suited for listening quality
 
+### Find Best Setting / Voice Tuning
+
+This mode is now a live tuning workflow instead of a static multi-test list.
+
+What it does:
+
+- loads a random excerpt from the selected book
+- lets you request a different random excerpt with one click
+- lets you tune voice, chunk size, sentence pause and speaking length
+- creates a direct preview render job from that excerpt
+- saves the chosen setup as a reusable voice setting
+
+Recommended starting values:
+
+- `Roman natuerlich`: `240-280` chars, `0.24-0.32s` sentence pause, `1.02-1.08` length
+- `Standard ausgewogen`: `200-240` chars, `0.18-0.24s` sentence pause, `0.98-1.03` length
+- `Schnell/CPU`: `150-190` chars, `0.10-0.16s` sentence pause, `0.92-0.98` length
+
 ### Output mode
 
 - `segments`: keep the result as many MP3 pieces
@@ -147,6 +165,7 @@ If something fails, these are the first places to inspect.
 - `voices/`: installed voice models
 - `workspace/jobs/`: all jobs and outputs
 - `workspace/voice_profiles/`: Voice Lab profiles
+- `workspace/voice_settings/`: saved voice settings from the tuning mode
 
 ## Smoke Test
 

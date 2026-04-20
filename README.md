@@ -19,7 +19,7 @@ This repository now contains the first production-oriented foundation:
 - persistent queue with priorities across restarts
 - extensive debug logging with app-level and job-level log files
 - quality presets for fast, balanced and natural reading
-- persistent "Find Best Setting" preview sessions with up to 10 tests
+- persistent Voice-Tuning sessions with random book excerpts and saved voice settings
 - optional XTTS runtime path for custom voice profiles
 - import pipeline for `TXT`, `PDF` and `EPUB`
 - sentence-aware chunking
@@ -54,7 +54,7 @@ Current user-facing features:
 - chunk-based resume
 - multiple starter voices
 - quality presets: `Schnell`, `Balanciert`, `Natuerlich`
-- `Find Best Setting` for short comparison MP3s before a full conversion
+- `Find Best Setting` as a voice-tuning mode with random excerpts, sliders and saved voice settings
 - first Voice Lab dialog for collecting custom voice references
 - backend choice between `piper` and `xtts`
 - detailed logs for debugging
@@ -146,7 +146,7 @@ For a queue and resume smoke test without the GUI:
 python scripts/smoke_queue_resume.py
 ```
 
-For a preview-session smoke test:
+For a voice-tuning session smoke test:
 
 ```bash
 python scripts/smoke_preview_session.py
@@ -168,10 +168,10 @@ python scripts/smoke_xtts_linux_runtime_bootstrap.py
 Current validated smoke coverage:
 
 - queue stop/resume flow
-- preview session persistence and favorite selection
+- voice-tuning session persistence, saved settings and preview render flow
 - `single_file` MP3 output
 - legacy `state.json` migration
-- multi-job preview queue ordering
+- preview queue ordering
 
 To validate a built portable bundle:
 

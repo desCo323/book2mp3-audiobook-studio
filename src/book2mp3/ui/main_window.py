@@ -102,8 +102,8 @@ class MainWindow(QMainWindow):
             "2. Stimme und Preset waehlen.\n"
             "3. Job erzeugen.\n"
             "4. Mehrere Jobs koennen nacheinander in der Queue liegen.\n\n"
-            "Tipp: Mit 'Find Best Setting' erzeugst du zuerst kurze Vergleichs-MP3s, "
-            "bevor du das ganze Buch konvertierst."
+            "Tipp: Mit 'Find Best Setting' oeffnest du den Voice-Tuning-Modus mit zufaelligen Buchstellen, "
+            "Reglern und speicherbaren Voice-Settings."
         )
         help_label.setWordWrap(True)
         create_layout.addWidget(help_label)
@@ -217,8 +217,8 @@ class MainWindow(QMainWindow):
         queue_layout = QVBoxLayout(queue_tab)
         queue_help = QLabel(
             "Die Queue ist persistent. Hohe Prioritaet wird zuerst abgearbeitet.\n"
-            "Find-Best-Setting-Sessions tauchen hier ebenfalls auf, damit du spaeter "
-            "wieder zu deinen Vergleichstests zurueckkehren kannst."
+            "Voice-Tuning-Sessions tauchen hier ebenfalls auf, damit du spaeter "
+            "zu deinen gespeicherten Stellen und Preview-Renders zurueckkehren kannst."
         )
         queue_help.setWordWrap(True)
         queue_layout.addWidget(queue_help)
@@ -231,7 +231,7 @@ class MainWindow(QMainWindow):
         self.preview_sessions_summary = QPlainTextEdit()
         self.preview_sessions_summary.setReadOnly(True)
         self.preview_sessions_summary.setPlaceholderText(
-            "Hier stehen gespeicherte Preview-Sessions samt Anzahl der Tests und gewaehltem Favoriten."
+            "Hier stehen gespeicherte Voice-Tuning-Sessions mit letzter Preview und gespeichertem Setting."
         )
         queue_layout.addWidget(self.preview_sessions_summary)
         tabs.addTab(queue_tab, "Queue")
@@ -311,9 +311,10 @@ class MainWindow(QMainWindow):
         self.queue_details.setPlainText("\n".join(queue_lines) or "Keine Jobs in der Queue.")
         preview_lines = []
         for session in list_preview_sessions(self.paths):
-            best = session.selected_case_index if session.selected_case_index is not None else "-"
             preview_lines.append(
-                f"Preview {session.session_id} | tests={len(session.tests)} | best={best} | source={Path(session.source_file).name}"
+                f"Tuning {session.session_id} | voice={session.voice_id or '-'} | "
+                f"preview={session.last_preview_status} | setting={session.saved_setting_id or '-'} | "
+                f"source={Path(session.source_file).name}"
             )
         self.preview_sessions_summary.setPlainText(
             "\n".join(preview_lines) or "Keine Find-Best-Setting-Sessions vorhanden."
