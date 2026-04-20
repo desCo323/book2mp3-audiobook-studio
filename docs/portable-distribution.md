@@ -61,6 +61,7 @@ This repository now includes:
 - `start.sh`
 - `start.bat`
 - `scripts/check_portable_bundle.py`
+- `scripts/build_portable_bundle.py`
 
 These launchers already target the final portable structure and intentionally fail if the bundle-local Python runtime is missing.
 
@@ -78,6 +79,21 @@ To verify that a built release folder has the expected structure:
 
 ```bash
 python scripts/check_portable_bundle.py /path/to/bundle
+```
+
+To assemble a portable bundle skeleton from the current repo:
+
+```bash
+python scripts/build_portable_bundle.py dist/book2mp3-portable --clean
+```
+
+To include app-local runtimes when you already have them:
+
+```bash
+python scripts/build_portable_bundle.py dist/book2mp3-portable \
+  --clean \
+  --python-linux /path/to/linux-python \
+  --python-windows /path/to/windows-python
 ```
 
 ## Sources

@@ -16,6 +16,13 @@ def expected_items(root: Path) -> list[Path]:
     ]
 
 
+def platform_runtime_summary(root: Path) -> dict[str, bool]:
+    return {
+        "linux": (root / "python" / "linux" / "bin" / "python3").exists(),
+        "windows": (root / "python" / "windows" / "python.exe").exists(),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("bundle_root", nargs="?", default=".")
@@ -23,11 +30,13 @@ def main() -> int:
 
     root = Path(args.bundle_root).resolve()
     missing = [str(path.relative_to(root)) for path in expected_items(root) if not path.exists()]
+    runtimes = platform_runtime_summary(root)
 
     summary = {
         "bundle_root": str(root),
         "ok": not missing,
         "missing": missing,
+        "python_runtimes": runtimes,
         "note": (
             "A production bundle must ship with app-local Python under python/<platform>/ "
             "so users do not need system Python."

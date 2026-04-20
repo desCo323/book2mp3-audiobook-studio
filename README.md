@@ -156,6 +156,7 @@ Additional targeted smoke tests:
 python scripts/smoke_single_file.py
 python scripts/smoke_state_migration.py
 python scripts/smoke_preview_queue.py
+python scripts/smoke_bundle_build.py
 ```
 
 Current validated smoke coverage:
@@ -170,4 +171,10 @@ To validate a built portable bundle:
 
 ```bash
 python scripts/check_portable_bundle.py /path/to/bundle
+```
+
+To assemble a portable bundle skeleton:
+
+```bash
+python scripts/build_portable_bundle.py dist/book2mp3-portable --clean
 ```
