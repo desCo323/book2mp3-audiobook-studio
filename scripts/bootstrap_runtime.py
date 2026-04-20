@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import io
 import platform
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -14,7 +15,17 @@ PIPER_RELEASES = {
     "windows": "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip",
 }
 
-VOICE_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+VOICE_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve"
+DEFAULT_VOICES = [
+    "de_DE-eva_k-x_low",
+    "de_DE-kerstin-low",
+    "de_DE-ramona-low",
+    "en_US-amy-medium",
+    "en_US-kathleen-low",
+    "en_GB-alba-medium",
+    "en_GB-cori-medium",
+    "fr_FR-siwis-low",
+]
 
 
 def project_root() -> Path:
@@ -50,19 +61,25 @@ def install_piper(runtime_root: Path) -> None:
     if url.endswith(".zip"):
         with zipfile.ZipFile(io.BytesIO(payload)) as archive:
             archive.extractall(target_dir)
+    elif url.endswith(".tar.gz"):
+        with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
+            archive.extractall(target_dir)
     else:
-        raise RuntimeError(
-            "Linux tar.gz extraction is not implemented yet. Use the Windows package or add tar support."
-        )
+        raise RuntimeError(f"Unsupported Piper archive type for {url}")
     print(f"Installed Piper runtime into {target_dir}")
 
 
 def install_voice(voices_root: Path, voice_id: str) -> None:
     language, name, quality = voice_id.split("-", 2)
-    language_group, region = language.split("_", 1)
-    voice_dir = voices_root / language_group / f"{language}_{region}" / name / quality
+    language_group = language.split("_", 1)[0]
+    voice_dir = voices_root / language_group / language / name / quality
     voice_dir.mkdir(parents=True, exist_ok=True)
     base_name = f"{voice_id}.onnx"
+    target_model = voice_dir / base_name
+    target_config = voice_dir / f"{base_name}.json"
+    if target_model.exists() and target_config.exists():
+        print(f"Voice already present: {voice_id}")
+        return
     for suffix in ("", ".json"):
         filename = base_name + suffix
         url = f"{VOICE_BASE_URL}/v1.0.0/{language_group}/{language}/{name}/{quality}/{filename}"
@@ -71,9 +88,19 @@ def install_voice(voices_root: Path, voice_id: str) -> None:
         print(f"Downloaded {filename}")
 
 
+def install_default_voices(voices_root: Path) -> None:
+    for voice_id in DEFAULT_VOICES:
+        install_voice(voices_root, voice_id)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--voice", help="Voice id like de_DE-thorsten-high")
+    parser.add_argument(
+        "--no-default-voices",
+        action="store_true",
+        help="Skip installation of the built-in default female voices",
+    )
     parser.add_argument("--skip-runtime", action="store_true")
     return parser.parse_args()
 
@@ -83,6 +110,8 @@ def main() -> int:
     runtime_root, voices_root = ensure_dirs()
     if not args.skip_runtime:
         install_piper(runtime_root)
+    if not args.no_default_voices:
+        install_default_voices(voices_root)
     if args.voice:
         install_voice(voices_root, args.voice)
     print("Bootstrap finished")

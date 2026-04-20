@@ -31,6 +31,17 @@ from book2mp3.tts.piper import PiperBackend
 from book2mp3.ui.worker import JobWorker
 from book2mp3.utils.logging_utils import get_logger
 
+PREFERRED_VOICE_ORDER = [
+    "de_DE-eva_k-x_low",
+    "de_DE-kerstin-low",
+    "de_DE-ramona-low",
+    "en_US-amy-medium",
+    "en_US-kathleen-low",
+    "en_GB-alba-medium",
+    "en_GB-cori-medium",
+    "fr_FR-siwis-low",
+]
+
 
 class MainWindow(QMainWindow):
     def __init__(self, paths: AppPaths) -> None:
@@ -148,6 +159,11 @@ class MainWindow(QMainWindow):
         self.voice_combo.clear()
         self.voice_combo.addItems(voices)
         self.logger.info("Loaded %s installed voices", len(voices))
+        for voice_id in PREFERRED_VOICE_ORDER:
+            index = self.voice_combo.findText(voice_id)
+            if index >= 0:
+                self.voice_combo.setCurrentIndex(index)
+                break
         if not voices:
             self.status_label.setText(
                 "No voices found. Run scripts/bootstrap_runtime.py or add voice files to voices/."

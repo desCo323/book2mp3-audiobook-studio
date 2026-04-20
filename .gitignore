@@ -13,3 +13,4 @@ runtime/
 voices/
 *.spec
 *.log
+*.egg-info/

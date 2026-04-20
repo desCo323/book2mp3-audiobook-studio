@@ -42,6 +42,7 @@ The repository was initialized from a loose folder, not from an existing local g
 
 - [README.md](/home/codex/repo/book2mp3/README.md)
 - [docs/architecture.md](/home/codex/repo/book2mp3/docs/architecture.md)
+- [docs/voice-strategy.md](/home/codex/repo/book2mp3/docs/voice-strategy.md)
 - [src/book2mp3/pipeline/jobs.py](/home/codex/repo/book2mp3/src/book2mp3/pipeline/jobs.py)
 - [src/book2mp3/tts/piper.py](/home/codex/repo/book2mp3/src/book2mp3/tts/piper.py)
 - [src/book2mp3/ui/main_window.py](/home/codex/repo/book2mp3/src/book2mp3/ui/main_window.py)

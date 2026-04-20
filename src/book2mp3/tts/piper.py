@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import platform
 import subprocess
 from pathlib import Path
@@ -22,7 +23,7 @@ class PiperBackend:
         if system == "windows":
             candidate = self.runtime_root / "piper" / "windows" / "piper.exe"
         elif system == "linux":
-            candidate = self.runtime_root / "piper" / "linux" / "piper"
+            candidate = self.runtime_root / "piper" / "linux" / "piper" / "piper"
         else:
             raise RuntimeError(f"Unsupported platform: {platform.system()}")
         if not candidate.exists():
@@ -43,8 +44,8 @@ class PiperBackend:
     def installed_voices(self) -> list[str]:
         voices = []
         for path in self.voices_root.rglob("*.onnx"):
-            voices.append(path.relative_to(self.voices_root).with_suffix("").as_posix())
-        return sorted(voices)
+            voices.append(path.stem)
+        return sorted(set(voices))
 
     def synthesize_to_wav(self, text: str, voice_id: str, wav_path: Path) -> None:
         wav_path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,12 +59,26 @@ class PiperBackend:
             str(wav_path),
             "--json-input",
         ]
+        env = os.environ.copy()
+        binary_dir = str(self.binary_path().parent)
+        if platform.system().lower() == "linux":
+            env["LD_LIBRARY_PATH"] = (
+                f"{binary_dir}:{env['LD_LIBRARY_PATH']}"
+                if env.get("LD_LIBRARY_PATH")
+                else binary_dir
+            )
         if self.logger:
             self.logger.debug("Synthesizing chunk with Piper command: %s", cmd)
             self.logger.debug("Chunk text length: %s", len(text))
         try:
             result = subprocess.run(
-                cmd, input=payload, check=True, capture_output=True, text=True
+                cmd,
+                input=payload,
+                check=True,
+                capture_output=True,
+                text=True,
+                cwd=binary_dir,
+                env=env,
             )
             if self.logger:
                 self.logger.debug("Piper stdout: %s", result.stdout.strip())

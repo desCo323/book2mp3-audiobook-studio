@@ -41,7 +41,7 @@ Voice cloning and an XTTS backend are prepared architecturally but not implement
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-python scripts/bootstrap_runtime.py --voice de_DE-thorsten-high
+python scripts/bootstrap_runtime.py
 book2mp3
 ```
 
@@ -55,9 +55,20 @@ Then run:
 
 ```powershell
 pip install -e .
-python scripts\bootstrap_runtime.py --voice de_DE-thorsten-high
+python scripts\bootstrap_runtime.py
 book2mp3
 ```
+
+The bootstrap now installs a starter pack of standard female voices by default when available:
+
+- `de_DE-eva_k-x_low`
+- `de_DE-kerstin-low`
+- `de_DE-ramona-low`
+- `en_US-amy-medium`
+- `en_US-kathleen-low`
+- `en_GB-alba-medium`
+- `en_GB-cori-medium`
+- `fr_FR-siwis-low`
 
 ## Packaging direction
 
@@ -73,4 +84,5 @@ That fits the toolchain constraints better than a one-file build and keeps large
 
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
+- [Voice Strategy](docs/voice-strategy.md)
 - [Next Agent Handover](docs/next-agent.md)
