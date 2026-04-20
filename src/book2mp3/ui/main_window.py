@@ -28,8 +28,10 @@ from PySide6.QtWidgets import (
 from book2mp3.config import AppPaths
 from book2mp3.models import JobState
 from book2mp3.pipeline.jobs import JobManager
+from book2mp3.preview_sessions import list_preview_sessions
 from book2mp3.presets import QUALITY_PRESETS, get_preset
 from book2mp3.tts.piper import PiperBackend
+from book2mp3.ui.find_best_setting_dialog import FindBestSettingDialog
 from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
 from book2mp3.ui.worker import JobWorker
 from book2mp3.utils.logging_utils import get_logger
@@ -89,6 +91,18 @@ class MainWindow(QMainWindow):
 
         create_tab = QWidget()
         create_layout = QVBoxLayout(create_tab)
+
+        help_label = QLabel(
+            "Schnellstart:\n"
+            "1. Quelle waehlen.\n"
+            "2. Stimme und Preset waehlen.\n"
+            "3. Job erzeugen.\n"
+            "4. Mehrere Jobs koennen nacheinander in der Queue liegen.\n\n"
+            "Tipp: Mit 'Find Best Setting' erzeugst du zuerst kurze Vergleichs-MP3s, "
+            "bevor du das ganze Buch konvertierst."
+        )
+        help_label.setWordWrap(True)
+        create_layout.addWidget(help_label)
 
         form = QFormLayout()
         self.source_edit = QLineEdit()
@@ -150,6 +164,9 @@ class MainWindow(QMainWindow):
         voices_button = QPushButton("Reload voices")
         voices_button.clicked.connect(self.refresh_voice_list)
         buttons.addWidget(voices_button)
+        find_best_button = QPushButton("Find Best Setting")
+        find_best_button.clicked.connect(self.open_find_best_setting)
+        buttons.addWidget(find_best_button)
         voice_lab_button = QPushButton("Voice Lab")
         voice_lab_button.clicked.connect(self.open_voice_lab)
         buttons.addWidget(voice_lab_button)
@@ -170,10 +187,25 @@ class MainWindow(QMainWindow):
 
         queue_tab = QWidget()
         queue_layout = QVBoxLayout(queue_tab)
-        queue_layout.addWidget(QLabel("Die Queue ist persistent. Hohe Prioritaet wird zuerst abgearbeitet."))
+        queue_help = QLabel(
+            "Die Queue ist persistent. Hohe Prioritaet wird zuerst abgearbeitet.\n"
+            "Find-Best-Setting-Sessions tauchen hier ebenfalls auf, damit du spaeter "
+            "wieder zu deinen Vergleichstests zurueckkehren kannst."
+        )
+        queue_help.setWordWrap(True)
+        queue_layout.addWidget(queue_help)
         self.queue_details = QPlainTextEdit()
         self.queue_details.setReadOnly(True)
+        self.queue_details.setPlaceholderText(
+            "Hier steht die eigentliche Verarbeitungswarteschlange der Jobs."
+        )
         queue_layout.addWidget(self.queue_details)
+        self.preview_sessions_summary = QPlainTextEdit()
+        self.preview_sessions_summary.setReadOnly(True)
+        self.preview_sessions_summary.setPlaceholderText(
+            "Hier stehen gespeicherte Preview-Sessions samt Anzahl der Tests und gewaehltem Favoriten."
+        )
+        queue_layout.addWidget(self.preview_sessions_summary)
         tabs.addTab(queue_tab, "Queue")
 
         splitter.addWidget(right)
@@ -218,6 +250,15 @@ class MainWindow(QMainWindow):
                 f"P{job.priority:02d} | {job.status:9s} | {job.title} | preset={job.preset_id} | voice={job.voice_id}"
             )
         self.queue_details.setPlainText("\n".join(queue_lines) or "Keine Jobs in der Queue.")
+        preview_lines = []
+        for session in list_preview_sessions(self.paths):
+            best = session.selected_case_index if session.selected_case_index is not None else "-"
+            preview_lines.append(
+                f"Preview {session.session_id} | tests={len(session.tests)} | best={best} | source={Path(session.source_file).name}"
+            )
+        self.preview_sessions_summary.setPlainText(
+            "\n".join(preview_lines) or "Keine Find-Best-Setting-Sessions vorhanden."
+        )
 
     def on_preset_changed(self) -> None:
         preset_id = self.preset_combo.currentData()
@@ -320,6 +361,11 @@ class MainWindow(QMainWindow):
     def open_voice_lab(self) -> None:
         dialog = VoiceLabDialog(self.paths, self)
         dialog.exec()
+
+    def open_find_best_setting(self) -> None:
+        dialog = FindBestSettingDialog(self.paths, self.manager, self)
+        dialog.exec()
+        self.refresh_jobs()
 
     def maybe_start_next_job(self) -> None:
         if self.worker and self.worker.isRunning():

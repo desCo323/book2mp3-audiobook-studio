@@ -19,6 +19,7 @@ This repository now contains the first production-oriented foundation:
 - persistent queue with priorities across restarts
 - extensive debug logging with app-level and job-level log files
 - quality presets for fast, balanced and natural reading
+- persistent "Find Best Setting" preview sessions with up to 10 tests
 - import pipeline for `TXT`, `PDF` and `EPUB`
 - sentence-aware chunking
 - resumable per-chunk synthesis
@@ -52,6 +53,7 @@ Current user-facing features:
 - chunk-based resume
 - multiple starter voices
 - quality presets: `Schnell`, `Balanciert`, `Natuerlich`
+- `Find Best Setting` for short comparison MP3s before a full conversion
 - first Voice Lab dialog for collecting custom voice references
 - detailed logs for debugging
 
@@ -132,6 +134,7 @@ That fits the toolchain constraints better than a one-file build and keeps large
 - [Roadmap](docs/roadmap.md)
 - [Voice Strategy](docs/voice-strategy.md)
 - [Next Agent Handover](docs/next-agent.md)
+- [Third-Party Notices](THIRD_PARTY_NOTICES.md)
 
 ## Smoke test
 
@@ -139,6 +142,12 @@ For a queue and resume smoke test without the GUI:
 
 ```bash
 python scripts/smoke_queue_resume.py
+```
+
+For a preview-session smoke test:
+
+```bash
+python scripts/smoke_preview_session.py
 ```
 
 To validate a built portable bundle:

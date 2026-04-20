@@ -77,11 +77,11 @@ def install_voice(voices_root: Path, voice_id: str) -> None:
     base_name = f"{voice_id}.onnx"
     target_model = voice_dir / base_name
     target_config = voice_dir / f"{base_name}.json"
-    if target_model.exists() and target_config.exists():
+    target_model_card = voice_dir / "MODEL_CARD"
+    if target_model.exists() and target_config.exists() and target_model_card.exists():
         print(f"Voice already present: {voice_id}")
         return
-    for suffix in ("", ".json"):
-        filename = base_name + suffix
+    for filename in (base_name, f"{base_name}.json", "MODEL_CARD"):
         url = f"{VOICE_BASE_URL}/v1.0.0/{language_group}/{language}/{name}/{quality}/{filename}"
         content = download(url)
         (voice_dir / filename).write_bytes(content)

@@ -26,6 +26,7 @@ book2mp3/
   runtime/
   voices/
   workspace/
+  THIRD_PARTY_NOTICES.md
   python/
     linux/
       bin/python3
@@ -62,6 +63,12 @@ This repository now includes:
 - `scripts/check_portable_bundle.py`
 
 These launchers already target the final portable structure and intentionally fail if the bundle-local Python runtime is missing.
+
+Portable releases should also preserve:
+
+- `THIRD_PARTY_NOTICES.md`
+- voice `MODEL_CARD` files
+- upstream runtime license files where available
 
 For development only, they can fall back to a system Python when `BOOK2MP3_ALLOW_SYSTEM_PYTHON=1` is set.
 
