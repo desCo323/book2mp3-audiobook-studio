@@ -17,14 +17,17 @@ PIPER_RELEASES = {
 
 VOICE_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve"
 DEFAULT_VOICES = [
-    "de_DE-eva_k-x_low",
-    "de_DE-kerstin-low",
-    "de_DE-ramona-low",
+    "de_DE-thorsten_emotional-medium",
+    "de_DE-thorsten-high",
+    "de_DE-mls-medium",
     "en_US-amy-medium",
-    "en_US-kathleen-low",
+    "en_US-lessac-high",
+    "en_US-libritts-high",
     "en_GB-alba-medium",
-    "en_GB-cori-medium",
-    "fr_FR-siwis-low",
+    "en_GB-cori-high",
+    "en_GB-jenny_dioco-medium",
+    "fr_FR-siwis-medium",
+    "de_DE-kerstin-low",
 ]
 
 

@@ -38,14 +38,17 @@ from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_lab import list_voice_profiles
 
 PREFERRED_VOICE_ORDER = [
-    "de_DE-eva_k-x_low",
-    "de_DE-kerstin-low",
-    "de_DE-ramona-low",
+    "de_DE-thorsten_emotional-medium",
+    "de_DE-thorsten-high",
+    "de_DE-mls-medium",
     "en_US-amy-medium",
-    "en_US-kathleen-low",
+    "en_US-lessac-high",
+    "en_US-libritts-high",
     "en_GB-alba-medium",
-    "en_GB-cori-medium",
-    "fr_FR-siwis-low",
+    "en_GB-cori-high",
+    "en_GB-jenny_dioco-medium",
+    "fr_FR-siwis-medium",
+    "de_DE-kerstin-low",
 ]
 
 BETA_STYLE = "background-color: #fff1cc; border: 1px solid #d18b00; color: #6b4b00;"
@@ -251,16 +254,15 @@ class MainWindow(QMainWindow):
         voices = backend.installed_voices()
         self.voice_combo.clear()
         if voices:
-            self.voice_combo.addItems(voices)
+            ordered = [voice_id for voice_id in PREFERRED_VOICE_ORDER if voice_id in voices]
+            ordered.extend(voice_id for voice_id in voices if voice_id not in ordered)
+            self.voice_combo.addItems(ordered)
         else:
             self.voice_combo.addItem("No voices found")
         self.refresh_voice_profiles()
         self.logger.info("Loaded %s installed voices", len(voices))
-        for voice_id in PREFERRED_VOICE_ORDER:
-            index = self.voice_combo.findText(voice_id)
-            if index >= 0:
-                self.voice_combo.setCurrentIndex(index)
-                break
+        if voices:
+            self.voice_combo.setCurrentIndex(0)
         if not voices:
             self.status_label.setText(
                 f"No voices found. Checked voices in {self.paths.voices}. "

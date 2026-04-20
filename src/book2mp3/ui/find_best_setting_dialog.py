@@ -38,6 +38,18 @@ from book2mp3.tts.piper import PiperBackend
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_settings import list_voice_settings, save_voice_setting
 
+PREFERRED_TUNING_VOICES = [
+    "de_DE-thorsten_emotional-medium",
+    "de_DE-thorsten-high",
+    "de_DE-mls-medium",
+    "en_US-lessac-high",
+    "en_US-libritts-high",
+    "en_GB-cori-high",
+    "en_GB-jenny_dioco-medium",
+    "fr_FR-siwis-medium",
+    "de_DE-kerstin-low",
+]
+
 
 class LivePreviewWorker(QThread):
     preview_finished = Signal(str, str)
@@ -230,7 +242,9 @@ class FindBestSettingDialog(QDialog):
     def refresh_voice_list(self) -> None:
         self.installed_voices = PiperBackend(self.paths.runtime, self.paths.voices).installed_voices()
         self.voice_combo.clear()
-        for voice_id in self.installed_voices:
+        ordered = [voice_id for voice_id in PREFERRED_TUNING_VOICES if voice_id in self.installed_voices]
+        ordered.extend(voice_id for voice_id in self.installed_voices if voice_id not in ordered)
+        for voice_id in ordered:
             self.voice_combo.addItem(voice_id, voice_id)
 
     def restore_last_session(self) -> None:

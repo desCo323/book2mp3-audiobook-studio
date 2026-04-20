@@ -89,6 +89,13 @@ Simple workflow:
 - click `Neue Stelle` if you want to test a different passage
 - save the setting when you are satisfied
 
+Recommended voice direction:
+
+- prefer `medium` or `high` voices for audiobook export
+- use `low` voices mainly for fast previews or weak CPUs
+- for German, try `de_DE-thorsten_emotional-medium` or `de_DE-thorsten-high` first
+- for English, try `en_US-lessac-high`, `en_US-libritts-high`, or `en_GB-cori-high`
+
 Recommended starting values:
 
 - `Roman natuerlich`: `240-280` chars, `0.24-0.32s` sentence pause, `1.02-1.08` length

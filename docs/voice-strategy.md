@@ -47,16 +47,21 @@ Use it for:
 - low-friction installation
 - CPU-friendly jobs
 
-For the first usable version, the app should ship with a small default voice pack when available:
+For the first usable version, the app should ship with a curated default pack that prefers
+`medium` and `high` voices over `low`/`x_low` when naturalness matters:
 
-- `de_DE-eva_k-x_low`
-- `de_DE-kerstin-low`
-- `de_DE-ramona-low`
+- `de_DE-thorsten_emotional-medium`
+- `de_DE-thorsten-high`
+- `de_DE-mls-medium`
+- `en_US-lessac-high`
+- `en_US-libritts-high`
 - `en_US-amy-medium`
-- `en_US-kathleen-low`
+- `en_GB-cori-high`
+- `en_GB-jenny_dioco-medium`
 - `en_GB-alba-medium`
-- `en_GB-cori-medium`
-- `fr_FR-siwis-low`
+- `fr_FR-siwis-medium`
+
+Keep only one or two `low` voices as CPU fallbacks instead of making them the default choice.
 
 ### Premium backend: XTTS v2
 
@@ -108,6 +113,13 @@ For the UI guidance, we should instruct the user to:
 3. Add a `Voice Lab` screen in the GUI.
 4. Add preview generation before a full book run.
 5. Add narration presets that tune chunk size and pause behavior.
+
+## Packaging recommendation
+
+Ship two Piper voice tiers:
+
+- `standard natural`: curated `medium`/`high` pack for people who care about audiobook quality
+- `cpu fallback`: one or two `low` voices for older machines and quick previews
 
 ## Sources
 

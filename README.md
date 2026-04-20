@@ -52,7 +52,7 @@ Current user-facing features:
 - persistent queue across restarts
 - priority-based scheduling
 - chunk-based resume
-- multiple starter voices
+- curated starter voices with priority on less mechanical `medium`/`high` Piper models
 - quality presets: `Schnell`, `Balanciert`, `Natuerlich`
 - `Find Best Setting` as a simple live preview mode: choose a book, hear a random excerpt, tweak 3 controls, press play
 - first Voice Lab dialog for collecting custom voice references

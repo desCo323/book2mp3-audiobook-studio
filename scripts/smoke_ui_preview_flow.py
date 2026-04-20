@@ -71,6 +71,7 @@ def main() -> int:
         summary = {
             "voice_count": len(voice_items),
             "first_voice": voice_items[0],
+            "selected_voice": window.voice_combo.currentText(),
             "preview_session_id": session.session_id,
             "excerpt_length": len(session.preview_excerpt),
             "assistant_profile": dialog.assistant_combo.currentData(),
