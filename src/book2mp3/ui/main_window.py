@@ -102,8 +102,8 @@ class MainWindow(QMainWindow):
             "2. Stimme und Preset waehlen.\n"
             "3. Job erzeugen.\n"
             "4. Mehrere Jobs koennen nacheinander in der Queue liegen.\n\n"
-            "Tipp: Mit 'Find Best Setting' oeffnest du den Voice-Tuning-Modus mit zufaelligen Buchstellen, "
-            "Reglern und speicherbaren Voice-Settings."
+            "Tipp: Mit 'Find Best Setting' oeffnest du den einfachen Voice-Tuning-Modus: "
+            "Buch waehlen, Play druecken, Regler verschieben, erneut hoeren."
         )
         help_label.setWordWrap(True)
         create_layout.addWidget(help_label)

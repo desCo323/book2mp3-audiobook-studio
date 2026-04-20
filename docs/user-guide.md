@@ -71,15 +71,23 @@ The preset controls chunk size and Piper narration behavior.
 
 ### Find Best Setting / Voice Tuning
 
-This mode is now a live tuning workflow instead of a static multi-test list.
+This mode is now a simple live tuning workflow instead of a static multi-test list.
 
 What it does:
 
 - loads a random excerpt from the selected book
 - lets you request a different random excerpt with one click
 - lets you tune voice, chunk size, sentence pause and speaking length
-- creates a direct preview render job from that excerpt
+- renders a preview immediately from the dialog with one play button
 - saves the chosen setup as a reusable voice setting
+
+Simple workflow:
+
+- choose the book
+- listen to the random excerpt with `Play Preview jetzt`
+- move the sliders until it sounds right
+- click `Neue Stelle` if you want to test a different passage
+- save the setting when you are satisfied
 
 Recommended starting values:
 

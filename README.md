@@ -54,7 +54,7 @@ Current user-facing features:
 - chunk-based resume
 - multiple starter voices
 - quality presets: `Schnell`, `Balanciert`, `Natuerlich`
-- `Find Best Setting` as a voice-tuning mode with random excerpts, sliders and saved voice settings
+- `Find Best Setting` as a simple live preview mode: choose a book, hear a random excerpt, tweak 3 controls, press play
 - first Voice Lab dialog for collecting custom voice references
 - backend choice between `piper` and `xtts`
 - detailed logs for debugging

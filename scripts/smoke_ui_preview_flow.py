@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -49,13 +50,23 @@ def main() -> int:
         session = {item.session_id: item for item in list_preview_sessions(paths)}[dialog.current_session_id]
         if not session.preview_excerpt:
             raise AssertionError("Preview session contains no excerpt")
+        Path(session.preview_source_file).write_text(session.preview_excerpt[:280], encoding="utf-8")
 
         dialog.setting_name.setText("Smoke UI Voice")
         dialog.save_setting()
-        dialog.render_preview()
-        jobs = window.manager.list_jobs()
-        if not jobs:
-            raise AssertionError("Preview render did not create jobs")
+        dialog.render_and_play_preview()
+        deadline = time.time() + 120
+        while dialog.preview_worker and dialog.preview_worker.isRunning() and time.time() < deadline:
+            app.processEvents()
+            time.sleep(0.1)
+
+        if dialog.preview_worker and dialog.preview_worker.isRunning():
+            raise AssertionError("Live preview worker did not finish in time")
+
+        updated_session = {item.session_id: item for item in list_preview_sessions(paths)}[dialog.current_session_id]
+        preview_output = Path(updated_session.last_preview_output) if updated_session.last_preview_output else None
+        if not preview_output or not preview_output.exists():
+            raise AssertionError(f"Expected preview MP3, got session output: {updated_session.last_preview_output}")
 
         summary = {
             "voice_count": len(voice_items),
@@ -63,8 +74,8 @@ def main() -> int:
             "preview_session_id": session.session_id,
             "excerpt_length": len(session.preview_excerpt),
             "assistant_profile": dialog.assistant_combo.currentData(),
-            "queued_jobs": len(jobs),
-            "first_job_status": jobs[0].status,
+            "preview_status": updated_session.last_preview_status,
+            "preview_output": str(preview_output),
         }
         print(json.dumps(summary, indent=2))
         window.close()
