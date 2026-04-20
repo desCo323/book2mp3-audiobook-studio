@@ -24,11 +24,12 @@ def main() -> int:
         archive = output_dir.with_suffix(".tar.gz")
         assert output_dir.exists()
         assert archive.exists()
-        assert (output_dir / "python" / "linux" / "bin" / "python3").exists()
+        assert (output_dir / "src" / "python" / "linux" / "bin" / "python3").exists()
         print(
             json.dumps(
                 {
                     "output_dir": str(output_dir),
+                    "program_root": str(output_dir / "src"),
                     "archive": str(archive),
                 },
                 indent=2,

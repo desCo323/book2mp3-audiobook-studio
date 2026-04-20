@@ -31,9 +31,9 @@ def main() -> int:
         assert manifest["python"]["linux"] is False
         assert manifest["python"]["windows"] is False
         missing = [str(path.relative_to(target)) for path in expected_items(target) if not path.exists()]
-        assert "python" in missing
+        assert "src/python" in missing
         assert (target / "src" / "book2mp3" / "main.py").exists()
-        assert (target / "workspace" / "jobs").exists()
+        assert (target / "src" / "workspace" / "jobs").exists()
         print(json.dumps({"bundle_root": str(target), "missing": missing}, indent=2))
     return 0
 

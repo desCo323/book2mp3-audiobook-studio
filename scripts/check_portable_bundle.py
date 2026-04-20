@@ -5,21 +5,28 @@ import json
 from pathlib import Path
 
 
+def app_root(root: Path) -> Path:
+    candidate = root / "src"
+    return candidate if candidate.exists() else root
+
+
 def expected_items(root: Path) -> list[Path]:
+    program_root = app_root(root)
     return [
-        root / "start.sh",
-        root / "start.bat",
-        root / "src" / "book2mp3" / "main.py",
-        root / "runtime",
-        root / "voices",
-        root / "python",
+        program_root / "start.sh",
+        program_root / "start.bat",
+        program_root / "book2mp3" / "main.py",
+        program_root / "runtime",
+        program_root / "voices",
+        program_root / "python",
     ]
 
 
 def platform_runtime_summary(root: Path) -> dict[str, bool]:
+    program_root = app_root(root)
     return {
-        "linux": (root / "python" / "linux" / "bin" / "python3").exists(),
-        "windows": (root / "python" / "windows" / "python.exe").exists(),
+        "linux": (program_root / "python" / "linux" / "bin" / "python3").exists(),
+        "windows": (program_root / "python" / "windows" / "python.exe").exists(),
     }
 
 
@@ -31,9 +38,11 @@ def main() -> int:
     root = Path(args.bundle_root).resolve()
     missing = [str(path.relative_to(root)) for path in expected_items(root) if not path.exists()]
     runtimes = platform_runtime_summary(root)
+    program_root = app_root(root)
 
     summary = {
         "bundle_root": str(root),
+        "program_root": str(program_root),
         "ok": not missing,
         "missing": missing,
         "python_runtimes": runtimes,

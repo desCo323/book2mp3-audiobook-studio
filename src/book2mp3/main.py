@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -11,6 +12,9 @@ from book2mp3.utils.logging_utils import configure_logging, get_logger
 
 
 def project_root() -> Path:
+    configured_root = os.environ.get("BOOK2MP3_APP_ROOT", "").strip()
+    if configured_root:
+        return Path(configured_root).resolve()
     return Path(__file__).resolve().parents[2]
 
 

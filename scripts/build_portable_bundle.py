@@ -8,18 +8,6 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-COPY_ITEMS = [
-    "README.md",
-    "THIRD_PARTY_NOTICES.md",
-    "start.sh",
-    "start.bat",
-    "pyproject.toml",
-    "src",
-    "docs",
-    "runtime",
-    "voices",
-]
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -46,25 +34,48 @@ def copy_path(source: Path, target: Path) -> None:
         shutil.copy2(source, target)
 
 
+def program_root(output_dir: Path) -> Path:
+    return output_dir / "src"
+
+
 def copy_project_files(output_dir: Path, without_voices: bool, without_runtime: bool) -> list[str]:
+    app_dir = program_root(output_dir)
+    app_dir.mkdir(parents=True, exist_ok=True)
     copied: list[str] = []
-    for item in COPY_ITEMS:
-        if item == "voices" and without_voices:
+    items: list[tuple[Path, Path, str]] = [
+        (PROJECT_ROOT / "README.md", app_dir / "README.md", "src/README.md"),
+        (
+            PROJECT_ROOT / "THIRD_PARTY_NOTICES.md",
+            app_dir / "THIRD_PARTY_NOTICES.md",
+            "src/THIRD_PARTY_NOTICES.md",
+        ),
+        (PROJECT_ROOT / "src" / "start.sh", app_dir / "start.sh", "src/start.sh"),
+        (PROJECT_ROOT / "src" / "start.bat", app_dir / "start.bat", "src/start.bat"),
+        (PROJECT_ROOT / "src" / "book2mp3", app_dir / "book2mp3", "src/book2mp3"),
+        (PROJECT_ROOT / "docs", app_dir / "docs", "src/docs"),
+        (PROJECT_ROOT / "runtime", app_dir / "runtime", "src/runtime"),
+        (PROJECT_ROOT / "voices", app_dir / "voices", "src/voices"),
+    ]
+    for source, target, label in items:
+        if label == "src/voices" and without_voices:
             continue
-        if item == "runtime" and without_runtime:
+        if label == "src/runtime" and without_runtime:
             continue
-        source = PROJECT_ROOT / item
-        target = output_dir / item
         if source.exists():
             copy_path(source, target)
-            copied.append(item)
+            copied.append(label)
+    for rel in [
+        "runtime",
+        "voices",
+    ]:
+        (app_dir / rel).mkdir(parents=True, exist_ok=True)
     for rel in [
         "workspace/jobs",
         "workspace/logs",
         "workspace/voice_profiles",
         "workspace/preview_sessions",
     ]:
-        (output_dir / rel).mkdir(parents=True, exist_ok=True)
+        (app_dir / rel).mkdir(parents=True, exist_ok=True)
     return copied
 
 
@@ -86,6 +97,7 @@ def write_manifest(
 ) -> Path:
     manifest = {
         "bundle_root": str(output_dir.resolve()),
+        "program_root": str(program_root(output_dir).resolve()),
         "copied_items": copied,
         "python": {
             "linux": linux_python,
@@ -111,7 +123,7 @@ def main() -> int:
         without_runtime=args.without_runtime,
     )
 
-    python_root = output_dir / "python"
+    python_root = program_root(output_dir) / "python"
     linux_python = copy_python_runtime(args.python_linux, python_root / "linux")
     windows_python = copy_python_runtime(args.python_windows, python_root / "windows")
     manifest_path = write_manifest(output_dir, copied, linux_python, windows_python)

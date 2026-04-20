@@ -9,6 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def program_root(output_dir: Path) -> Path:
+    return output_dir / "src"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -54,13 +58,13 @@ def main() -> int:
             *(["--without-voices"] if args.without_voices else []),
         ]
     )
-    run(["python3", str(ROOT / "scripts" / "populate_bundle_python_linux.py"), str(output_dir)])
+    run(["python3", str(ROOT / "scripts" / "populate_bundle_python_linux.py"), str(program_root(output_dir))])
     if args.include_xtts_runtime:
         run(
             [
                 "python3",
                 str(ROOT / "scripts" / "setup_xtts_runtime.py"),
-                str(output_dir / "runtime" / "xtts" / "linux"),
+                str(program_root(output_dir) / "runtime" / "xtts" / "linux"),
                 "--bootstrap-linux-standalone",
                 "--torch-variant",
                 args.xtts_torch_variant,

@@ -26,7 +26,7 @@ def main() -> int:
             [
                 "python3",
                 str(ROOT / "scripts" / "populate_bundle_python_linux.py"),
-                str(bundle),
+                str(bundle / "src"),
             ],
             check=True,
         )
@@ -35,21 +35,22 @@ def main() -> int:
             "print(json.dumps({'ok': True, 'main': str(book2mp3.main.project_root())}))"
         )
         result = subprocess.run(
-            [str(bundle / "python" / "linux" / "bin" / "python3"), "-c", code],
+            [str(bundle / "src" / "python" / "linux" / "bin" / "python3"), "-c", code],
             check=True,
             capture_output=True,
             text=True,
             env={
-                "PYTHONHOME": str(bundle / "python" / "linux"),
+                "PYTHONHOME": str(bundle / "src" / "python" / "linux"),
                 "PYTHONNOUSERSITE": "1",
-                "PYTHONPATH": f"{bundle / 'src'}:{bundle / 'python' / 'linux' / 'lib' / 'python3.13' / 'site-packages'}",
+                "PYTHONPATH": f"{bundle / 'src'}:{bundle / 'src' / 'python' / 'linux' / 'lib' / 'python3.13' / 'site-packages'}",
             },
         )
         print(
             json.dumps(
                 {
                     "bundle_root": str(bundle),
-                    "python_manifest": str(bundle / "python" / "linux" / "linux-python-manifest.json"),
+                    "program_root": str(bundle / "src"),
+                    "python_manifest": str(bundle / "src" / "python" / "linux" / "linux-python-manifest.json"),
                     "import_check": result.stdout.strip(),
                 },
                 indent=2,
