@@ -27,6 +27,7 @@ def main() -> int:
         job = manager.create_job(
             source_path=source,
             voice_id="de_DE-eva_k-x_low",
+            voice_profile_id="",
             preset_id=preset.preset_id,
             priority=70,
             max_chars=preset.max_chars,

@@ -19,6 +19,7 @@ class VoiceProfile:
     notes: str
     samples: list[str]
     validation_warnings: list[str]
+    preferred_model: str = "tts_models/multilingual/multi-dataset/xtts_v2"
 
 
 def sanitize_profile_id(name: str) -> str:
@@ -88,3 +89,17 @@ def create_voice_profile(
     manifest = profile_dir / "profile.json"
     manifest.write_text(json.dumps(asdict(profile), indent=2, ensure_ascii=False), encoding="utf-8")
     return manifest
+
+
+def list_voice_profiles(profiles_root: Path) -> list[VoiceProfile]:
+    profiles: list[VoiceProfile] = []
+    for manifest in sorted(profiles_root.glob("*/profile.json")):
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        profiles.append(VoiceProfile(**payload))
+    return profiles
+
+
+def load_voice_profile(profiles_root: Path, profile_id: str) -> VoiceProfile:
+    manifest = profiles_root / profile_id / "profile.json"
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    return VoiceProfile(**payload)

@@ -35,6 +35,7 @@ from book2mp3.ui.find_best_setting_dialog import FindBestSettingDialog
 from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
 from book2mp3.ui.worker import JobWorker
 from book2mp3.utils.logging_utils import get_logger
+from book2mp3.voice_lab import list_voice_profiles
 
 PREFERRED_VOICE_ORDER = [
     "de_DE-eva_k-x_low",
@@ -115,6 +116,14 @@ class MainWindow(QMainWindow):
 
         self.voice_combo = QComboBox()
         form.addRow("Voice", self.voice_combo)
+
+        self.backend_combo = QComboBox()
+        self.backend_combo.addItems(["piper", "xtts"])
+        self.backend_combo.currentIndexChanged.connect(self.on_backend_changed)
+        form.addRow("Backend", self.backend_combo)
+
+        self.voice_profile_combo = QComboBox()
+        form.addRow("Voice profile", self.voice_profile_combo)
 
         self.preset_combo = QComboBox()
         for preset in QUALITY_PRESETS:
@@ -211,6 +220,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right)
         splitter.setSizes([340, 940])
         self.on_preset_changed()
+        self.on_backend_changed()
 
     def _wrap(self, layout: QHBoxLayout) -> QWidget:
         widget = QWidget()
@@ -222,6 +232,7 @@ class MainWindow(QMainWindow):
         voices = backend.installed_voices()
         self.voice_combo.clear()
         self.voice_combo.addItems(voices)
+        self.refresh_voice_profiles()
         self.logger.info("Loaded %s installed voices", len(voices))
         for voice_id in PREFERRED_VOICE_ORDER:
             index = self.voice_combo.findText(voice_id)
@@ -232,6 +243,20 @@ class MainWindow(QMainWindow):
             self.status_label.setText(
                 "No voices found. Run scripts/bootstrap_runtime.py or add voice files to voices/."
             )
+
+    def refresh_voice_profiles(self) -> None:
+        self.voice_profile_combo.clear()
+        profiles = list_voice_profiles(self.paths.voice_profiles)
+        for profile in profiles:
+            self.voice_profile_combo.addItem(
+                f"{profile.display_name} ({profile.target_language})",
+                profile.profile_id,
+            )
+
+    def on_backend_changed(self) -> None:
+        is_piper = self.backend_combo.currentText() == "piper"
+        self.voice_combo.setEnabled(is_piper)
+        self.voice_profile_combo.setEnabled(not is_piper)
 
     def refresh_jobs(self) -> None:
         self.jobs_list.clear()
@@ -287,12 +312,24 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Missing file", "Select an existing TXT, PDF or EPUB file.")
             return
         voice_id = self.voice_combo.currentText().strip()
-        if not voice_id:
-            QMessageBox.warning(self, "Missing voice", "Install or select a Piper voice first.")
-            return
+        backend = self.backend_combo.currentText().strip()
+        voice_profile_id = self.voice_profile_combo.currentData() or ""
+        if backend == "piper":
+            if not voice_id:
+                QMessageBox.warning(self, "Missing voice", "Install or select a Piper voice first.")
+                return
+        else:
+            if not voice_profile_id:
+                QMessageBox.warning(
+                    self,
+                    "Missing voice profile",
+                    "Create or select a Voice-Lab profile for XTTS first.",
+                )
+                return
         job = self.manager.create_job(
             source_path=source,
             voice_id=voice_id,
+            voice_profile_id=voice_profile_id,
             preset_id=self.preset_combo.currentData(),
             priority=self.priority_spin.value(),
             max_chars=self.max_chars_spin.value(),
@@ -300,6 +337,7 @@ class MainWindow(QMainWindow):
             keep_wav=self.keep_wav_checkbox.isChecked(),
             sentence_silence=get_preset(self.preset_combo.currentData()).sentence_silence,
             length_scale=get_preset(self.preset_combo.currentData()).length_scale,
+            backend=backend,
         )
         self.current_job_id = job.job_id
         self.logger.info("Created job %s", job.job_id)
@@ -317,7 +355,7 @@ class MainWindow(QMainWindow):
 
     def show_job(self, job: JobState) -> None:
         self.status_label.setText(
-            f"{job.status} | priority {job.priority} | preset {job.preset_id} | chunks {job.completed_chunks}/{job.total_chunks} | voice {job.voice_id}"
+            f"{job.status} | backend {job.backend} | priority {job.priority} | preset {job.preset_id} | chunks {job.completed_chunks}/{job.total_chunks} | voice {job.voice_id or job.voice_profile_id}"
         )
         self.progress_bar.setValue(
             int((job.completed_chunks / job.total_chunks) * 100) if job.total_chunks else 0
@@ -327,6 +365,12 @@ class MainWindow(QMainWindow):
         preset_index = self.preset_combo.findData(job.preset_id)
         if preset_index >= 0:
             self.preset_combo.setCurrentIndex(preset_index)
+        backend_index = self.backend_combo.findText(job.backend)
+        if backend_index >= 0:
+            self.backend_combo.setCurrentIndex(backend_index)
+        profile_index = self.voice_profile_combo.findData(job.voice_profile_id)
+        if profile_index >= 0:
+            self.voice_profile_combo.setCurrentIndex(profile_index)
         self.logger.debug("Displayed job %s with status %s", job.job_id, job.status)
 
     def start_selected_job(self) -> None:

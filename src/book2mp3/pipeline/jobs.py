@@ -14,7 +14,9 @@ from book2mp3.pipeline.chunking import split_text
 from book2mp3.pipeline.extract import extract_text
 from book2mp3.presets import get_preset
 from book2mp3.tts.piper import PiperBackend
+from book2mp3.tts.xtts import XttsBackend
 from book2mp3.utils.logging_utils import attach_job_file_logger, get_logger
+from book2mp3.voice_lab import load_voice_profile
 
 
 class StopRequested(Exception):
@@ -35,6 +37,7 @@ class JobManager:
         self,
         source_path: Path,
         voice_id: str,
+        voice_profile_id: str,
         preset_id: str,
         priority: int,
         max_chars: int,
@@ -63,6 +66,7 @@ class JobManager:
             status="queued",
             backend=backend,
             voice_id=voice_id,
+            voice_profile_id=voice_profile_id,
             preset_id=preset_id,
             priority=priority,
             output_mode=output_mode,
@@ -201,9 +205,12 @@ class JobManager:
     ) -> JobState:
         state = self.prepare_job(state)
         logger = self.job_logger(state)
-        if state.backend != "piper":
+        if state.backend == "piper":
+            backend = PiperBackend(self.paths.runtime, self.paths.voices, logger=logger)
+        elif state.backend == "xtts":
+            backend = XttsBackend(self.paths.runtime, logger=logger)
+        else:
             raise ValueError(f"Unsupported backend: {state.backend}")
-        backend = PiperBackend(self.paths.runtime, self.paths.voices, logger=logger)
 
         state.status = "running"
         self.save_state(state)
@@ -233,13 +240,22 @@ class JobManager:
                 logger.debug("Chunk source file: %s", chunk.text_file)
                 logger.debug("Chunk output wav: %s", chunk.wav_file)
                 logger.debug("Chunk output mp3: %s", chunk.mp3_file)
-                backend.synthesize_to_wav(
-                    text,
-                    state.voice_id,
-                    Path(chunk.wav_file),
-                    sentence_silence=state.sentence_silence,
-                    length_scale=state.length_scale,
-                )
+                if state.backend == "piper":
+                    backend.synthesize_to_wav(
+                        text,
+                        state.voice_id,
+                        Path(chunk.wav_file),
+                        sentence_silence=state.sentence_silence,
+                        length_scale=state.length_scale,
+                    )
+                else:
+                    profile = load_voice_profile(self.paths.voice_profiles, state.voice_profile_id)
+                    backend.synthesize_to_wav(
+                        text,
+                        profile,
+                        Path(chunk.wav_file),
+                        length_scale=state.length_scale,
+                    )
                 wav_to_mp3(Path(chunk.wav_file), Path(chunk.mp3_file), logger=logger)
                 if not state.keep_wav and Path(chunk.wav_file).exists():
                     Path(chunk.wav_file).unlink()

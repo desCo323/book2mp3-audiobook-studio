@@ -33,6 +33,7 @@ def main() -> int:
             job = manager.create_job(
                 source_path=Path(session.preview_source_file),
                 voice_id=test.voice_id,
+                voice_profile_id="",
                 preset_id=preset.preset_id,
                 priority=96 - test.index,
                 max_chars=preset.max_chars,

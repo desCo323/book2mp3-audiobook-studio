@@ -172,6 +172,7 @@ class FindBestSettingDialog(QDialog):
             job = self.manager.create_job(
                 source_path=preview_source,
                 voice_id=test.voice_id,
+                voice_profile_id="",
                 preset_id=preset.preset_id,
                 priority=95,
                 max_chars=preset.max_chars,

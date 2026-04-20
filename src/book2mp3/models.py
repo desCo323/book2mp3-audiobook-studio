@@ -37,6 +37,7 @@ class JobState:
     status: str
     backend: str
     voice_id: str
+    voice_profile_id: str
     preset_id: str
     priority: int
     output_mode: str
@@ -62,6 +63,7 @@ class JobState:
         payload.setdefault("preset_id", preset.preset_id)
         payload.setdefault("sentence_silence", preset.sentence_silence)
         payload.setdefault("length_scale", preset.length_scale)
+        payload.setdefault("voice_profile_id", "")
         payload["chunks"] = [ChunkRecord(**chunk) for chunk in payload.get("chunks", [])]
         return cls(**payload)
 

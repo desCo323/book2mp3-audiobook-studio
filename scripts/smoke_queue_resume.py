@@ -45,6 +45,7 @@ def main() -> int:
     high = manager.create_job(
         source_path=source,
         voice_id=args.voice,
+        voice_profile_id="",
         preset_id=preset.preset_id,
         priority=90,
         max_chars=preset.max_chars,
@@ -56,6 +57,7 @@ def main() -> int:
     low = manager.create_job(
         source_path=source,
         voice_id=args.voice,
+        voice_profile_id="",
         preset_id=preset.preset_id,
         priority=10,
         max_chars=preset.max_chars,

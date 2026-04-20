@@ -41,7 +41,8 @@ class VoiceLabDialog(QDialog):
 
         intro = QLabel(
             "Lege hier neue Sprecherprofile fuer kuenftiges Voice Cloning an. "
-            "Die erste Version speichert Referenzsamples, Metadaten und Validierungshinweise."
+            "Die erste Version speichert Referenzsamples, Metadaten und Validierungshinweise. "
+            "XTTS nutzt diese Profile spaeter direkt fuer Voice Cloning."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -53,7 +54,7 @@ class VoiceLabDialog(QDialog):
         self.language_combo.addItems(["de", "en", "fr", "es", "it", "nl", "pl"])
         form.addRow("Zielsprache", self.language_combo)
         self.backend_combo = QComboBox()
-        self.backend_combo.addItems(["xtts_v2_planned", "custom_pipeline_planned"])
+        self.backend_combo.addItems(["xtts_v2", "custom_pipeline_planned"])
         form.addRow("Backend", self.backend_combo)
         layout.addLayout(form)
 

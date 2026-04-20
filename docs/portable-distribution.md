@@ -65,6 +65,8 @@ This repository now includes:
 - `scripts/populate_bundle_python_linux.py`
 - `scripts/install_windows_embeddable.py`
 - `scripts/build_linux_portable_release.py`
+- `scripts/install_windows_bundle_packages.py`
+- `scripts/setup_xtts_runtime.py`
 
 These launchers already target the final portable structure and intentionally fail if the bundle-local Python runtime is missing.
 
@@ -117,6 +119,27 @@ For Windows, install the official embeddable package into an existing bundle:
 ```bash
 python scripts/install_windows_embeddable.py dist/book2mp3-portable \
   --url "https://www.python.org/ftp/python/.../python-<version>-embed-amd64.zip"
+```
+
+Then install the application packages into that embedded runtime:
+
+```bash
+python scripts/install_windows_bundle_packages.py dist/book2mp3-portable
+```
+
+## XTTS runtime note
+
+The current XTTS integration is intentionally separated from the main app runtime.
+
+Reason:
+
+- current Coqui TTS documentation indicates version constraints that do not cleanly match the main Python 3.13 environment used here
+- XTTS is heavier and should remain optional
+
+Recommended setup path:
+
+```bash
+python scripts/setup_xtts_runtime.py runtime/xtts/linux --python /path/to/python3.11
 ```
 
 ## Sources

@@ -20,6 +20,7 @@ This repository now contains the first production-oriented foundation:
 - extensive debug logging with app-level and job-level log files
 - quality presets for fast, balanced and natural reading
 - persistent "Find Best Setting" preview sessions with up to 10 tests
+- optional XTTS runtime path for custom voice profiles
 - import pipeline for `TXT`, `PDF` and `EPUB`
 - sentence-aware chunking
 - resumable per-chunk synthesis
@@ -28,7 +29,7 @@ This repository now contains the first production-oriented foundation:
 - runtime bootstrap script for `Piper`
 - handover documentation for follow-up agents
 
-Voice cloning and an XTTS backend are prepared architecturally but not implemented in this first pass.
+Voice cloning is now modeled as an optional XTTS runtime path, but the heavy XTTS runtime still needs to be installed separately.
 
 ## How Users Work With The App
 
@@ -55,6 +56,7 @@ Current user-facing features:
 - quality presets: `Schnell`, `Balanciert`, `Natuerlich`
 - `Find Best Setting` for short comparison MP3s before a full conversion
 - first Voice Lab dialog for collecting custom voice references
+- backend choice between `piper` and `xtts`
 - detailed logs for debugging
 
 ## Project layout
@@ -159,6 +161,7 @@ python scripts/smoke_preview_queue.py
 python scripts/smoke_bundle_build.py
 python scripts/smoke_portable_linux_runtime.py
 python scripts/smoke_linux_release_build.py
+python scripts/smoke_xtts_job_model.py
 ```
 
 Current validated smoke coverage:
