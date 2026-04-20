@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -9,6 +10,9 @@ from pypdf import PdfReader
 
 
 def normalize_text(text: str) -> str:
+    text = unicodedata.normalize("NFC", text)
+    text = text.replace("\u00ad", "")
+    text = text.replace("\u200b", "")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
