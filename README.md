@@ -150,6 +150,22 @@ For a preview-session smoke test:
 python scripts/smoke_preview_session.py
 ```
 
+Additional targeted smoke tests:
+
+```bash
+python scripts/smoke_single_file.py
+python scripts/smoke_state_migration.py
+python scripts/smoke_preview_queue.py
+```
+
+Current validated smoke coverage:
+
+- queue stop/resume flow
+- preview session persistence and favorite selection
+- `single_file` MP3 output
+- legacy `state.json` migration
+- multi-job preview queue ordering
+
 To validate a built portable bundle:
 
 ```bash
