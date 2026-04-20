@@ -210,3 +210,19 @@ def link_saved_setting(paths: AppPaths, session_id: str, setting_id: str) -> Pre
     session.saved_setting_id = setting_id
     _save_session(paths, session)
     return session
+
+
+def update_preview_job_status(
+    paths: AppPaths,
+    job_id: str,
+    status: str,
+    output_mp3: str | None = None,
+) -> PreviewSession | None:
+    for session in list_preview_sessions(paths):
+        if session.last_preview_job_id == job_id:
+            session.last_preview_status = status
+            if output_mp3:
+                session.last_preview_output = output_mp3
+            _save_session(paths, session)
+            return session
+    return None

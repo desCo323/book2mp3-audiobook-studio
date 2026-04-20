@@ -44,6 +44,8 @@ def main() -> int:
         if not dialog.current_session_id:
             raise AssertionError("Preview session was not created")
 
+        dialog.assistant_combo.setCurrentIndex(0)
+        dialog.apply_assistant_profile()
         session = {item.session_id: item for item in list_preview_sessions(paths)}[dialog.current_session_id]
         if not session.preview_excerpt:
             raise AssertionError("Preview session contains no excerpt")
@@ -60,6 +62,7 @@ def main() -> int:
             "first_voice": voice_items[0],
             "preview_session_id": session.session_id,
             "excerpt_length": len(session.preview_excerpt),
+            "assistant_profile": dialog.assistant_combo.currentData(),
             "queued_jobs": len(jobs),
             "first_job_status": jobs[0].status,
         }

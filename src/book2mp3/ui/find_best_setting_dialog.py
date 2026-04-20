@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtCore import QUrl
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -48,6 +50,9 @@ class FindBestSettingDialog(QDialog):
         self.current_source: Path | None = None
         self.current_session_id: str | None = None
         self.installed_voices: list[str] = []
+        self.player = QMediaPlayer(self)
+        self.audio_output = QAudioOutput(self)
+        self.player.setAudioOutput(self.audio_output)
 
         self.setWindowTitle("Voice Tuning")
         self.resize(1100, 760)
@@ -116,6 +121,16 @@ class FindBestSettingDialog(QDialog):
         self.preset_combo.currentIndexChanged.connect(self.apply_preset_hint)
         form.addRow("Preset-Hilfe", self.preset_combo)
 
+        self.assistant_combo = QComboBox()
+        self.assistant_combo.addItem("Roman / Story", "novel")
+        self.assistant_combo.addItem("Sachbuch / Erklaerend", "nonfiction")
+        self.assistant_combo.addItem("Kinderbuch / Warm", "children")
+        self.assistant_combo.addItem("Schnelle Vorschau / CPU", "cpu")
+        form.addRow("Assistent", self.assistant_combo)
+        suggest_button = QPushButton("Optimale Startwerte anwenden")
+        suggest_button.clicked.connect(self.apply_assistant_profile)
+        form.addRow("", suggest_button)
+
         self.max_chars_spin = QSpinBox()
         self.max_chars_spin.setRange(100, 450)
         self.max_chars_spin.setSingleStep(10)
@@ -158,6 +173,18 @@ class FindBestSettingDialog(QDialog):
         self.excerpt_view.setReadOnly(True)
         self.excerpt_view.setPlaceholderText("Hier erscheint die zufaellige Buchstelle.")
         center.addWidget(self.excerpt_view)
+
+        playback_row = QHBoxLayout()
+        play_button = QPushButton("Letzte Preview abspielen")
+        play_button.clicked.connect(self.play_last_preview)
+        playback_row.addWidget(play_button)
+        stop_button = QPushButton("Stop")
+        stop_button.clicked.connect(self.player.stop)
+        playback_row.addWidget(stop_button)
+        center.addLayout(playback_row)
+        self.playback_label = QLabel("Noch keine fertige Preview vorhanden.")
+        self.playback_label.setWordWrap(True)
+        center.addWidget(self.playback_label)
         rows.addLayout(center)
         layout.addLayout(rows)
 
@@ -233,6 +260,15 @@ class FindBestSettingDialog(QDialog):
         preset_index = self.preset_combo.findData(session.preset_hint)
         if preset_index >= 0:
             self.preset_combo.setCurrentIndex(preset_index)
+        preview_file = Path(session.last_preview_output) if session.last_preview_output else None
+        if preview_file and preview_file.exists():
+            self.playback_label.setText(
+                f"Letzte Preview: {session.last_preview_status} | {preview_file.name}"
+            )
+        else:
+            self.playback_label.setText(
+                f"Letzte Preview: {session.last_preview_status} | noch keine fertige MP3"
+            )
         self.details.setPlainText(
             json.dumps(asdict(session), indent=2, ensure_ascii=False)
         )
@@ -266,6 +302,24 @@ class FindBestSettingDialog(QDialog):
         self.helper_label.setText(
             f"{hint}\nAktuell: {max_chars} Zeichen, {sentence_silence:.2f}s Satzpause, {length_scale:.2f} Laenge."
         )
+
+    def apply_assistant_profile(self) -> None:
+        profile = self.assistant_combo.currentData()
+        values = {
+            "novel": ("natural", 260, 28, 105, "Empfohlen fuer natuerliche Romanstimmen mit mehr Ruhe."),
+            "nonfiction": ("balanced", 220, 20, 100, "Empfohlen fuer klare Sachbuch- oder Erklaerstimmen."),
+            "children": ("natural", 240, 30, 103, "Empfohlen fuer warme, etwas ruhigere Kinderbuchstimmen."),
+            "cpu": ("fast_cpu", 170, 12, 95, "Empfohlen fuer schnelle Vorschauen auf CPU-Systemen."),
+        }[profile]
+        preset_id, max_chars, sentence_pause, length_scale, note = values
+        preset_index = self.preset_combo.findData(preset_id)
+        if preset_index >= 0:
+            self.preset_combo.setCurrentIndex(preset_index)
+        self.max_chars_spin.setValue(max_chars)
+        self.sentence_slider.setValue(sentence_pause)
+        self.length_slider.setValue(length_scale)
+        self.update_helper_text()
+        self.helper_label.setText(f"{self.helper_label.text()}\nAssistent: {note}")
 
     def render_preview(self) -> None:
         if not self.current_session_id:
@@ -310,6 +364,7 @@ class FindBestSettingDialog(QDialog):
             "Preview gestartet",
             "Die Preview wurde in die Queue gelegt und wird direkt verarbeitet.",
         )
+        self.playback_label.setText("Preview wurde in die Queue gelegt. Nach Fertigstellung hier abspielen.")
 
     def save_setting(self) -> None:
         voice_id = self.voice_combo.currentData() or self.voice_combo.currentText().strip()
@@ -350,3 +405,16 @@ class FindBestSettingDialog(QDialog):
         self.length_slider.setValue(int(round(setting.length_scale * 100)))
         self.setting_name.setText(setting.display_name)
         self.update_helper_text()
+
+    def play_last_preview(self) -> None:
+        if not self.current_session_id:
+            QMessageBox.warning(self, "Keine Session", "Bitte zuerst eine Session auswaehlen.")
+            return
+        session = {item.session_id: item for item in list_preview_sessions(self.paths)}[self.current_session_id]
+        preview_file = Path(session.last_preview_output) if session.last_preview_output else None
+        if not preview_file or not preview_file.exists():
+            QMessageBox.warning(self, "Keine MP3", "Es gibt noch keine fertige Preview-MP3 zum Abspielen.")
+            return
+        self.player.setSource(QUrl.fromLocalFile(str(preview_file)))
+        self.player.play()
+        self.playback_label.setText(f"Spiele ab: {preview_file.name}")

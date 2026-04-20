@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 from book2mp3.config import AppPaths
 from book2mp3.models import JobState
 from book2mp3.pipeline.jobs import JobManager
-from book2mp3.preview_sessions import list_preview_sessions
+from book2mp3.preview_sessions import list_preview_sessions, update_preview_job_status
 from book2mp3.presets import QUALITY_PRESETS, get_preset
 from book2mp3.tts.piper import PiperBackend
 from book2mp3.ui.find_best_setting_dialog import FindBestSettingDialog
@@ -473,12 +473,20 @@ class MainWindow(QMainWindow):
         self.logger.debug("Progress update: %s/%s %s", current, total, message)
 
     def on_job_finished(self, state: JobState) -> None:
+        update_preview_job_status(
+            self.paths,
+            state.job_id,
+            state.status,
+            state.final_output_file if Path(state.final_output_file).exists() else None,
+        )
         self.refresh_jobs()
         self.show_job(state)
         self.logger.info("Job finished callback for %s with status %s", state.job_id, state.status)
         self.maybe_start_next_job()
 
     def on_job_failed(self, message: str) -> None:
+        if self.current_job_id:
+            update_preview_job_status(self.paths, self.current_job_id, "failed")
         self.refresh_jobs()
         self.details.appendPlainText(message)
         self.status_label.setText("failed")
