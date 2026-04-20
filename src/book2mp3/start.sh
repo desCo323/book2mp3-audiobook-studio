@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-APP_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+APP_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 PYTHON_BIN="$APP_ROOT/python/linux/bin/python3"
 USE_BUNDLED_PYTHON=1
 
@@ -16,8 +17,8 @@ if [ ! -x "$PYTHON_BIN" ]; then
     echo "Portable Python runtime not found at:"
     echo "  $PYTHON_BIN"
     echo
-    echo "This launcher expects src/ itself to be the portable app folder."
-    echo "A finished src bundle must include python/linux/ inside src/."
+    echo "This launcher lives in src/book2mp3/ but expects src/ to be the app folder."
+    echo "A finished portable layout must include python/linux/ inside src/."
     echo "For development only, you can set BOOK2MP3_ALLOW_SYSTEM_PYTHON=1."
     echo
     exit 1

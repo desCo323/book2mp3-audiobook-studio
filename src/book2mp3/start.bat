@@ -1,8 +1,9 @@
 @echo off
 setlocal
 
-set "APP_ROOT=%~dp0"
-if "%APP_ROOT:~-1%"=="\" set "APP_ROOT=%APP_ROOT:~0,-1%"
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+for %%I in ("%SCRIPT_DIR%\..") do set "APP_ROOT=%%~fI"
 set "PYTHON_BIN=%APP_ROOT%\python\windows\python.exe"
 
 if not exist "%PYTHON_BIN%" (
@@ -15,8 +16,8 @@ if not exist "%PYTHON_BIN%" (
     echo Portable Python runtime not found at:
     echo   %PYTHON_BIN%
     echo.
-    echo This launcher expects src\ itself to be the portable app folder.
-    echo A finished src bundle must include python\windows\ inside src\.
+    echo This launcher lives in src\book2mp3\ but expects src\ to be the app folder.
+    echo A finished portable layout must include python\windows\ inside src\.
     echo For development only, set BOOK2MP3_ALLOW_SYSTEM_PYTHON=1.
     echo.
     exit /b 1
