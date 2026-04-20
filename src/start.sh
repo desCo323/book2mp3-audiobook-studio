@@ -6,19 +6,19 @@ PYTHON_BIN="$APP_ROOT/python/linux/bin/python3"
 USE_BUNDLED_PYTHON=1
 
 if [ ! -x "$PYTHON_BIN" ]; then
-  if [ "${BOOK2MP3_ALLOW_SYSTEM_PYTHON:-0}" = "1" ]; then
+  if command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN="${PYTHON:-python3}"
     USE_BUNDLED_PYTHON=0
     echo "Portable Python runtime not found at:"
     echo "  $APP_ROOT/python/linux/bin/python3"
-    echo "Falling back to system Python because BOOK2MP3_ALLOW_SYSTEM_PYTHON=1."
+    echo "Falling back to system Python for this local checkout."
   else
     echo "Portable Python runtime not found at:"
     echo "  $PYTHON_BIN"
     echo
     echo "This launcher expects src/ itself to be the portable app folder."
     echo "A finished src bundle must include python/linux/ inside src/."
-    echo "For development only, you can set BOOK2MP3_ALLOW_SYSTEM_PYTHON=1."
+    echo "No usable system python3 was found for fallback."
     echo
     exit 1
   fi

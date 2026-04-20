@@ -7,18 +7,19 @@ for %%I in ("%SCRIPT_DIR%\..") do set "APP_ROOT=%%~fI"
 set "PYTHON_BIN=%APP_ROOT%\python\windows\python.exe"
 
 if not exist "%PYTHON_BIN%" (
-  if "%BOOK2MP3_ALLOW_SYSTEM_PYTHON%"=="1" (
+  where python >nul 2>nul
+  if not errorlevel 1 (
     set "PYTHON_BIN=python"
     echo Portable Python runtime not found at:
     echo   %APP_ROOT%\python\windows\python.exe
-    echo Falling back to system Python because BOOK2MP3_ALLOW_SYSTEM_PYTHON=1.
+    echo Falling back to system Python for this local checkout.
   ) else (
     echo Portable Python runtime not found at:
     echo   %PYTHON_BIN%
     echo.
     echo This launcher lives in src\book2mp3\ but expects src\ to be the app folder.
     echo A finished portable layout must include python\windows\ inside src\.
-    echo For development only, set BOOK2MP3_ALLOW_SYSTEM_PYTHON=1.
+    echo No usable system python was found for fallback.
     echo.
     exit /b 1
   )
