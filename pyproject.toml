@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "book2mp3"
+version = "0.1.0"
+description = "Cross-platform desktop app to turn PDF, TXT and EPUB files into resumable audiobook jobs."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "beautifulsoup4>=4.12.3",
+  "ebooklib>=0.18",
+  "imageio-ffmpeg>=0.5.1",
+  "PyPDF>=5.1.0",
+  "PySide6>=6.8.0",
+  "requests>=2.32.3",
+]
+
+[project.scripts]
+book2mp3 = "book2mp3.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
