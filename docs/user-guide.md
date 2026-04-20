@@ -86,6 +86,8 @@ Voice selection:
 - voices are grouped through a language filter so you can test German, English, French and other languages separately
 - the app now prefers better `medium` and `high` Piper voices first
 - if you want the most natural path, XTTS remains the better target than Piper, but Piper is still the easier offline default
+- the live tuning dialog can now switch between `piper` and `xtts`
+- XTTS uses imported speaker profiles instead of a fixed internal voice list
 
 Simple workflow:
 

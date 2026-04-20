@@ -53,7 +53,9 @@ def main() -> int:
         attach_preview_job(
             paths,
             session.session_id,
+            backend="piper",
             voice_id=voice_id,
+            voice_profile_id="",
             preset_hint="balanced",
             job_id=state.job_id,
             output_mp3=state.final_output_file,
@@ -61,8 +63,10 @@ def main() -> int:
         )
         saved = save_voice_setting(
             paths.voice_settings,
-            "Smoke Balanced",
+            display_name="Smoke Balanced",
+            backend="piper",
             voice_id=voice_id,
+            voice_profile_id="",
             preset_hint="balanced",
             max_chars=220,
             sentence_silence=0.2,

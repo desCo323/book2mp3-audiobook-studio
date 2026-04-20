@@ -33,8 +33,11 @@ from book2mp3.preview_sessions import (
     link_saved_setting,
     list_preview_sessions,
     refresh_preview_excerpt,
+    update_preview_selection,
 )
 from book2mp3.tts.piper import PiperBackend
+from book2mp3.tts.xtts import XttsBackend
+from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_catalog import (
     filter_voice_ids,
@@ -42,6 +45,7 @@ from book2mp3.voice_catalog import (
     language_choices,
     voice_language_code,
 )
+from book2mp3.voice_lab import list_voice_profiles, load_voice_profile
 from book2mp3.voice_settings import list_voice_settings, save_voice_setting
 
 
@@ -53,7 +57,9 @@ class LivePreviewWorker(QThread):
         self,
         paths: AppPaths,
         session_id: str,
+        backend: str,
         voice_id: str,
+        voice_profile_id: str,
         max_chars: int,
         sentence_silence: float,
         length_scale: float,
@@ -61,7 +67,9 @@ class LivePreviewWorker(QThread):
         super().__init__()
         self.paths = paths
         self.session_id = session_id
+        self.backend = backend
         self.voice_id = voice_id
+        self.voice_profile_id = voice_profile_id
         self.max_chars = max_chars
         self.sentence_silence = sentence_silence
         self.length_scale = length_scale
@@ -78,18 +86,29 @@ class LivePreviewWorker(QThread):
 
             text = Path(session.preview_source_file).read_text(encoding="utf-8")
             chunks = split_text(text, self.max_chars)
-            backend = PiperBackend(self.paths.runtime, self.paths.voices, logger=self.logger)
+            piper_backend = PiperBackend(self.paths.runtime, self.paths.voices, logger=self.logger)
+            xtts_backend = XttsBackend(self.paths.runtime, logger=self.logger)
             mp3_files: list[Path] = []
+
             for index, chunk in enumerate(chunks, start=1):
                 wav_path = wav_root / f"{index:03d}.wav"
                 mp3_path = mp3_root / f"{index:03d}.mp3"
-                backend.synthesize_to_wav(
-                    chunk,
-                    self.voice_id,
-                    wav_path,
-                    sentence_silence=self.sentence_silence,
-                    length_scale=self.length_scale,
-                )
+                if self.backend == "piper":
+                    piper_backend.synthesize_to_wav(
+                        chunk,
+                        self.voice_id,
+                        wav_path,
+                        sentence_silence=self.sentence_silence,
+                        length_scale=self.length_scale,
+                    )
+                else:
+                    profile = load_voice_profile(self.paths.voice_profiles, self.voice_profile_id)
+                    xtts_backend.synthesize_to_wav(
+                        chunk,
+                        profile,
+                        wav_path,
+                        length_scale=self.length_scale,
+                    )
                 wav_to_mp3(wav_path, mp3_path, logger=self.logger)
                 mp3_files.append(mp3_path)
 
@@ -99,7 +118,9 @@ class LivePreviewWorker(QThread):
             attach_preview_job(
                 self.paths,
                 self.session_id,
+                self.backend,
                 self.voice_id,
+                self.voice_profile_id,
                 "live_tuning",
                 preview_job_id,
                 str(final_mp3),
@@ -126,17 +147,18 @@ class FindBestSettingDialog(QDialog):
         self.player.setAudioOutput(self.audio_output)
 
         self.setWindowTitle("Voice Tuning")
-        self.resize(980, 760)
+        self.resize(1040, 780)
         self._build_ui()
         self.refresh_voice_list()
+        self.refresh_voice_profiles()
         self.restore_last_session()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         intro = QLabel(
-            "Einfach ausprobieren: Buch waehlen, zufaellige Stelle hoeren, Regler anpassen, "
-            "Play druecken und sofort pruefen wie es klingt."
+            "Einfach ausprobieren: Buch waehlen, zufaellige Stelle hoeren, Backend waehlen, Regler anpassen "
+            "und sofort pruefen wie es klingt. XTTS nutzt importierte Sprecherprofile und klingt oft natuerlicher."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -151,14 +173,25 @@ class FindBestSettingDialog(QDialog):
         new_excerpt_button = QPushButton("Neue Stelle")
         new_excerpt_button.clicked.connect(self.new_excerpt)
         source_row.addWidget(new_excerpt_button)
+        import_xtts_button = QPushButton("XTTS-Sprecher importieren")
+        import_xtts_button.clicked.connect(self.open_voice_lab)
+        source_row.addWidget(import_xtts_button)
         layout.addLayout(source_row)
 
         form = QFormLayout()
+        self.backend_combo = QComboBox()
+        self.backend_combo.addItems(["piper", "xtts"])
+        self.backend_combo.currentIndexChanged.connect(self.on_backend_changed)
+        form.addRow("Backend", self.backend_combo)
+
         self.voice_combo = QComboBox()
-        form.addRow("Stimme", self.voice_combo)
+        form.addRow("Piper-Stimme", self.voice_combo)
         self.voice_language_combo = QComboBox()
         self.voice_language_combo.currentIndexChanged.connect(self.rebuild_voice_combo)
-        form.addRow("Sprache", self.voice_language_combo)
+        form.addRow("Piper-Sprache", self.voice_language_combo)
+
+        self.voice_profile_combo = QComboBox()
+        form.addRow("XTTS-Profil", self.voice_profile_combo)
 
         self.assistant_combo = QComboBox()
         self.assistant_combo.addItem("Roman / Story", "novel")
@@ -235,6 +268,7 @@ class FindBestSettingDialog(QDialog):
         layout.addWidget(self.details)
 
         self.apply_assistant_profile()
+        self.on_backend_changed()
 
     def refresh_voice_list(self) -> None:
         self.installed_voices = PiperBackend(self.paths.runtime, self.paths.voices).installed_voices()
@@ -244,6 +278,21 @@ class FindBestSettingDialog(QDialog):
             self.voice_language_combo.addItem(label, code)
         self.voice_language_combo.blockSignals(False)
         self.rebuild_voice_combo()
+
+    def refresh_voice_profiles(self) -> None:
+        selected_profile_id = self.voice_profile_combo.currentData() or ""
+        profiles = list_voice_profiles(self.paths.voice_profiles)
+        self.voice_profile_combo.clear()
+        if profiles:
+            for profile in profiles:
+                self.voice_profile_combo.addItem(
+                    f"{profile.target_language} | {profile.display_name}",
+                    profile.profile_id,
+                )
+            selected_index = self.voice_profile_combo.findData(selected_profile_id)
+            self.voice_profile_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
+        else:
+            self.voice_profile_combo.addItem("Keine XTTS-Profile gefunden", "")
 
     def rebuild_voice_combo(self) -> None:
         selected_voice_id = self.voice_combo.currentData() or self.voice_combo.currentText().strip()
@@ -255,6 +304,16 @@ class FindBestSettingDialog(QDialog):
         if visible_voices:
             selected_index = self.voice_combo.findData(selected_voice_id)
             self.voice_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
+
+    def on_backend_changed(self) -> None:
+        is_piper = self.backend_combo.currentText() == "piper"
+        self.voice_combo.setEnabled(is_piper)
+        self.voice_language_combo.setEnabled(is_piper)
+        self.voice_profile_combo.setEnabled(not is_piper)
+        if is_piper:
+            self.status_label.setText("Piper aktiv: schnell und offline, aber oft synthetischer.")
+        else:
+            self.status_label.setText("XTTS aktiv: bessere Chance auf natuerlichen Klang mit guten Sprecherprofilen.")
 
     def restore_last_session(self) -> None:
         sessions = list_preview_sessions(self.paths)
@@ -281,11 +340,11 @@ class FindBestSettingDialog(QDialog):
         if not self.current_source or not self.current_source.exists():
             QMessageBox.warning(self, "Keine Quelle", "Bitte zuerst ein Buch waehlen.")
             return
-        if not self.installed_voices:
+        if not self.installed_voices and not list_voice_profiles(self.paths.voice_profiles):
             QMessageBox.warning(
                 self,
                 "Keine Stimmen",
-                f"Es wurden keine Piper-Stimmen gefunden.\nGepruefter Ordner: {self.paths.voices}",
+                "Es wurden weder Piper-Stimmen noch XTTS-Profile gefunden.",
             )
             return
         session = create_preview_session(self.paths, self.current_source)
@@ -296,6 +355,10 @@ class FindBestSettingDialog(QDialog):
         session = {item.session_id: item for item in list_preview_sessions(self.paths)}[session_id]
         self.current_session_id = session_id
         self.excerpt_view.setPlainText(session.preview_excerpt)
+
+        backend_index = self.backend_combo.findText(session.backend)
+        if backend_index >= 0:
+            self.backend_combo.setCurrentIndex(backend_index)
         if session.voice_id:
             language_index = self.voice_language_combo.findData(voice_language_code(session.voice_id))
             if language_index >= 0:
@@ -303,14 +366,21 @@ class FindBestSettingDialog(QDialog):
             voice_index = self.voice_combo.findData(session.voice_id)
             if voice_index >= 0:
                 self.voice_combo.setCurrentIndex(voice_index)
-        self.status_label.setText(
-            f"Aktuelle Stelle bereit. Letzte Preview: {session.last_preview_status}."
-        )
+        if session.voice_profile_id:
+            profile_index = self.voice_profile_combo.findData(session.voice_profile_id)
+            if profile_index >= 0:
+                self.voice_profile_combo.setCurrentIndex(profile_index)
+
         info_lines = [
             f"Quelle: {Path(session.source_file).name}",
             f"Stelle ab Textposition: {session.excerpt_offset}",
+            f"Backend: {session.backend}",
             f"Letzte Preview: {session.last_preview_status}",
         ]
+        if session.voice_id:
+            info_lines.append(f"Piper-Stimme: {session.voice_id}")
+        if session.voice_profile_id:
+            info_lines.append(f"XTTS-Profil: {session.voice_profile_id}")
         if session.last_preview_output:
             info_lines.append(f"Datei: {Path(session.last_preview_output).name}")
         if session.saved_setting_id:
@@ -345,7 +415,9 @@ class FindBestSettingDialog(QDialog):
         max_chars = self.max_chars_spin.value()
         self.sentence_label.setText(f"{sentence_silence:.2f}s")
         self.length_label.setText(f"{length_scale:.2f}")
-        if max_chars >= 240 and sentence_silence >= 0.24 and length_scale >= 1.02:
+        if self.backend_combo.currentText() == "xtts":
+            hint = "XTTS: gute Referenzsamples sind wichtiger als die letzten Regler-Prozent."
+        elif max_chars >= 240 and sentence_silence >= 0.24 and length_scale >= 1.02:
             hint = "Eher natuerlich und ruhiger."
         elif max_chars <= 190 and sentence_silence <= 0.16 and length_scale <= 0.98:
             hint = "Eher schnell und CPU-freundlich."
@@ -362,16 +434,40 @@ class FindBestSettingDialog(QDialog):
         if self.preview_worker and self.preview_worker.isRunning():
             QMessageBox.warning(self, "Preview laeuft", "Bitte kurz warten, die aktuelle Preview wird noch erzeugt.")
             return
-        voice_id = self.voice_combo.currentData() or self.voice_combo.currentText().strip()
-        if not voice_id:
-            QMessageBox.warning(self, "Keine Stimme", "Bitte zuerst eine Stimme auswaehlen.")
-            return
+
+        backend = self.backend_combo.currentText().strip()
+        voice_id = ""
+        voice_profile_id = ""
+        if backend == "piper":
+            voice_id = self.voice_combo.currentData() or self.voice_combo.currentText().strip()
+            if not voice_id:
+                QMessageBox.warning(self, "Keine Stimme", "Bitte zuerst eine Stimme auswaehlen.")
+                return
+        else:
+            voice_profile_id = self.voice_profile_combo.currentData() or ""
+            if not voice_profile_id:
+                QMessageBox.warning(
+                    self,
+                    "Kein XTTS-Profil",
+                    "Bitte zuerst ein XTTS-Sprecherprofil waehlen oder importieren.",
+                )
+                return
+
         self.status_label.setText("Preview wird direkt erzeugt...")
         self.play_now_button.setEnabled(False)
+        update_preview_selection(
+            self.paths,
+            self.current_session_id,
+            backend,
+            voice_id,
+            voice_profile_id,
+        )
         self.preview_worker = LivePreviewWorker(
             self.paths,
             self.current_session_id,
+            backend,
             voice_id,
+            voice_profile_id,
             self.max_chars_spin.value(),
             self.sentence_slider.value() / 100,
             self.length_slider.value() / 100,
@@ -393,7 +489,9 @@ class FindBestSettingDialog(QDialog):
             attach_preview_job(
                 self.paths,
                 self.current_session_id,
+                self.backend_combo.currentText().strip(),
                 self.voice_combo.currentData() or self.voice_combo.currentText().strip(),
+                self.voice_profile_combo.currentData() or "",
                 "live_tuning",
                 f"live_failed_{uuid.uuid4().hex[:10]}",
                 "",
@@ -421,15 +519,23 @@ class FindBestSettingDialog(QDialog):
         self.status_label.setText("Wiedergabe gestoppt.")
 
     def save_setting(self) -> None:
+        backend = self.backend_combo.currentText().strip()
         voice_id = self.voice_combo.currentData() or self.voice_combo.currentText().strip()
-        if not voice_id:
+        voice_profile_id = self.voice_profile_combo.currentData() or ""
+        if backend == "piper" and not voice_id:
             QMessageBox.warning(self, "Keine Stimme", "Bitte zuerst eine Stimme auswaehlen.")
             return
-        display_name = self.setting_name.text().strip() or f"{voice_id}_live"
+        if backend == "xtts" and not voice_profile_id:
+            QMessageBox.warning(self, "Kein XTTS-Profil", "Bitte zuerst ein XTTS-Sprecherprofil waehlen.")
+            return
+
+        display_name = self.setting_name.text().strip() or f"{(voice_id or voice_profile_id)}_live"
         setting = save_voice_setting(
             self.paths.voice_settings,
             display_name=display_name,
+            backend=backend,
             voice_id=voice_id,
+            voice_profile_id=voice_profile_id,
             preset_hint="live_tuning",
             max_chars=self.max_chars_spin.value(),
             sentence_silence=self.sentence_slider.value() / 100,
@@ -437,6 +543,13 @@ class FindBestSettingDialog(QDialog):
             notes="Gespeichert aus Live Voice Tuning",
         )
         if self.current_session_id:
+            update_preview_selection(
+                self.paths,
+                self.current_session_id,
+                backend,
+                voice_id,
+                voice_profile_id,
+            )
             link_saved_setting(self.paths, self.current_session_id, setting.setting_id)
             self.show_session(self.current_session_id)
         self.status_label.setText(f"Voice-Setting gespeichert: {setting.display_name}")
@@ -447,15 +560,28 @@ class FindBestSettingDialog(QDialog):
             QMessageBox.warning(self, "Keine Settings", "Es gibt noch kein gespeichertes Voice-Setting.")
             return
         setting = settings[0]
-        language_index = self.voice_language_combo.findData(voice_language_code(setting.voice_id))
-        if language_index >= 0:
-            self.voice_language_combo.setCurrentIndex(language_index)
-        voice_index = self.voice_combo.findData(setting.voice_id)
-        if voice_index >= 0:
-            self.voice_combo.setCurrentIndex(voice_index)
+        backend_index = self.backend_combo.findText(setting.backend)
+        if backend_index >= 0:
+            self.backend_combo.setCurrentIndex(backend_index)
+        if setting.voice_id:
+            language_index = self.voice_language_combo.findData(voice_language_code(setting.voice_id))
+            if language_index >= 0:
+                self.voice_language_combo.setCurrentIndex(language_index)
+            voice_index = self.voice_combo.findData(setting.voice_id)
+            if voice_index >= 0:
+                self.voice_combo.setCurrentIndex(voice_index)
+        if setting.voice_profile_id:
+            profile_index = self.voice_profile_combo.findData(setting.voice_profile_id)
+            if profile_index >= 0:
+                self.voice_profile_combo.setCurrentIndex(profile_index)
         self.max_chars_spin.setValue(setting.max_chars)
         self.sentence_slider.setValue(int(round(setting.sentence_silence * 100)))
         self.length_slider.setValue(int(round(setting.length_scale * 100)))
         self.setting_name.setText(setting.display_name)
         self.update_helper_text()
         self.status_label.setText(f"Letztes Voice-Setting geladen: {setting.display_name}")
+
+    def open_voice_lab(self) -> None:
+        dialog = VoiceLabDialog(self.paths, self)
+        dialog.exec()
+        self.refresh_voice_profiles()

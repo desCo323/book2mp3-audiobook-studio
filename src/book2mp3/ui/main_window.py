@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
             "3. Job erzeugen.\n"
             "4. Mehrere Jobs koennen nacheinander in der Queue liegen.\n\n"
             "Tipp: Mit 'Find Best Setting' oeffnest du den einfachen Voice-Tuning-Modus: "
-            "Buch waehlen, Play druecken, Regler verschieben, erneut hoeren."
+            "Buch waehlen, Backend waehlen, Play druecken, Regler verschieben, erneut hoeren."
         )
         help_label.setWordWrap(True)
         create_layout.addWidget(help_label)
@@ -133,7 +133,8 @@ class MainWindow(QMainWindow):
         form.addRow("Backend", self.backend_combo)
 
         self.backend_notice = QLabel(
-            "XTTS ist noch beta. Der Standardpfad fuer sofort nutzbare Buchkonvertierung ist Piper."
+            "XTTS ist der natuerlichere Pfad, wenn gute Sprecherprofile vorhanden sind. "
+            "Piper bleibt der einfache Offline-Fallback."
         )
         self.backend_notice.setWordWrap(True)
         self.backend_notice.setStyleSheet(BETA_LABEL_STYLE)
@@ -197,6 +198,10 @@ class MainWindow(QMainWindow):
         self.voice_lab_button.setStyleSheet(BETA_STYLE)
         self.voice_lab_button.clicked.connect(self.open_voice_lab)
         buttons.addWidget(self.voice_lab_button)
+        xtts_import_button = QPushButton("XTTS-Sprecher")
+        xtts_import_button.setStyleSheet(BETA_STYLE)
+        xtts_import_button.clicked.connect(self.open_voice_lab)
+        buttons.addWidget(xtts_import_button)
         create_layout.addLayout(buttons)
 
         self.progress_bar = QProgressBar()
@@ -455,6 +460,7 @@ class MainWindow(QMainWindow):
     def open_voice_lab(self) -> None:
         dialog = VoiceLabDialog(self.paths, self)
         dialog.exec()
+        self.refresh_voice_profiles()
 
     def open_find_best_setting(self) -> None:
         dialog = FindBestSettingDialog(self.paths, self.manager, self)

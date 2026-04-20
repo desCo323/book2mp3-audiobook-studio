@@ -63,6 +63,7 @@ XTTS note:
 
 - XTTS quality usually comes from good speaker reference samples, not from a fixed built-in voice list
 - the app can now import an `xtts-webui` style `speakers/` folder into reusable XTTS voice profiles
+- the live tuning dialog now supports both `piper` and `xtts` previews
 
 ## Project layout
 

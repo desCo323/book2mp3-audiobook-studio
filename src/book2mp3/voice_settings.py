@@ -11,7 +11,9 @@ from book2mp3.models import utc_now
 class VoiceSetting:
     setting_id: str
     display_name: str
+    backend: str
     voice_id: str
+    voice_profile_id: str
     preset_hint: str
     max_chars: int
     sentence_silence: float
@@ -39,7 +41,9 @@ def sanitize_setting_id(name: str) -> str:
 def save_voice_setting(
     root: Path,
     display_name: str,
+    backend: str,
     voice_id: str,
+    voice_profile_id: str,
     preset_hint: str,
     max_chars: int,
     sentence_silence: float,
@@ -52,7 +56,9 @@ def save_voice_setting(
     setting = VoiceSetting(
         setting_id=setting_id,
         display_name=display_name,
+        backend=backend,
         voice_id=voice_id,
+        voice_profile_id=voice_profile_id,
         preset_hint=preset_hint,
         max_chars=max_chars,
         sentence_silence=sentence_silence,
@@ -71,9 +77,15 @@ def save_voice_setting(
 def list_voice_settings(root: Path) -> list[VoiceSetting]:
     settings: list[VoiceSetting] = []
     for path in sorted(_settings_dir(root).glob("*.json")):
-        settings.append(VoiceSetting(**json.loads(path.read_text(encoding="utf-8"))))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload.setdefault("backend", "piper")
+        payload.setdefault("voice_profile_id", "")
+        settings.append(VoiceSetting(**payload))
     return sorted(settings, key=lambda item: item.updated_at, reverse=True)
 
 
 def load_voice_setting(root: Path, setting_id: str) -> VoiceSetting:
-    return VoiceSetting(**json.loads(_setting_path(root, setting_id).read_text(encoding="utf-8")))
+    payload = json.loads(_setting_path(root, setting_id).read_text(encoding="utf-8"))
+    payload.setdefault("backend", "piper")
+    payload.setdefault("voice_profile_id", "")
+    return VoiceSetting(**payload)

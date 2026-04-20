@@ -23,7 +23,9 @@ class PreviewSession:
     excerpt_offset: int
     created_at: str
     updated_at: str
+    backend: str = "piper"
     voice_id: str = ""
+    voice_profile_id: str = ""
     preset_hint: str = "balanced"
     last_preview_job_id: str = ""
     last_preview_output: str = ""
@@ -67,7 +69,9 @@ def _migrate_payload(payload: dict[str, object]) -> dict[str, object]:
         "excerpt_offset": int(data.get("excerpt_offset", 0) or 0),
         "created_at": str(data.get("created_at", utc_now())),
         "updated_at": str(data.get("updated_at", data.get("created_at", utc_now()))),
+        "backend": str(data.get("backend", "piper") or "piper"),
         "voice_id": str(data.get("voice_id", "") or ""),
+        "voice_profile_id": str(data.get("voice_profile_id", "") or ""),
         "preset_hint": str(data.get("preset_hint", "balanced") or "balanced"),
         "last_preview_job_id": str(data.get("last_preview_job_id", "") or ""),
         "last_preview_output": str(data.get("last_preview_output", "") or ""),
@@ -189,18 +193,37 @@ def refresh_preview_excerpt(paths: AppPaths, session_id: str) -> PreviewSession:
 def attach_preview_job(
     paths: AppPaths,
     session_id: str,
+    backend: str,
     voice_id: str,
+    voice_profile_id: str,
     preset_hint: str,
     job_id: str,
     output_mp3: str,
     status: str,
 ) -> PreviewSession:
     session = _load_session(paths, session_id)
+    session.backend = backend
     session.voice_id = voice_id
+    session.voice_profile_id = voice_profile_id
     session.preset_hint = preset_hint
     session.last_preview_job_id = job_id
     session.last_preview_output = output_mp3
     session.last_preview_status = status
+    _save_session(paths, session)
+    return session
+
+
+def update_preview_selection(
+    paths: AppPaths,
+    session_id: str,
+    backend: str,
+    voice_id: str,
+    voice_profile_id: str,
+) -> PreviewSession:
+    session = _load_session(paths, session_id)
+    session.backend = backend
+    session.voice_id = voice_id
+    session.voice_profile_id = voice_profile_id
     _save_session(paths, session)
     return session
 

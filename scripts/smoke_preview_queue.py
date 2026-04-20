@@ -46,7 +46,9 @@ def main() -> int:
         attach_preview_job(
             paths,
             session.session_id,
+            backend="piper",
             voice_id="de_DE-eva_k-x_low",
+            voice_profile_id="",
             preset_hint="natural",
             job_id=state.job_id,
             output_mp3=state.final_output_file,
