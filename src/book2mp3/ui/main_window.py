@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QSpinBox,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -27,7 +28,9 @@ from PySide6.QtWidgets import (
 from book2mp3.config import AppPaths
 from book2mp3.models import JobState
 from book2mp3.pipeline.jobs import JobManager
+from book2mp3.presets import QUALITY_PRESETS, get_preset
 from book2mp3.tts.piper import PiperBackend
+from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
 from book2mp3.ui.worker import JobWorker
 from book2mp3.utils.logging_utils import get_logger
 
@@ -81,6 +84,11 @@ class MainWindow(QMainWindow):
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
+        tabs = QTabWidget()
+        right_layout.addWidget(tabs)
+
+        create_tab = QWidget()
+        create_layout = QVBoxLayout(create_tab)
 
         form = QFormLayout()
         self.source_edit = QLineEdit()
@@ -93,6 +101,16 @@ class MainWindow(QMainWindow):
 
         self.voice_combo = QComboBox()
         form.addRow("Voice", self.voice_combo)
+
+        self.preset_combo = QComboBox()
+        for preset in QUALITY_PRESETS:
+            self.preset_combo.addItem(f"{preset.label} ({preset.preset_id})", preset.preset_id)
+        self.preset_combo.currentIndexChanged.connect(self.on_preset_changed)
+        form.addRow("Qualitaets-Preset", self.preset_combo)
+
+        self.preset_description = QLabel("")
+        self.preset_description.setWordWrap(True)
+        form.addRow("Preset-Info", self.preset_description)
 
         self.output_mode_combo = QComboBox()
         self.output_mode_combo.addItems(["segments", "single_file"])
@@ -111,7 +129,7 @@ class MainWindow(QMainWindow):
         self.keep_wav_checkbox = QCheckBox("Keep intermediate WAV files")
         form.addRow("", self.keep_wav_checkbox)
 
-        right_layout.addLayout(form)
+        create_layout.addLayout(form)
 
         buttons = QHBoxLayout()
         create_button = QPushButton("Create job")
@@ -132,21 +150,35 @@ class MainWindow(QMainWindow):
         voices_button = QPushButton("Reload voices")
         voices_button.clicked.connect(self.refresh_voice_list)
         buttons.addWidget(voices_button)
-        right_layout.addLayout(buttons)
+        voice_lab_button = QPushButton("Voice Lab")
+        voice_lab_button.clicked.connect(self.open_voice_lab)
+        buttons.addWidget(voice_lab_button)
+        create_layout.addLayout(buttons)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
-        right_layout.addWidget(self.progress_bar)
+        create_layout.addWidget(self.progress_bar)
 
         self.status_label = QLabel("Idle")
-        right_layout.addWidget(self.status_label)
+        create_layout.addWidget(self.status_label)
 
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        right_layout.addWidget(self.details)
+        create_layout.addWidget(self.details)
+
+        tabs.addTab(create_tab, "Jobs")
+
+        queue_tab = QWidget()
+        queue_layout = QVBoxLayout(queue_tab)
+        queue_layout.addWidget(QLabel("Die Queue ist persistent. Hohe Prioritaet wird zuerst abgearbeitet."))
+        self.queue_details = QPlainTextEdit()
+        self.queue_details.setReadOnly(True)
+        queue_layout.addWidget(self.queue_details)
+        tabs.addTab(queue_tab, "Queue")
 
         splitter.addWidget(right)
         splitter.setSizes([340, 940])
+        self.on_preset_changed()
 
     def _wrap(self, layout: QHBoxLayout) -> QWidget:
         widget = QWidget()
@@ -173,6 +205,7 @@ class MainWindow(QMainWindow):
         self.jobs_list.clear()
         jobs = self.manager.list_jobs()
         self.logger.info("Refreshing jobs list with %s jobs", len(jobs))
+        queue_lines = []
         for job in jobs:
             label = (
                 f"P{job.priority:02d} | {job.title} [{job.status}] "
@@ -181,6 +214,20 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, job.job_id)
             self.jobs_list.addItem(item)
+            queue_lines.append(
+                f"P{job.priority:02d} | {job.status:9s} | {job.title} | preset={job.preset_id} | voice={job.voice_id}"
+            )
+        self.queue_details.setPlainText("\n".join(queue_lines) or "Keine Jobs in der Queue.")
+
+    def on_preset_changed(self) -> None:
+        preset_id = self.preset_combo.currentData()
+        preset = get_preset(preset_id)
+        self.max_chars_spin.setValue(preset.max_chars)
+        self.output_mode_combo.setCurrentText(preset.output_mode)
+        self.keep_wav_checkbox.setChecked(preset.keep_wav)
+        self.preset_description.setText(
+            f"{preset.description} Satzpause: {preset.sentence_silence:.2f}s, Länge: {preset.length_scale:.2f}."
+        )
 
     def select_source_file(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
@@ -205,10 +252,13 @@ class MainWindow(QMainWindow):
         job = self.manager.create_job(
             source_path=source,
             voice_id=voice_id,
+            preset_id=self.preset_combo.currentData(),
             priority=self.priority_spin.value(),
             max_chars=self.max_chars_spin.value(),
             output_mode=self.output_mode_combo.currentText(),
             keep_wav=self.keep_wav_checkbox.isChecked(),
+            sentence_silence=get_preset(self.preset_combo.currentData()).sentence_silence,
+            length_scale=get_preset(self.preset_combo.currentData()).length_scale,
         )
         self.current_job_id = job.job_id
         self.logger.info("Created job %s", job.job_id)
@@ -226,13 +276,16 @@ class MainWindow(QMainWindow):
 
     def show_job(self, job: JobState) -> None:
         self.status_label.setText(
-            f"{job.status} | priority {job.priority} | chunks {job.completed_chunks}/{job.total_chunks} | voice {job.voice_id}"
+            f"{job.status} | priority {job.priority} | preset {job.preset_id} | chunks {job.completed_chunks}/{job.total_chunks} | voice {job.voice_id}"
         )
         self.progress_bar.setValue(
             int((job.completed_chunks / job.total_chunks) * 100) if job.total_chunks else 0
         )
         self.details.setPlainText("\n".join(job.logs[-200:]))
         self.priority_spin.setValue(job.priority)
+        preset_index = self.preset_combo.findData(job.preset_id)
+        if preset_index >= 0:
+            self.preset_combo.setCurrentIndex(preset_index)
         self.logger.debug("Displayed job %s with status %s", job.job_id, job.status)
 
     def start_selected_job(self) -> None:
@@ -263,6 +316,10 @@ class MainWindow(QMainWindow):
         self.refresh_jobs()
         self.show_job(job)
         self.maybe_start_next_job()
+
+    def open_voice_lab(self) -> None:
+        dialog = VoiceLabDialog(self.paths, self)
+        dialog.exec()
 
     def maybe_start_next_job(self) -> None:
         if self.worker and self.worker.isRunning():

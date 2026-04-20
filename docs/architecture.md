@@ -32,6 +32,8 @@ The new application keeps the staged model, but formalizes it into persistent jo
 - live status view
 - start / stop / resume controls
 - log output pane
+- quality presets
+- first Voice Lab dialog for future custom voices
 
 ### Job model
 
@@ -84,6 +86,23 @@ The first version is intentionally log-heavy.
 - failures include Python tracebacks
 
 The purpose is operational clarity first. Log volume can be tuned down later once real failure patterns are known.
+
+### Quality presets
+
+The app now exposes three first-pass presets:
+
+- `fast_cpu`
+- `balanced`
+- `natural`
+
+They currently tune:
+
+- chunk size
+- output mode
+- Piper sentence pause
+- Piper length scale
+
+This keeps the UX simple while still giving the user meaningful control over rhythm and reliability.
 
 ### TTS abstraction
 

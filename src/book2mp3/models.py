@@ -35,10 +35,13 @@ class JobState:
     status: str
     backend: str
     voice_id: str
+    preset_id: str
     priority: int
     output_mode: str
     keep_wav: bool
     max_chars: int
+    sentence_silence: float
+    length_scale: float
     source_file: str
     extracted_file: str
     final_output_file: str

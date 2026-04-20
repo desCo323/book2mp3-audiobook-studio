@@ -47,7 +47,14 @@ class PiperBackend:
             voices.append(path.stem)
         return sorted(set(voices))
 
-    def synthesize_to_wav(self, text: str, voice_id: str, wav_path: Path) -> None:
+    def synthesize_to_wav(
+        self,
+        text: str,
+        voice_id: str,
+        wav_path: Path,
+        sentence_silence: float = 0.2,
+        length_scale: float = 1.0,
+    ) -> None:
         wav_path.parent.mkdir(parents=True, exist_ok=True)
         model_path = self.voice_path(voice_id)
         payload = json.dumps({"text": text}, ensure_ascii=False) + "\n"
@@ -57,6 +64,10 @@ class PiperBackend:
             str(model_path),
             "--output_file",
             str(wav_path),
+            "--sentence_silence",
+            str(sentence_silence),
+            "--length_scale",
+            str(length_scale),
             "--json-input",
         ]
         env = os.environ.copy()

@@ -23,6 +23,7 @@ The repository was initialized from a loose folder, not from an existing local g
 - can stop and resume a job
 - can optionally concatenate segments into one MP3
 - writes detailed diagnostics to `workspace/logs/app.log` and per-job `job.log`
+- exposes quality presets and a first Voice Lab dialog
 
 ## Important constraints
 
@@ -34,8 +35,8 @@ The repository was initialized from a loose folder, not from an existing local g
 ## High-value next tasks
 
 1. Add a voice management screen that discovers installed voices and offers guided download.
-2. Add an XTTS backend with speaker sample folders for user-created voices.
-3. Add tests for extraction, chunking and resume semantics.
+2. Add an XTTS backend that consumes `workspace/voice_profiles/`.
+3. Extend automated smoke coverage beyond the current queue/resume script.
 4. Create platform-specific build scripts with `pyside6-deploy`.
 
 ## Files to read first

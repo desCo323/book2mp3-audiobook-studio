@@ -12,6 +12,7 @@ from book2mp3.models import ChunkRecord, JobState, utc_now
 from book2mp3.pipeline.audio import concat_mp3_files, wav_to_mp3
 from book2mp3.pipeline.chunking import split_text
 from book2mp3.pipeline.extract import extract_text
+from book2mp3.presets import get_preset
 from book2mp3.tts.piper import PiperBackend
 from book2mp3.utils.logging_utils import attach_job_file_logger, get_logger
 
@@ -34,10 +35,13 @@ class JobManager:
         self,
         source_path: Path,
         voice_id: str,
+        preset_id: str,
         priority: int,
         max_chars: int,
         output_mode: str,
         keep_wav: bool,
+        sentence_silence: float,
+        length_scale: float,
         backend: str = "piper",
     ) -> JobState:
         job_id = uuid.uuid4().hex[:12]
@@ -59,10 +63,13 @@ class JobManager:
             status="queued",
             backend=backend,
             voice_id=voice_id,
+            preset_id=preset_id,
             priority=priority,
             output_mode=output_mode,
             keep_wav=keep_wav,
             max_chars=max_chars,
+            sentence_silence=sentence_silence,
+            length_scale=length_scale,
             source_file=str(target_source),
             extracted_file=str(job_dir / "extracted" / "source.txt"),
             final_output_file=str(job_dir / "output" / f"{title}.mp3"),
@@ -114,6 +121,20 @@ class JobManager:
         state.append_log(f"Priority changed to {priority}")
         self.save_state(state)
         self.job_logger(state).info("Priority updated to %s", priority)
+        return state
+
+    def apply_preset(self, job_id: str, preset_id: str) -> JobState:
+        state = self.load_state(job_id)
+        preset = get_preset(preset_id)
+        state.preset_id = preset.preset_id
+        state.max_chars = preset.max_chars
+        state.output_mode = preset.output_mode
+        state.keep_wav = preset.keep_wav
+        state.sentence_silence = preset.sentence_silence
+        state.length_scale = preset.length_scale
+        state.append_log(f"Preset changed to {preset.label}")
+        self.save_state(state)
+        self.job_logger(state).info("Applied preset %s", preset.preset_id)
         return state
 
     def enqueue_job(self, job_id: str) -> JobState:
@@ -187,10 +208,11 @@ class JobManager:
         state.status = "running"
         self.save_state(state)
         logger.info(
-            "Starting queued job with %s chunks, priority=%s, output_mode=%s",
+            "Starting queued job with %s chunks, priority=%s, output_mode=%s, preset=%s",
             len(state.chunks),
             state.priority,
             state.output_mode,
+            state.preset_id,
         )
         for idx, chunk in enumerate(state.chunks, start=1):
             if should_stop and should_stop():
@@ -211,7 +233,13 @@ class JobManager:
                 logger.debug("Chunk source file: %s", chunk.text_file)
                 logger.debug("Chunk output wav: %s", chunk.wav_file)
                 logger.debug("Chunk output mp3: %s", chunk.mp3_file)
-                backend.synthesize_to_wav(text, state.voice_id, Path(chunk.wav_file))
+                backend.synthesize_to_wav(
+                    text,
+                    state.voice_id,
+                    Path(chunk.wav_file),
+                    sentence_silence=state.sentence_silence,
+                    length_scale=state.length_scale,
+                )
                 wav_to_mp3(Path(chunk.wav_file), Path(chunk.mp3_file), logger=logger)
                 if not state.keep_wav and Path(chunk.wav_file).exists():
                     Path(chunk.wav_file).unlink()

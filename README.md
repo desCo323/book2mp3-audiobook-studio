@@ -18,6 +18,7 @@ This repository now contains the first production-oriented foundation:
 - persistent job directories with `state.json`
 - persistent queue with priorities across restarts
 - extensive debug logging with app-level and job-level log files
+- quality presets for fast, balanced and natural reading
 - import pipeline for `TXT`, `PDF` and `EPUB`
 - sentence-aware chunking
 - resumable per-chunk synthesis
@@ -27,6 +28,32 @@ This repository now contains the first production-oriented foundation:
 - handover documentation for follow-up agents
 
 Voice cloning and an XTTS backend are prepared architecturally but not implemented in this first pass.
+
+## How Users Work With The App
+
+This README is intended to stay current with the actual software state.
+
+Typical workflow:
+
+1. Run `python scripts/bootstrap_runtime.py`
+2. Start the app with `book2mp3`
+3. Choose a `TXT`, `PDF` or `EPUB`
+4. Select a voice
+5. Select a quality preset
+6. Set priority if you want the project earlier in the queue
+7. Create the job
+8. Add more jobs if needed
+9. Let the queue run, stop it, or resume later
+
+Current user-facing features:
+
+- persistent queue across restarts
+- priority-based scheduling
+- chunk-based resume
+- multiple starter voices
+- quality presets: `Schnell`, `Balanciert`, `Natuerlich`
+- first Voice Lab dialog for collecting custom voice references
+- detailed logs for debugging
 
 ## Project layout
 
@@ -82,7 +109,16 @@ That fits the toolchain constraints better than a one-file build and keeps large
 
 ## Documentation
 
+- [User Guide](docs/user-guide.md)
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
 - [Voice Strategy](docs/voice-strategy.md)
 - [Next Agent Handover](docs/next-agent.md)
+
+## Smoke test
+
+For a queue and resume smoke test without the GUI:
+
+```bash
+python scripts/smoke_queue_resume.py
+```

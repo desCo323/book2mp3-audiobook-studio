@@ -1,0 +1,157 @@
+# User Guide
+
+This page is meant to be the current practical guide for people using `book2mp3`.
+
+## What The App Does
+
+`book2mp3` turns `EPUB`, `PDF` and `TXT` files into spoken audio projects.
+
+It does not process a whole book in one fragile step. Instead it:
+
+1. imports the source file
+2. extracts clean text
+3. splits the text into chunks
+4. synthesizes chunk by chunk
+5. exports MP3 segments or one combined MP3
+6. saves progress after every chunk
+
+That means jobs can be stopped and resumed safely.
+
+## First Start
+
+Install the runtime and starter voices:
+
+```bash
+python scripts/bootstrap_runtime.py
+```
+
+Then start the application:
+
+```bash
+book2mp3
+```
+
+## The Main Screen
+
+### Source file
+
+Choose a `TXT`, `PDF` or `EPUB`.
+
+### Voice
+
+Pick one of the installed Piper voices.
+
+Starter voices currently included by default:
+
+- `de_DE-eva_k-x_low`
+- `de_DE-kerstin-low`
+- `de_DE-ramona-low`
+- `en_US-amy-medium`
+- `en_US-kathleen-low`
+- `en_GB-alba-medium`
+- `en_GB-cori-medium`
+- `fr_FR-siwis-low`
+
+### Quality preset
+
+The preset controls chunk size and Piper narration behavior.
+
+- `Schnell`: smaller chunks, good for CPU machines and safer long runs
+- `Balanciert`: the recommended default
+- `Natuerlich`: slightly slower and calmer reading, more suited for listening quality
+
+### Output mode
+
+- `segments`: keep the result as many MP3 pieces
+- `single_file`: concatenate the generated MP3 pieces into one final MP3
+
+### Priority
+
+Higher priority jobs are processed earlier in the queue.
+
+Example:
+
+- `90` for urgent work
+- `50` for normal work
+- `10` for background work
+
+## Queue Behavior
+
+The queue is persistent.
+
+- you can create several projects
+- they are processed one after another
+- after a restart, interrupted running jobs go back to the queue
+- completed chunks are not regenerated on resume
+
+## Stop And Resume
+
+Use `Stop` to request a clean stop.
+
+The app will not cut the current chunk in half. It stops between chunks and saves the current state. After that:
+
+- select the job again
+- use `Start / Resume`
+- the app continues from the first unfinished chunk
+
+## Voice Lab
+
+The current `Voice Lab` is the preparation step for custom voices.
+
+What it does now:
+
+- stores custom speaker profiles
+- copies reference audio into `workspace/voice_profiles/`
+- saves a profile manifest
+- shows validation warnings
+
+What it does not do yet:
+
+- no XTTS synthesis backend yet
+- no direct voice cloning run yet
+
+Use it to collect speaker references now so they are ready for the next backend phase.
+
+## Logs And Troubleshooting
+
+Global app log:
+
+- `workspace/logs/app.log`
+
+Per-job log:
+
+- `workspace/jobs/<job-id>/job.log`
+
+Each job also stores:
+
+- `state.json`
+- extracted text
+- chunk files
+- generated MP3 files
+
+If something fails, these are the first places to inspect.
+
+## Useful Folders
+
+- `runtime/`: local Piper binaries
+- `voices/`: installed voice models
+- `workspace/jobs/`: all jobs and outputs
+- `workspace/voice_profiles/`: Voice Lab profiles
+
+## Smoke Test
+
+To verify queue and resume behavior without the GUI:
+
+```bash
+python scripts/smoke_queue_resume.py
+```
+
+## Current Limits
+
+- custom voice synthesis backend is not implemented yet
+- chapter-aware export is not finished yet
+- packaged desktop builds are not finished yet
+
+## Status Rule
+
+This guide should be updated whenever the user-facing workflow changes.
