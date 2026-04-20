@@ -124,6 +124,13 @@ class FindBestSettingDialog(QDialog):
             QMessageBox.warning(self, "Keine Quelle", "Bitte zuerst eine Buchquelle auswaehlen.")
             return
         voices = PiperBackend(self.paths.runtime, self.paths.voices).installed_voices()
+        if not voices:
+            QMessageBox.warning(
+                self,
+                "Keine Stimmen",
+                f"Es wurden keine Piper-Stimmen gefunden.\nGepruefter Ordner: {self.paths.voices}",
+            )
+            return
         session = create_preview_session(self.paths, self.current_source, voices)
         self.logger.info("Created preview session %s", session.session_id)
         self.refresh_sessions()
@@ -191,6 +198,11 @@ class FindBestSettingDialog(QDialog):
             )
             created += 1
         self.show_session(session.session_id)
+        parent = self.parent()
+        if parent and hasattr(parent, "refresh_jobs"):
+            parent.refresh_jobs()
+        if parent and hasattr(parent, "maybe_start_next_job"):
+            parent.maybe_start_next_job()
         QMessageBox.information(self, "Tests erzeugt", f"{created} Preview-Tests wurden in die Queue gelegt.")
 
     def choose_best(self) -> None:

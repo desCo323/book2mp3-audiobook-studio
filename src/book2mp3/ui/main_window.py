@@ -250,7 +250,10 @@ class MainWindow(QMainWindow):
         backend = PiperBackend(self.paths.runtime, self.paths.voices)
         voices = backend.installed_voices()
         self.voice_combo.clear()
-        self.voice_combo.addItems(voices)
+        if voices:
+            self.voice_combo.addItems(voices)
+        else:
+            self.voice_combo.addItem("No voices found")
         self.refresh_voice_profiles()
         self.logger.info("Loaded %s installed voices", len(voices))
         for voice_id in PREFERRED_VOICE_ORDER:
@@ -260,17 +263,21 @@ class MainWindow(QMainWindow):
                 break
         if not voices:
             self.status_label.setText(
-                "No voices found. Run scripts/bootstrap_runtime.py or add voice files to voices/."
+                f"No voices found. Checked voices in {self.paths.voices}. "
+                "Run scripts/bootstrap_runtime.py or add voice files to voices/."
             )
 
     def refresh_voice_profiles(self) -> None:
         self.voice_profile_combo.clear()
         profiles = list_voice_profiles(self.paths.voice_profiles)
-        for profile in profiles:
-            self.voice_profile_combo.addItem(
-                f"{profile.display_name} ({profile.target_language})",
-                profile.profile_id,
-            )
+        if profiles:
+            for profile in profiles:
+                self.voice_profile_combo.addItem(
+                    f"{profile.display_name} ({profile.target_language})",
+                    profile.profile_id,
+                )
+        else:
+            self.voice_profile_combo.addItem("No voice profiles found", "")
 
     def on_backend_changed(self) -> None:
         is_piper = self.backend_combo.currentText() == "piper"

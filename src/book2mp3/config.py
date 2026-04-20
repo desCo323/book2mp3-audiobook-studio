@@ -4,6 +4,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _has_contents(path: Path) -> bool:
+    return path.exists() and any(path.iterdir())
+
+
+def _prefer_local_or_parent(root: Path, relative: str) -> Path:
+    primary = root / relative
+    parent_candidate = root.parent / relative
+    if _has_contents(primary):
+        return primary
+    if _has_contents(parent_candidate):
+        return parent_candidate
+    return primary
+
+
 @dataclass(frozen=True)
 class AppPaths:
     root: Path
@@ -22,8 +36,8 @@ class AppPaths:
             root=root,
             workspace=workspace,
             jobs=workspace / "jobs",
-            runtime=root / "runtime",
-            voices=root / "voices",
+            runtime=_prefer_local_or_parent(root, "runtime"),
+            voices=_prefer_local_or_parent(root, "voices"),
             logs=workspace / "logs",
             voice_profiles=workspace / "voice_profiles",
             preview_sessions=workspace / "preview_sessions",
