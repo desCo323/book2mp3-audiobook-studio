@@ -67,6 +67,7 @@ This repository now includes:
 - `scripts/build_linux_portable_release.py`
 - `scripts/install_windows_bundle_packages.py`
 - `scripts/setup_xtts_runtime.py`
+- `scripts/install_xtts_linux_standalone_python.py`
 
 These launchers already target the final portable structure and intentionally fail if the bundle-local Python runtime is missing.
 
@@ -139,7 +140,21 @@ Reason:
 Recommended setup path:
 
 ```bash
-python scripts/setup_xtts_runtime.py runtime/xtts/linux --python /path/to/python3.11
+python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standalone
+```
+
+That path now:
+
+- downloads a relocatable Python 3.11 build from `astral-sh/python-build-standalone`
+- installs it directly into `runtime/xtts/linux`
+- installs CPU-first `torch` and `torchaudio` by default to avoid dragging huge CUDA dependencies into the portable runtime
+- optionally installs `TTS` into that dedicated runtime
+- writes both a standalone-Python manifest and an XTTS runtime manifest
+
+For a larger Linux bundle build, the optional XTTS runtime can also be included directly:
+
+```bash
+python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --include-xtts-runtime
 ```
 
 ## Sources

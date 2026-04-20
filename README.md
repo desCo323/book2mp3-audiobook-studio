@@ -29,7 +29,7 @@ This repository now contains the first production-oriented foundation:
 - runtime bootstrap script for `Piper`
 - handover documentation for follow-up agents
 
-Voice cloning is now modeled as an optional XTTS runtime path, but the heavy XTTS runtime still needs to be installed separately.
+Voice cloning is now modeled as an optional XTTS runtime path. Linux now has an automated standalone Python 3.11 bootstrap for that dedicated XTTS runtime.
 
 ## How Users Work With The App
 
@@ -162,6 +162,7 @@ python scripts/smoke_bundle_build.py
 python scripts/smoke_portable_linux_runtime.py
 python scripts/smoke_linux_release_build.py
 python scripts/smoke_xtts_job_model.py
+python scripts/smoke_xtts_linux_runtime_bootstrap.py
 ```
 
 Current validated smoke coverage:
@@ -195,3 +196,11 @@ Or do the larger Linux release step in one command:
 ```bash
 python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --archive
 ```
+
+To bootstrap the optional Linux XTTS runtime with a dedicated standalone Python 3.11:
+
+```bash
+python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standalone
+```
+
+This setup now prefers CPU Torch wheels by default so the portable runtime does not accidentally pull the full CUDA stack.

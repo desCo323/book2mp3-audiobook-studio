@@ -23,6 +23,9 @@ from book2mp3.config import AppPaths
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_lab import create_voice_profile
 
+BETA_STYLE = "background-color: #fff1cc; border: 1px solid #d18b00; color: #6b4b00;"
+BETA_LABEL_STYLE = "color: #9a5c00; font-weight: bold;"
+
 
 class VoiceLabDialog(QDialog):
     def __init__(self, paths: AppPaths, parent: QWidget | None = None) -> None:
@@ -45,7 +48,16 @@ class VoiceLabDialog(QDialog):
             "XTTS nutzt diese Profile spaeter direkt fuer Voice Cloning."
         )
         intro.setWordWrap(True)
+        intro.setStyleSheet(BETA_STYLE)
         layout.addWidget(intro)
+
+        self.beta_notice = QLabel(
+            "Orange markiert: vorbereitet, aber noch nicht vollstaendig produktionsreif. "
+            "XTTS/Custom-Voice-Profile sind noch ein Beta-Pfad."
+        )
+        self.beta_notice.setWordWrap(True)
+        self.beta_notice.setStyleSheet(BETA_LABEL_STYLE)
+        layout.addWidget(self.beta_notice)
 
         form = QFormLayout()
         self.name_edit = QLineEdit()
@@ -54,7 +66,8 @@ class VoiceLabDialog(QDialog):
         self.language_combo.addItems(["de", "en", "fr", "es", "it", "nl", "pl"])
         form.addRow("Zielsprache", self.language_combo)
         self.backend_combo = QComboBox()
-        self.backend_combo.addItems(["xtts_v2", "custom_pipeline_planned"])
+        self.backend_combo.addItems(["xtts_v2 (beta)", "custom_pipeline_planned (not available)"])
+        self.backend_combo.setStyleSheet(BETA_STYLE)
         form.addRow("Backend", self.backend_combo)
         layout.addLayout(form)
 
@@ -121,7 +134,7 @@ class VoiceLabDialog(QDialog):
             self.paths.voice_profiles,
             display_name=name,
             target_language=self.language_combo.currentText(),
-            backend=self.backend_combo.currentText(),
+            backend=self.backend_combo.currentText().split(" ", 1)[0],
             notes=self.notes_edit.toPlainText().strip(),
             sample_paths=self.sample_paths,
         )
@@ -141,5 +154,6 @@ class VoiceLabDialog(QDialog):
         for profile in profiles:
             self.profile_list.addItem(profile.parent.name)
         self.details.setPlainText(
-            "Vorhandene Voice-Lab-Profile werden unter workspace/voice_profiles gespeichert."
+            "Vorhandene Voice-Lab-Profile werden unter workspace/voice_profiles gespeichert.\n"
+            "XTTS/Custom Voices sind im UI farblich als Beta markiert."
         )

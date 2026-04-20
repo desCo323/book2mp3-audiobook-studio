@@ -26,6 +26,8 @@ The repository was initialized from a loose folder, not from an existing local g
 - writes detailed diagnostics to `workspace/logs/app.log` and per-job `job.log`
 - exposes quality presets and a first Voice Lab dialog
 - includes a defined portable bundle layout with app-local Python requirement
+- marks unfinished XTTS/custom-voice UI paths in orange beta styling
+- can bootstrap a dedicated Linux XTTS runtime with standalone Python 3.11
 
 ## Important constraints
 
@@ -37,9 +39,9 @@ The repository was initialized from a loose folder, not from an existing local g
 ## High-value next tasks
 
 1. Add a voice management screen that discovers installed voices and offers guided download.
-2. Add an XTTS backend that consumes `workspace/voice_profiles/`.
-3. Create platform-specific bundle builders that actually populate `python/linux/` and `python/windows/`.
-4. Extend automated smoke coverage beyond the current queue/resume script.
+2. Make the XTTS runtime path run an actual synthesis smoke test on Linux with the new CPU-first torch install path.
+3. Push the Windows self-contained bundle path from prepared scripts to a fully validated build.
+4. Extend GUI automation beyond the current smoke scripts.
 
 ## Files to read first
 
@@ -52,7 +54,7 @@ The repository was initialized from a loose folder, not from an existing local g
 
 ## Known gaps
 
-- no automated tests yet
-- no XTTS backend yet
-- no finished packaging scripts yet
-- no remote push confirmed yet
+- Windows self-contained packaging is prepared but not yet practically validated end-to-end
+- XTTS runtime packaging exists, but a full heavyweight synthesis smoke path is still missing
+- plain `pip install TTS` on Linux tries to pull very large CUDA dependencies; the runtime bootstrap now defaults to CPU-first torch wheels to avoid that
+- GUI interaction testing is still lighter than the non-GUI smoke coverage

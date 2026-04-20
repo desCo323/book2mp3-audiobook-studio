@@ -113,13 +113,14 @@ What it does now:
 - copies reference audio into `workspace/voice_profiles/`
 - saves a profile manifest
 - shows validation warnings
+- can be used by XTTS jobs once a dedicated XTTS runtime is installed
 
 What it does not do yet:
 
-- no XTTS synthesis backend yet
-- no direct voice cloning run yet
+- no one-click custom-voice training workflow
+- no built-in guided recording wizard yet
 
-Use it to collect speaker references now so they are ready for the next backend phase.
+Use it to collect speaker references and then install the optional XTTS runtime when you want to test cloned-voice generation.
 
 ## Logs And Troubleshooting
 
@@ -157,7 +158,8 @@ python scripts/smoke_queue_resume.py
 
 ## Current Limits
 
-- custom voice synthesis backend is not implemented yet
+- the optional XTTS path needs its own dedicated runtime setup
+- Windows XTTS packaging is not yet validated end-to-end
 - chapter-aware export is not finished yet
 - packaged desktop builds are not finished yet
 - the repo source tree is not yet the final bundled release folder

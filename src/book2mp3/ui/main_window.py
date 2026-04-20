@@ -48,6 +48,9 @@ PREFERRED_VOICE_ORDER = [
     "fr_FR-siwis-low",
 ]
 
+BETA_STYLE = "background-color: #fff1cc; border: 1px solid #d18b00; color: #6b4b00;"
+BETA_LABEL_STYLE = "color: #9a5c00; font-weight: bold;"
+
 
 class MainWindow(QMainWindow):
     def __init__(self, paths: AppPaths) -> None:
@@ -105,6 +108,14 @@ class MainWindow(QMainWindow):
         help_label.setWordWrap(True)
         create_layout.addWidget(help_label)
 
+        beta_legend = QLabel(
+            "Orange markiert: vorbereitet oder beta, aber noch nicht komplett produktionsreif. "
+            "Aktuell betrifft das XTTS und Custom-Voice-Funktionen."
+        )
+        beta_legend.setWordWrap(True)
+        beta_legend.setStyleSheet(BETA_STYLE)
+        create_layout.addWidget(beta_legend)
+
         form = QFormLayout()
         self.source_edit = QLineEdit()
         browse_button = QPushButton("Browse")
@@ -121,6 +132,13 @@ class MainWindow(QMainWindow):
         self.backend_combo.addItems(["piper", "xtts"])
         self.backend_combo.currentIndexChanged.connect(self.on_backend_changed)
         form.addRow("Backend", self.backend_combo)
+
+        self.backend_notice = QLabel(
+            "XTTS ist noch beta. Der Standardpfad fuer sofort nutzbare Buchkonvertierung ist Piper."
+        )
+        self.backend_notice.setWordWrap(True)
+        self.backend_notice.setStyleSheet(BETA_LABEL_STYLE)
+        form.addRow("XTTS-Hinweis", self.backend_notice)
 
         self.voice_profile_combo = QComboBox()
         form.addRow("Voice profile", self.voice_profile_combo)
@@ -176,9 +194,10 @@ class MainWindow(QMainWindow):
         find_best_button = QPushButton("Find Best Setting")
         find_best_button.clicked.connect(self.open_find_best_setting)
         buttons.addWidget(find_best_button)
-        voice_lab_button = QPushButton("Voice Lab")
-        voice_lab_button.clicked.connect(self.open_voice_lab)
-        buttons.addWidget(voice_lab_button)
+        self.voice_lab_button = QPushButton("Voice Lab (beta)")
+        self.voice_lab_button.setStyleSheet(BETA_STYLE)
+        self.voice_lab_button.clicked.connect(self.open_voice_lab)
+        buttons.addWidget(self.voice_lab_button)
         create_layout.addLayout(buttons)
 
         self.progress_bar = QProgressBar()
@@ -257,6 +276,14 @@ class MainWindow(QMainWindow):
         is_piper = self.backend_combo.currentText() == "piper"
         self.voice_combo.setEnabled(is_piper)
         self.voice_profile_combo.setEnabled(not is_piper)
+        if is_piper:
+            self.backend_combo.setStyleSheet("")
+            self.voice_profile_combo.setStyleSheet("")
+            self.backend_notice.hide()
+        else:
+            self.backend_combo.setStyleSheet(BETA_STYLE)
+            self.voice_profile_combo.setStyleSheet(BETA_STYLE)
+            self.backend_notice.show()
 
     def refresh_jobs(self) -> None:
         self.jobs_list.clear()
