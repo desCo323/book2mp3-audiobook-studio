@@ -81,6 +81,12 @@ What it does:
 - renders a preview immediately from the dialog with one play button
 - saves the chosen setup as a reusable voice setting
 
+Voice selection:
+
+- voices are grouped through a language filter so you can test German, English, French and other languages separately
+- the app now prefers better `medium` and `high` Piper voices first
+- if you want the most natural path, XTTS remains the better target than Piper, but Piper is still the easier offline default
+
 Simple workflow:
 
 - choose the book

@@ -3,11 +3,16 @@ from __future__ import annotations
 import argparse
 import io
 import platform
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
 
 import requests
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from book2mp3.voice_catalog import DEFAULT_VOICE_PACK
 
 
 PIPER_RELEASES = {
@@ -16,19 +21,7 @@ PIPER_RELEASES = {
 }
 
 VOICE_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve"
-DEFAULT_VOICES = [
-    "de_DE-thorsten_emotional-medium",
-    "de_DE-thorsten-high",
-    "de_DE-mls-medium",
-    "en_US-amy-medium",
-    "en_US-lessac-high",
-    "en_US-libritts-high",
-    "en_GB-alba-medium",
-    "en_GB-cori-high",
-    "en_GB-jenny_dioco-medium",
-    "fr_FR-siwis-medium",
-    "de_DE-kerstin-low",
-]
+DEFAULT_VOICES = DEFAULT_VOICE_PACK
 
 
 def project_root() -> Path:

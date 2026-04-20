@@ -121,6 +121,13 @@ Ship two Piper voice tiers:
 - `standard natural`: curated `medium`/`high` pack for people who care about audiobook quality
 - `cpu fallback`: one or two `low` voices for older machines and quick previews
 
+Also keep the UI sorted by language, otherwise a larger voice pool becomes harder to use instead of easier.
+
+Important product decision:
+
+- `Piper` should offer many offline voices and fast language-based browsing
+- `XTTS` should remain the "sounds best" path when a user wants clearly more human narration
+
 ## Sources
 
 - Coqui XTTS docs: https://docs.coqui.ai/en/latest/models/xtts.html

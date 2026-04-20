@@ -36,19 +36,13 @@ from book2mp3.preview_sessions import (
 )
 from book2mp3.tts.piper import PiperBackend
 from book2mp3.utils.logging_utils import get_logger
+from book2mp3.voice_catalog import (
+    filter_voice_ids,
+    format_voice_label,
+    language_choices,
+    voice_language_code,
+)
 from book2mp3.voice_settings import list_voice_settings, save_voice_setting
-
-PREFERRED_TUNING_VOICES = [
-    "de_DE-thorsten_emotional-medium",
-    "de_DE-thorsten-high",
-    "de_DE-mls-medium",
-    "en_US-lessac-high",
-    "en_US-libritts-high",
-    "en_GB-cori-high",
-    "en_GB-jenny_dioco-medium",
-    "fr_FR-siwis-medium",
-    "de_DE-kerstin-low",
-]
 
 
 class LivePreviewWorker(QThread):
@@ -162,6 +156,9 @@ class FindBestSettingDialog(QDialog):
         form = QFormLayout()
         self.voice_combo = QComboBox()
         form.addRow("Stimme", self.voice_combo)
+        self.voice_language_combo = QComboBox()
+        self.voice_language_combo.currentIndexChanged.connect(self.rebuild_voice_combo)
+        form.addRow("Sprache", self.voice_language_combo)
 
         self.assistant_combo = QComboBox()
         self.assistant_combo.addItem("Roman / Story", "novel")
@@ -241,11 +238,23 @@ class FindBestSettingDialog(QDialog):
 
     def refresh_voice_list(self) -> None:
         self.installed_voices = PiperBackend(self.paths.runtime, self.paths.voices).installed_voices()
+        self.voice_language_combo.blockSignals(True)
+        self.voice_language_combo.clear()
+        for code, label in language_choices(self.installed_voices):
+            self.voice_language_combo.addItem(label, code)
+        self.voice_language_combo.blockSignals(False)
+        self.rebuild_voice_combo()
+
+    def rebuild_voice_combo(self) -> None:
+        selected_voice_id = self.voice_combo.currentData() or self.voice_combo.currentText().strip()
+        language_code = self.voice_language_combo.currentData() or ""
+        visible_voices = filter_voice_ids(self.installed_voices, language_code)
         self.voice_combo.clear()
-        ordered = [voice_id for voice_id in PREFERRED_TUNING_VOICES if voice_id in self.installed_voices]
-        ordered.extend(voice_id for voice_id in self.installed_voices if voice_id not in ordered)
-        for voice_id in ordered:
-            self.voice_combo.addItem(voice_id, voice_id)
+        for voice_id in visible_voices:
+            self.voice_combo.addItem(format_voice_label(voice_id), voice_id)
+        if visible_voices:
+            selected_index = self.voice_combo.findData(selected_voice_id)
+            self.voice_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
 
     def restore_last_session(self) -> None:
         sessions = list_preview_sessions(self.paths)
@@ -288,6 +297,9 @@ class FindBestSettingDialog(QDialog):
         self.current_session_id = session_id
         self.excerpt_view.setPlainText(session.preview_excerpt)
         if session.voice_id:
+            language_index = self.voice_language_combo.findData(voice_language_code(session.voice_id))
+            if language_index >= 0:
+                self.voice_language_combo.setCurrentIndex(language_index)
             voice_index = self.voice_combo.findData(session.voice_id)
             if voice_index >= 0:
                 self.voice_combo.setCurrentIndex(voice_index)
@@ -435,6 +447,9 @@ class FindBestSettingDialog(QDialog):
             QMessageBox.warning(self, "Keine Settings", "Es gibt noch kein gespeichertes Voice-Setting.")
             return
         setting = settings[0]
+        language_index = self.voice_language_combo.findData(voice_language_code(setting.voice_id))
+        if language_index >= 0:
+            self.voice_language_combo.setCurrentIndex(language_index)
         voice_index = self.voice_combo.findData(setting.voice_id)
         if voice_index >= 0:
             self.voice_combo.setCurrentIndex(voice_index)
