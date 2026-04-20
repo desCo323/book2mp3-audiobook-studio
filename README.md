@@ -59,6 +59,11 @@ Current user-facing features:
 - backend choice between `piper` and `xtts`
 - detailed logs for debugging
 
+XTTS note:
+
+- XTTS quality usually comes from good speaker reference samples, not from a fixed built-in voice list
+- the app can now import an `xtts-webui` style `speakers/` folder into reusable XTTS voice profiles
+
 ## Project layout
 
 - `src/book2mp3/`: application code

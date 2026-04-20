@@ -149,6 +149,8 @@ The current `Voice Lab` is the preparation step for custom voices.
 What it does now:
 
 - stores custom speaker profiles
+- imports `xtts-webui` style speaker folders into XTTS profiles
+- keeps those imported profiles available in the main XTTS voice-profile selector
 - copies reference audio into `workspace/voice_profiles/`
 - saves a profile manifest
 - shows validation warnings

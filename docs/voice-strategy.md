@@ -128,6 +128,11 @@ Important product decision:
 - `Piper` should offer many offline voices and fast language-based browsing
 - `XTTS` should remain the "sounds best" path when a user wants clearly more human narration
 
+The practical XTTS equivalent of a "voice list" is a speaker-sample library.
+
+- an `xtts-webui` style `speakers/` folder should be importable directly
+- each speaker folder should become a reusable XTTS voice profile in the app
+
 ## Sources
 
 - Coqui XTTS docs: https://docs.coqui.ai/en/latest/models/xtts.html

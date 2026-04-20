@@ -281,7 +281,7 @@ class MainWindow(QMainWindow):
         if profiles:
             for profile in profiles:
                 self.voice_profile_combo.addItem(
-                    f"{profile.display_name} ({profile.target_language})",
+                    f"{profile.target_language} | {profile.display_name}",
                     profile.profile_id,
                 )
         else:

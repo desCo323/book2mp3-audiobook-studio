@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from book2mp3.config import AppPaths
+from book2mp3.xtts_speakers import import_xtts_webui_speakers
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_lab import create_voice_profile
 
@@ -75,6 +76,9 @@ class VoiceLabDialog(QDialog):
         add_samples_button = QPushButton("Samples hinzufuegen")
         add_samples_button.clicked.connect(self.add_samples)
         sample_row.addWidget(add_samples_button)
+        import_webui_button = QPushButton("XTTS-WebUI-Sprecher importieren")
+        import_webui_button.clicked.connect(self.import_webui_speakers)
+        sample_row.addWidget(import_webui_button)
         clear_samples_button = QPushButton("Samples leeren")
         clear_samples_button.clicked.connect(self.clear_samples)
         sample_row.addWidget(clear_samples_button)
@@ -121,6 +125,33 @@ class VoiceLabDialog(QDialog):
     def clear_samples(self) -> None:
         self.sample_paths.clear()
         self.samples_list.clear()
+
+    def import_webui_speakers(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "XTTS-WebUI speakers Ordner waehlen",
+            str(self.paths.root),
+        )
+        if not folder:
+            return
+        manifests = import_xtts_webui_speakers(
+            self.paths,
+            Path(folder),
+            fallback_language=self.language_combo.currentText(),
+        )
+        self.refresh_existing_profiles()
+        self.details.setPlainText(
+            json.dumps(
+                {"imported_profiles": [manifest.parent.name for manifest in manifests], "source_folder": folder},
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        QMessageBox.information(
+            self,
+            "XTTS-Sprecher importiert",
+            f"{len(manifests)} XTTS-Sprecherprofile aus dem WebUI-Ordner importiert.",
+        )
 
     def save_profile(self) -> None:
         name = self.name_edit.text().strip()
