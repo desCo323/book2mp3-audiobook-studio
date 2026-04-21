@@ -67,6 +67,17 @@ def import_xtts_webui_speakers(
 
 
 def find_candidate_speaker_roots(paths: AppPaths) -> list[Path]:
+    home = Path.home()
+    scan_roots = [
+        paths.root,
+        paths.root.parent,
+        home,
+        home / "Documents",
+        home / "Downloads",
+        home / "Desktop",
+        Path("/mnt"),
+        Path("/media"),
+    ]
     candidates = [
         paths.root / "speakers",
         paths.root.parent / "speakers",
@@ -78,10 +89,38 @@ def find_candidate_speaker_roots(paths: AppPaths) -> list[Path]:
         paths.runtime / "xtts" / "linux" / "speakers",
         paths.runtime / "xtts" / "windows" / "speakers",
     ]
+    install_name_hints = (
+        "xtts-webui",
+        "xtts_webui",
+        "xtts webui",
+        "xtts",
+        "coqui",
+        "tts",
+        "webui",
+    )
+    for root in scan_roots:
+        if not root.exists():
+            continue
+        try:
+            for child in root.iterdir():
+                if not child.is_dir():
+                    continue
+                lowered = child.name.lower()
+                if any(hint in lowered for hint in install_name_hints):
+                    candidates.append(child / "speakers")
+                    candidates.append(child / "webui" / "speakers")
+                    candidates.append(child / "xtts-webui" / "speakers")
+                    candidates.append(child / "xtts_webui" / "speakers")
+                    candidates.append(child / "data" / "speakers")
+        except PermissionError:
+            continue
     result: list[Path] = []
     seen: set[Path] = set()
     for candidate in candidates:
-        resolved = candidate.resolve()
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
         if resolved in seen:
             continue
         seen.add(resolved)

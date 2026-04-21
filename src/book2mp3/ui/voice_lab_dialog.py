@@ -167,7 +167,8 @@ class VoiceLabDialog(QDialog):
                 self,
                 "Keine XTTS-Sprecher gefunden",
                 "Es wurde kein befuellter speakers-Ordner gefunden. "
-                "Lege einen XTTS-WebUI speakers-Ordner unter src/speakers, speakers/ oder xtts-webui/speakers ab.",
+                "Gesucht wird jetzt auch in Home, Documents, Downloads sowie typischen xtts-webui-Ordnern unter /mnt und /media. "
+                "Lege sonst einen XTTS-WebUI speakers-Ordner unter src/speakers, speakers/ oder xtts-webui/speakers ab.",
             )
             return
         self.details.setPlainText(

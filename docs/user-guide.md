@@ -90,6 +90,7 @@ Voice selection:
 - XTTS uses imported speaker profiles instead of a fixed internal voice list
 - in the main job screen, selecting `xtts` now switches to the recommended `Premium Natuerlich` preset automatically
 - the `XTTS-Sprecher` button now first tries to auto-import a local `speakers/` folder before opening Voice Lab
+- the auto-import now also scans common old `xtts-webui` installation folders in home, documents, downloads and mounted drives
 
 Simple workflow:
 
