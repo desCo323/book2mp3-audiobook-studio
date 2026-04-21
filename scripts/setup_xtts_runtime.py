@@ -7,6 +7,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+XTTS_COMPAT_PACKAGES = [
+    "transformers<5",
+]
 
 
 def parse_args() -> argparse.Namespace:
@@ -87,7 +90,8 @@ def main() -> int:
             )
             installed_packages.extend(["torch[cpu]", "torchaudio[cpu]"])
         run([str(python_bin), "-m", "pip", "install", "TTS"])
-        installed_packages.append("TTS")
+        run([str(python_bin), "-m", "pip", "install", *XTTS_COMPAT_PACKAGES])
+        installed_packages.extend(["TTS", *XTTS_COMPAT_PACKAGES])
 
     manifest = {
         "runtime_root": str(runtime_root),

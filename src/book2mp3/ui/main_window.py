@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from book2mp3.app_settings import AppSettings, load_app_settings, reset_workspace_state, save_app_settings
 from book2mp3.config import AppPaths
 from book2mp3.models import JobState
 from book2mp3.pipeline.jobs import JobManager
@@ -37,7 +38,7 @@ from book2mp3.tts.xtts import XttsBackend
 from book2mp3.ui.find_best_setting_dialog import FindBestSettingDialog
 from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
 from book2mp3.ui.worker import JobWorker
-from book2mp3.utils.logging_utils import get_logger
+from book2mp3.utils.logging_utils import configure_logging, get_logger
 from book2mp3.voice_catalog import (
     filter_voice_ids,
     format_voice_label,
@@ -55,6 +56,7 @@ class MainWindow(QMainWindow):
     def __init__(self, paths: AppPaths) -> None:
         super().__init__()
         self.paths = paths
+        self.app_settings = load_app_settings(paths.app_settings_file)
         self.manager = JobManager(paths)
         self.worker: JobWorker | None = None
         self.current_job_id: str | None = None
@@ -87,7 +89,21 @@ class MainWindow(QMainWindow):
         self.jobs_list = QListWidget()
         self.jobs_list.itemSelectionChanged.connect(self.on_job_selected)
         left_layout.addWidget(self.jobs_list)
-        refresh_button = QPushButton("Refresh")
+        queue_button_row = QHBoxLayout()
+        move_top_button = QPushButton("Ganz hoch")
+        move_top_button.clicked.connect(lambda: self.move_selected_job("top"))
+        queue_button_row.addWidget(move_top_button)
+        move_up_button = QPushButton("Hoch")
+        move_up_button.clicked.connect(lambda: self.move_selected_job("up"))
+        queue_button_row.addWidget(move_up_button)
+        move_down_button = QPushButton("Runter")
+        move_down_button.clicked.connect(lambda: self.move_selected_job("down"))
+        queue_button_row.addWidget(move_down_button)
+        delete_button = QPushButton("Loeschen")
+        delete_button.clicked.connect(self.delete_selected_job)
+        queue_button_row.addWidget(delete_button)
+        left_layout.addLayout(queue_button_row)
+        refresh_button = QPushButton("Queue neu laden")
         refresh_button.clicked.connect(self.refresh_jobs)
         left_layout.addWidget(refresh_button)
         splitter.addWidget(left)
@@ -102,12 +118,11 @@ class MainWindow(QMainWindow):
 
         help_label = QLabel(
             "Schnellstart:\n"
-            "1. Quelle waehlen.\n"
-            "2. Stimme und Preset waehlen.\n"
+            "1. Buch waehlen.\n"
+            "2. Stimme, Qualitaets-Preset und Ausgabeart festlegen.\n"
             "3. Job erzeugen.\n"
-            "4. Mehrere Jobs koennen nacheinander in der Queue liegen.\n\n"
-            "Tipp: Mit 'Find Best Setting' oeffnest du den einfachen Voice-Tuning-Modus: "
-            "Buch waehlen, Backend waehlen, Play druecken, Regler verschieben, erneut hoeren."
+            "4. Links kannst du Jobs in der Queue verschieben oder loeschen.\n\n"
+            "Tipp: 'Find Best Setting' ist der Live-Test fuer Stimme, Preset und Dateiausgabe."
         )
         help_label.setWordWrap(True)
         create_layout.addWidget(help_label)
@@ -122,15 +137,15 @@ class MainWindow(QMainWindow):
 
         form = QFormLayout()
         self.source_edit = QLineEdit()
-        browse_button = QPushButton("Browse")
+        browse_button = QPushButton("Buch waehlen")
         browse_button.clicked.connect(self.select_source_file)
         source_row = QHBoxLayout()
         source_row.addWidget(self.source_edit)
         source_row.addWidget(browse_button)
-        form.addRow("Source file", self._wrap(source_row))
+        form.addRow("Quelle", self._wrap(source_row))
 
         self.voice_combo = QComboBox()
-        form.addRow("Voice", self.voice_combo)
+        form.addRow("Piper-Stimme", self.voice_combo)
         self.voice_language_combo = QComboBox()
         self.voice_language_combo.currentIndexChanged.connect(self.rebuild_voice_combo)
         form.addRow("Sprache", self.voice_language_combo)
@@ -154,7 +169,7 @@ class MainWindow(QMainWindow):
 
         self.voice_profile_combo = QComboBox()
         self.voice_profile_combo.currentIndexChanged.connect(self.refresh_selected_voice_profile)
-        form.addRow("Voice profile", self.voice_profile_combo)
+        form.addRow("XTTS-Profil", self.voice_profile_combo)
         self.voice_profile_hint = QLabel("")
         self.voice_profile_hint.setWordWrap(True)
         form.addRow("XTTS-Profile", self.voice_profile_hint)
@@ -184,41 +199,54 @@ class MainWindow(QMainWindow):
         form.addRow("Preset-Info", self.preset_description)
 
         self.output_mode_combo = QComboBox()
-        self.output_mode_combo.addItems(["segments", "single_file"])
-        form.addRow("Output mode", self.output_mode_combo)
+        self.output_mode_combo.addItem("Eine grosse Enddatei", "single_file")
+        self.output_mode_combo.addItem("Enddateien alle X Minuten", "timed_parts")
+        self.output_mode_combo.addItem("Nur kleine Teil-MP3s behalten", "segments")
+        form.addRow("Finale Ausgabe", self.output_mode_combo)
+
+        self.target_part_minutes_spin = QSpinBox()
+        self.target_part_minutes_spin.setRange(1, 180)
+        self.target_part_minutes_spin.setValue(15)
+        self.target_part_minutes_spin.setSuffix(" min")
+        form.addRow("Laenge pro Enddatei", self.target_part_minutes_spin)
 
         self.max_chars_spin = QSpinBox()
         self.max_chars_spin.setRange(80, 1200)
         self.max_chars_spin.setValue(260)
-        form.addRow("Max chars per chunk", self.max_chars_spin)
+        form.addRow("Max Zeichen pro Chunk", self.max_chars_spin)
 
         self.priority_spin = QSpinBox()
         self.priority_spin.setRange(1, 100)
         self.priority_spin.setValue(50)
-        form.addRow("Priority", self.priority_spin)
+        form.addRow("Prioritaet", self.priority_spin)
 
-        self.keep_wav_checkbox = QCheckBox("Keep intermediate WAV files")
-        form.addRow("", self.keep_wav_checkbox)
+        self.keep_wav_checkbox = QCheckBox("Zwischen-WAV-Dateien behalten")
+        form.addRow("Debug-Dateien", self.keep_wav_checkbox)
+
+        self.debug_logging_checkbox = QCheckBox("Sehr detailiertes Debug-Logging")
+        self.debug_logging_checkbox.setChecked(self.app_settings.debug_logging)
+        self.debug_logging_checkbox.toggled.connect(self.toggle_debug_logging)
+        form.addRow("Logging", self.debug_logging_checkbox)
 
         create_layout.addLayout(form)
 
         buttons = QHBoxLayout()
-        create_button = QPushButton("Create job")
+        create_button = QPushButton("Job erzeugen")
         create_button.clicked.connect(self.create_job)
         buttons.addWidget(create_button)
         self.start_button = QPushButton("Start / Resume")
         self.start_button.clicked.connect(self.start_selected_job)
         buttons.addWidget(self.start_button)
-        self.queue_button = QPushButton("Queue selected")
+        self.queue_button = QPushButton("In Queue")
         self.queue_button.clicked.connect(self.queue_selected_job)
         buttons.addWidget(self.queue_button)
         self.stop_button = QPushButton("Stop")
         self.stop_button.clicked.connect(self.stop_current_job)
         buttons.addWidget(self.stop_button)
-        self.priority_button = QPushButton("Apply priority")
+        self.priority_button = QPushButton("Prioritaet anwenden")
         self.priority_button.clicked.connect(self.apply_priority_to_selected)
         buttons.addWidget(self.priority_button)
-        voices_button = QPushButton("Reload voices")
+        voices_button = QPushButton("Stimmen neu laden")
         voices_button.clicked.connect(self.refresh_voice_list)
         buttons.addWidget(voices_button)
         find_best_button = QPushButton("Find Best Setting")
@@ -236,6 +264,9 @@ class MainWindow(QMainWindow):
         xtts_starter_button.setStyleSheet(BETA_STYLE)
         xtts_starter_button.clicked.connect(self.install_xtts_starters)
         buttons.addWidget(xtts_starter_button)
+        reset_button = QPushButton("Standard-Einstellungen / Reset")
+        reset_button.clicked.connect(self.reset_application_state)
+        buttons.addWidget(reset_button)
         create_layout.addLayout(buttons)
 
         self.progress_bar = QProgressBar()
@@ -255,6 +286,7 @@ class MainWindow(QMainWindow):
         queue_layout = QVBoxLayout(queue_tab)
         queue_help = QLabel(
             "Die Queue ist persistent. Hohe Prioritaet wird zuerst abgearbeitet.\n"
+            "Links kannst du Jobs hoch, runter oder ganz nach oben schieben und bei Bedarf loeschen.\n"
             "Voice-Tuning-Sessions tauchen hier ebenfalls auf, damit du spaeter "
             "zu deinen gespeicherten Stellen und Preview-Renders zurueckkehren kannst."
         )
@@ -276,6 +308,7 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(right)
         splitter.setSizes([340, 940])
+        self.apply_default_controls()
         self.on_preset_changed()
         self.on_backend_changed()
 
@@ -407,6 +440,18 @@ class MainWindow(QMainWindow):
                 "Empfohlen fuer schnelle lokale Verarbeitung ohne XTTS-Runtime."
             )
 
+    def apply_default_controls(self) -> None:
+        preset_index = self.preset_combo.findData(self.app_settings.default_preset_id)
+        if preset_index >= 0:
+            self.preset_combo.setCurrentIndex(preset_index)
+        mode_index = self.output_mode_combo.findData(self.app_settings.default_output_mode)
+        if mode_index >= 0:
+            self.output_mode_combo.setCurrentIndex(mode_index)
+        self.target_part_minutes_spin.setValue(self.app_settings.default_target_part_minutes)
+        self.keep_wav_checkbox.setChecked(self.app_settings.default_keep_wav)
+        self.max_chars_spin.setValue(self.app_settings.default_max_chars)
+        self.priority_spin.setValue(self.app_settings.default_priority)
+
     def refresh_jobs(self) -> None:
         self.jobs_list.clear()
         jobs = self.manager.list_jobs()
@@ -421,7 +466,8 @@ class MainWindow(QMainWindow):
             item.setData(Qt.UserRole, job.job_id)
             self.jobs_list.addItem(item)
             queue_lines.append(
-                f"P{job.priority:02d} | {job.status:9s} | {job.title} | preset={job.preset_id} | voice={job.voice_id}"
+                f"P{job.priority:02d} | {job.status:9s} | {job.title} | preset={job.preset_id} | "
+                f"output={job.output_mode} | ziel={job.target_part_minutes}m | voice={job.voice_id or job.voice_profile_id}"
             )
         self.queue_details.setPlainText("\n".join(queue_lines) or "Keine Jobs in der Queue.")
         preview_lines = []
@@ -440,15 +486,20 @@ class MainWindow(QMainWindow):
         preset_id = self.preset_combo.currentData()
         preset = get_preset(preset_id)
         self.max_chars_spin.setValue(preset.max_chars)
-        self.output_mode_combo.setCurrentText(preset.output_mode)
+        output_mode_index = self.output_mode_combo.findData(preset.output_mode)
+        if output_mode_index >= 0:
+            self.output_mode_combo.setCurrentIndex(output_mode_index)
+        self.target_part_minutes_spin.setValue(preset.target_part_minutes)
         self.keep_wav_checkbox.setChecked(preset.keep_wav)
         if self.backend_combo.currentText() == "xtts":
             self.preset_description.setText(
-                f"{preset.description} XTTS ignoriert Satzpause und nutzt vor allem Chunk-Laenge und Sprechtempo."
+                f"{preset.description} XTTS nutzt vor allem Chunk-Laenge und Sprechtempo. "
+                f"Enddateien: {preset.output_mode}, Ziel {preset.target_part_minutes} min."
             )
         else:
             self.preset_description.setText(
-                f"{preset.description} Satzpause: {preset.sentence_silence:.2f}s, Länge: {preset.length_scale:.2f}."
+                f"{preset.description} Satzpause: {preset.sentence_silence:.2f}s, Laenge: {preset.length_scale:.2f}, "
+                f"Enddateien: {preset.output_mode}, Ziel {preset.target_part_minutes} min."
             )
 
     def select_source_file(self) -> None:
@@ -496,7 +547,8 @@ class MainWindow(QMainWindow):
             preset_id=self.preset_combo.currentData(),
             priority=self.priority_spin.value(),
             max_chars=self.max_chars_spin.value(),
-            output_mode=self.output_mode_combo.currentText(),
+            output_mode=self.output_mode_combo.currentData(),
+            target_part_minutes=self.target_part_minutes_spin.value(),
             keep_wav=self.keep_wav_checkbox.isChecked(),
             sentence_silence=get_preset(self.preset_combo.currentData()).sentence_silence,
             length_scale=get_preset(self.preset_combo.currentData()).length_scale,
@@ -518,7 +570,9 @@ class MainWindow(QMainWindow):
 
     def show_job(self, job: JobState) -> None:
         self.status_label.setText(
-            f"{job.status} | backend {job.backend} | priority {job.priority} | preset {job.preset_id} | chunks {job.completed_chunks}/{job.total_chunks} | voice {job.voice_id or job.voice_profile_id}"
+            f"{job.status} | backend {job.backend} | priority {job.priority} | preset {job.preset_id} | "
+            f"output {job.output_mode} | ziel {job.target_part_minutes}m | chunks {job.completed_chunks}/{job.total_chunks} | "
+            f"voice {job.voice_id or job.voice_profile_id}"
         )
         self.progress_bar.setValue(
             int((job.completed_chunks / job.total_chunks) * 100) if job.total_chunks else 0
@@ -541,6 +595,11 @@ class MainWindow(QMainWindow):
         voice_index = self.voice_combo.findData(job.voice_id)
         if voice_index >= 0:
             self.voice_combo.setCurrentIndex(voice_index)
+        output_mode_index = self.output_mode_combo.findData(job.output_mode)
+        if output_mode_index >= 0:
+            self.output_mode_combo.setCurrentIndex(output_mode_index)
+        self.target_part_minutes_spin.setValue(job.target_part_minutes)
+        self.keep_wav_checkbox.setChecked(job.keep_wav)
         self.logger.debug("Displayed job %s with status %s", job.job_id, job.status)
 
     def start_selected_job(self) -> None:
@@ -571,6 +630,76 @@ class MainWindow(QMainWindow):
         self.refresh_jobs()
         self.show_job(job)
         self.maybe_start_next_job()
+
+    def move_selected_job(self, direction: str) -> None:
+        if not self.current_job_id:
+            QMessageBox.warning(self, "Kein Job", "Bitte zuerst einen Job auswaehlen.")
+            return
+        job = self.manager.move_job(self.current_job_id, direction)
+        if not job:
+            return
+        self.refresh_jobs()
+        self.show_job(job)
+        self.maybe_start_next_job()
+
+    def delete_selected_job(self) -> None:
+        if not self.current_job_id:
+            QMessageBox.warning(self, "Kein Job", "Bitte zuerst einen Job auswaehlen.")
+            return
+        job_id = self.current_job_id
+        job = self.manager.load_state(job_id)
+        if job.status == "running":
+            QMessageBox.warning(self, "Job laeuft", "Einen laufenden Job bitte erst stoppen, bevor du ihn loeschst.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Job loeschen",
+            "Soll der ausgewaehlte Job inklusive Arbeitsdateien wirklich geloescht werden?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.manager.delete_job(job_id)
+        self.current_job_id = None
+        self.refresh_jobs()
+        self.status_label.setText("Job geloescht.")
+
+    def toggle_debug_logging(self, checked: bool) -> None:
+        self.app_settings.debug_logging = checked
+        save_app_settings(self.paths.app_settings_file, self.app_settings)
+        configure_logging(self.paths.logs, debug_enabled=checked)
+        self.status_label.setText(
+            "Debug-Logging aktiv. Jeder Schritt wird sehr detailiert protokolliert."
+            if checked
+            else "Debug-Logging reduziert. Nur wichtigere Infos und Fehler werden protokolliert."
+        )
+
+    def reset_application_state(self) -> None:
+        if self.worker and self.worker.isRunning():
+            QMessageBox.warning(self, "Job laeuft", "Bitte zuerst den aktuellen Job stoppen, bevor du alles zuruecksetzt.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Alles zuruecksetzen",
+            "Soll die App auf Start zurueckgesetzt werden? Dabei werden Jobs, Voice-Settings, Vorschau-Sessions, Logs und Voice-Profile geloescht.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        default_settings = AppSettings()
+        save_app_settings(self.paths.app_settings_file, default_settings)
+        self.app_settings = default_settings
+        reset_workspace_state(self.paths.workspace)
+        configure_logging(self.paths.logs, debug_enabled=self.app_settings.debug_logging, force_reset=True)
+        self.manager = JobManager(self.paths)
+        self.current_job_id = None
+        self.debug_logging_checkbox.setChecked(self.app_settings.debug_logging)
+        self.source_edit.clear()
+        self.apply_default_controls()
+        self.details.clear()
+        self.queue_details.clear()
+        self.preview_sessions_summary.clear()
+        self.status_label.setText("App auf Standard zurueckgesetzt.")
+        self.refresh_voice_profiles()
+        self.refresh_jobs()
 
     def open_voice_lab(self) -> None:
         dialog = VoiceLabDialog(self.paths, self)

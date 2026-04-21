@@ -32,6 +32,7 @@ def main() -> int:
             priority=70,
             max_chars=preset.max_chars,
             output_mode="single_file",
+            target_part_minutes=preset.target_part_minutes,
             keep_wav=False,
             sentence_silence=preset.sentence_silence,
             length_scale=preset.length_scale,

@@ -26,6 +26,7 @@ class AppPaths:
     runtime: Path
     voices: Path
     logs: Path
+    app_settings_file: Path
     voice_profiles: Path
     voice_settings: Path
     preview_sessions: Path
@@ -40,6 +41,7 @@ class AppPaths:
             runtime=_prefer_local_or_parent(root, "runtime"),
             voices=_prefer_local_or_parent(root, "voices"),
             logs=workspace / "logs",
+            app_settings_file=workspace / "app_settings.json",
             voice_profiles=workspace / "voice_profiles",
             voice_settings=workspace / "voice_settings",
             preview_sessions=workspace / "preview_sessions",

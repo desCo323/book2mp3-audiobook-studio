@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+from book2mp3.app_settings import load_app_settings
 from PySide6.QtWidgets import QApplication
 
 from book2mp3.config import AppPaths
@@ -21,7 +22,8 @@ def project_root() -> Path:
 def main() -> int:
     paths = AppPaths.from_project_root(project_root())
     paths.ensure()
-    configure_logging(paths.logs)
+    app_settings = load_app_settings(paths.app_settings_file)
+    configure_logging(paths.logs, debug_enabled=app_settings.debug_logging)
     logger = get_logger("main")
     logger.info("Starting book2mp3 application")
     app = QApplication(sys.argv)

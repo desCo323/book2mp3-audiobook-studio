@@ -52,6 +52,7 @@ def main() -> int:
             priority=60,
             max_chars=preset.max_chars,
             output_mode="segments",
+            target_part_minutes=preset.target_part_minutes,
             keep_wav=False,
             sentence_silence=preset.sentence_silence,
             length_scale=preset.length_scale,

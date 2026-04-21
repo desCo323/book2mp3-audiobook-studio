@@ -71,3 +71,41 @@ def concat_mp3_files(
     finally:
         if list_file.exists():
             list_file.unlink()
+
+
+def segment_mp3_file(
+    input_path: Path,
+    output_pattern: Path,
+    segment_seconds: int,
+    logger: logging.Logger | None = None,
+) -> list[Path]:
+    output_pattern.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        ffmpeg_executable(),
+        "-y",
+        "-i",
+        str(input_path),
+        "-f",
+        "segment",
+        "-segment_time",
+        str(segment_seconds),
+        "-reset_timestamps",
+        "1",
+        "-c",
+        "copy",
+        str(output_pattern),
+    ]
+    if logger:
+        logger.debug("Segmenting MP3 with command: %s", cmd)
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        if logger:
+            logger.debug("FFmpeg segment stdout: %s", result.stdout.strip())
+            logger.debug("FFmpeg segment stderr: %s", result.stderr.strip())
+    except subprocess.CalledProcessError as exc:
+        if logger:
+            logger.exception("FFmpeg MP3 segmentation failed")
+            logger.debug("FFmpeg stdout: %s", exc.stdout)
+            logger.debug("FFmpeg stderr: %s", exc.stderr)
+        raise
+    return sorted(output_pattern.parent.glob(output_pattern.name.replace("%03d", "*")))

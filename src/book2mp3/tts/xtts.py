@@ -72,6 +72,7 @@ class XttsBackend:
             ):
                 env.pop(key, None)
             env["PYTHONNOUSERSITE"] = "1"
+        env.setdefault("COQUI_TOS_AGREED", "1")
         return env
 
     def synthesize_to_wav(

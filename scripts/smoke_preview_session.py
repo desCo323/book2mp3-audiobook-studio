@@ -44,6 +44,7 @@ def main() -> int:
             priority=95,
             max_chars=220,
             output_mode="single_file",
+            target_part_minutes=15,
             keep_wav=False,
             sentence_silence=0.2,
             length_scale=1.0,
@@ -69,6 +70,8 @@ def main() -> int:
             voice_profile_id="",
             preset_hint="balanced",
             max_chars=220,
+            output_mode="single_file",
+            target_part_minutes=15,
             sentence_silence=0.2,
             length_scale=1.0,
         )

@@ -6,6 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+XTTS_COMPAT_PACKAGES = [
+    "transformers<5",
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -52,7 +56,8 @@ def main() -> int:
         )
         installed_packages.extend(["torch[cpu]", "torchaudio[cpu]"])
     run([*pip_prefix, "TTS"])
-    installed_packages.append("TTS")
+    run([*pip_prefix, *XTTS_COMPAT_PACKAGES])
+    installed_packages.extend(["TTS", *XTTS_COMPAT_PACKAGES])
 
     manifest = {
         "bundle_program_root": str(program_root),

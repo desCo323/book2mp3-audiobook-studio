@@ -37,6 +37,7 @@ from book2mp3.preview_sessions import (
 )
 from book2mp3.tts.piper import PiperBackend
 from book2mp3.tts.xtts import XttsBackend
+from book2mp3.presets import QUALITY_PRESETS, get_preset
 from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_catalog import (
@@ -158,8 +159,8 @@ class FindBestSettingDialog(QDialog):
         layout = QVBoxLayout(self)
 
         intro = QLabel(
-            "Einfach ausprobieren: Buch waehlen, zufaellige Stelle hoeren, Backend waehlen, Regler anpassen "
-            "und sofort pruefen wie es klingt. XTTS nutzt importierte Sprecherprofile und klingt oft natuerlicher."
+            "Einfach ausprobieren: Buch waehlen, zufaellige Stelle hoeren, Backend, Qualitaets-Preset und "
+            "Ausgabeart waehlen, dann sofort Play druecken. XTTS nutzt importierte Sprecherprofile und klingt oft natuerlicher."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -216,12 +217,32 @@ class FindBestSettingDialog(QDialog):
         assistant_button.clicked.connect(self.apply_assistant_profile)
         form.addRow("", assistant_button)
 
+        self.preset_combo = QComboBox()
+        for preset in QUALITY_PRESETS:
+            self.preset_combo.addItem(preset.label, preset.preset_id)
+        self.preset_combo.currentIndexChanged.connect(self.on_preset_changed)
+        form.addRow("Qualitaets-Preset", self.preset_combo)
+
+        self.output_mode_combo = QComboBox()
+        self.output_mode_combo.addItem("Eine grosse Enddatei", "single_file")
+        self.output_mode_combo.addItem("Enddateien alle X Minuten", "timed_parts")
+        self.output_mode_combo.addItem("Nur kleine Teil-MP3s behalten", "segments")
+        self.output_mode_combo.currentIndexChanged.connect(self.update_helper_text)
+        form.addRow("Finale Ausgabe", self.output_mode_combo)
+
+        self.target_part_minutes_spin = QSpinBox()
+        self.target_part_minutes_spin.setRange(1, 180)
+        self.target_part_minutes_spin.setValue(15)
+        self.target_part_minutes_spin.setSuffix(" min")
+        self.target_part_minutes_spin.valueChanged.connect(self.update_helper_text)
+        form.addRow("Laenge pro Enddatei", self.target_part_minutes_spin)
+
         self.max_chars_spin = QSpinBox()
         self.max_chars_spin.setRange(100, 450)
         self.max_chars_spin.setSingleStep(10)
         self.max_chars_spin.setValue(220)
         self.max_chars_spin.valueChanged.connect(self.update_helper_text)
-        form.addRow("Chunk-Laenge", self.max_chars_spin)
+        form.addRow("Max Zeichen pro Chunk", self.max_chars_spin)
 
         self.sentence_slider = QSlider(Qt.Horizontal)
         self.sentence_slider.setRange(5, 60)
@@ -428,22 +449,42 @@ class FindBestSettingDialog(QDialog):
     def apply_assistant_profile(self) -> None:
         profile = self.assistant_combo.currentData()
         presets = {
-            "novel": (260, 28, 105, "Gut fuer natuerliche Romanstimmen mit mehr Ruhe."),
-            "nonfiction": (220, 20, 100, "Gut fuer klare, neutrale Sachbuchstimmen."),
-            "children": (240, 30, 103, "Gut fuer warme, etwas ruhigere Kinderbuchstimmen."),
-            "cpu": (170, 12, 95, "Gut fuer schnelle Vorschauen auf CPU-Systemen."),
+            "novel": (260, 28, 105, "single_file", 20, "natural", "Gut fuer natuerliche Romanstimmen mit mehr Ruhe."),
+            "nonfiction": (220, 20, 100, "timed_parts", 15, "balanced", "Gut fuer klare, neutrale Sachbuchstimmen."),
+            "children": (240, 30, 103, "timed_parts", 10, "natural", "Gut fuer warme, etwas ruhigere Kinderbuchstimmen."),
+            "cpu": (170, 12, 95, "segments", 10, "fast_cpu", "Gut fuer schnelle Vorschauen auf CPU-Systemen."),
         }
-        max_chars, sentence_pause, length_scale, note = presets[profile]
+        max_chars, sentence_pause, length_scale, output_mode, part_minutes, preset_id, note = presets[profile]
         self.max_chars_spin.setValue(max_chars)
         self.sentence_slider.setValue(sentence_pause)
         self.length_slider.setValue(length_scale)
+        preset_index = self.preset_combo.findData(preset_id)
+        if preset_index >= 0:
+            self.preset_combo.setCurrentIndex(preset_index)
+        output_mode_index = self.output_mode_combo.findData(output_mode)
+        if output_mode_index >= 0:
+            self.output_mode_combo.setCurrentIndex(output_mode_index)
+        self.target_part_minutes_spin.setValue(part_minutes)
         self.update_helper_text()
         self.status_label.setText(f"Assistent aktiv: {note}")
+
+    def on_preset_changed(self) -> None:
+        preset = get_preset(self.preset_combo.currentData())
+        self.max_chars_spin.setValue(preset.max_chars)
+        output_mode_index = self.output_mode_combo.findData(preset.output_mode)
+        if output_mode_index >= 0:
+            self.output_mode_combo.setCurrentIndex(output_mode_index)
+        self.target_part_minutes_spin.setValue(preset.target_part_minutes)
+        self.sentence_slider.setValue(int(round(preset.sentence_silence * 100)))
+        self.length_slider.setValue(int(round(preset.length_scale * 100)))
+        self.update_helper_text()
 
     def update_helper_text(self) -> None:
         sentence_silence = self.sentence_slider.value() / 100
         length_scale = self.length_slider.value() / 100
         max_chars = self.max_chars_spin.value()
+        output_mode = self.output_mode_combo.currentData() or "single_file"
+        target_part_minutes = self.target_part_minutes_spin.value()
         self.sentence_label.setText(f"{sentence_silence:.2f}s")
         self.length_label.setText(f"{length_scale:.2f}")
         if self.backend_combo.currentText() == "xtts":
@@ -454,8 +495,14 @@ class FindBestSettingDialog(QDialog):
             hint = "Eher schnell und CPU-freundlich."
         else:
             hint = "Eher ausgewogen fuer die meisten Hoerbuecher."
+        output_hint = {
+            "single_file": "eine grosse Enddatei",
+            "timed_parts": f"Enddateien etwa alle {target_part_minutes} Minuten",
+            "segments": "nur kleine Teil-MP3s",
+        }.get(output_mode, output_mode)
         self.helper_label.setText(
-            f"{hint}\nAktuell: {max_chars} Zeichen, {sentence_silence:.2f}s Satzpause, {length_scale:.2f} Laenge."
+            f"{hint}\nAktuell: {max_chars} Zeichen, {sentence_silence:.2f}s Satzpause, "
+            f"{length_scale:.2f} Laenge, Ausgabe: {output_hint}."
         )
 
     def render_and_play_preview(self) -> None:
@@ -600,8 +647,10 @@ class FindBestSettingDialog(QDialog):
             backend=backend,
             voice_id=voice_id,
             voice_profile_id=voice_profile_id,
-            preset_hint="live_tuning",
+            preset_hint=self.preset_combo.currentData(),
             max_chars=self.max_chars_spin.value(),
+            output_mode=self.output_mode_combo.currentData(),
+            target_part_minutes=self.target_part_minutes_spin.value(),
             sentence_silence=self.sentence_slider.value() / 100,
             length_scale=self.length_slider.value() / 100,
             notes="Gespeichert aus Live Voice Tuning",
@@ -639,6 +688,13 @@ class FindBestSettingDialog(QDialog):
             if profile_index >= 0:
                 self.voice_profile_combo.setCurrentIndex(profile_index)
         self.max_chars_spin.setValue(setting.max_chars)
+        preset_index = self.preset_combo.findData(setting.preset_hint)
+        if preset_index >= 0:
+            self.preset_combo.setCurrentIndex(preset_index)
+        output_mode_index = self.output_mode_combo.findData(setting.output_mode)
+        if output_mode_index >= 0:
+            self.output_mode_combo.setCurrentIndex(output_mode_index)
+        self.target_part_minutes_spin.setValue(setting.target_part_minutes)
         self.sentence_slider.setValue(int(round(setting.sentence_silence * 100)))
         self.length_slider.setValue(int(round(setting.length_scale * 100)))
         self.setting_name.setText(setting.display_name)

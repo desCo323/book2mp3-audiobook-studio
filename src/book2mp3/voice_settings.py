@@ -16,6 +16,8 @@ class VoiceSetting:
     voice_profile_id: str
     preset_hint: str
     max_chars: int
+    output_mode: str
+    target_part_minutes: int
     sentence_silence: float
     length_scale: float
     created_at: str
@@ -46,6 +48,8 @@ def save_voice_setting(
     voice_profile_id: str,
     preset_hint: str,
     max_chars: int,
+    output_mode: str,
+    target_part_minutes: int,
     sentence_silence: float,
     length_scale: float,
     notes: str = "",
@@ -61,6 +65,8 @@ def save_voice_setting(
         voice_profile_id=voice_profile_id,
         preset_hint=preset_hint,
         max_chars=max_chars,
+        output_mode=output_mode,
+        target_part_minutes=target_part_minutes,
         sentence_silence=sentence_silence,
         length_scale=length_scale,
         created_at=existing.created_at if existing else now,
@@ -80,6 +86,8 @@ def list_voice_settings(root: Path) -> list[VoiceSetting]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         payload.setdefault("backend", "piper")
         payload.setdefault("voice_profile_id", "")
+        payload.setdefault("output_mode", "single_file")
+        payload.setdefault("target_part_minutes", 15)
         settings.append(VoiceSetting(**payload))
     return sorted(settings, key=lambda item: item.updated_at, reverse=True)
 
@@ -88,4 +96,6 @@ def load_voice_setting(root: Path, setting_id: str) -> VoiceSetting:
     payload = json.loads(_setting_path(root, setting_id).read_text(encoding="utf-8"))
     payload.setdefault("backend", "piper")
     payload.setdefault("voice_profile_id", "")
+    payload.setdefault("output_mode", "single_file")
+    payload.setdefault("target_part_minutes", 15)
     return VoiceSetting(**payload)

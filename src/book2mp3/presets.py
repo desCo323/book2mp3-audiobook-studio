@@ -10,6 +10,7 @@ class QualityPreset:
     description: str
     max_chars: int
     output_mode: str
+    target_part_minutes: int
     keep_wav: bool
     sentence_silence: float
     length_scale: float
@@ -21,7 +22,8 @@ QUALITY_PRESETS = [
         label="Schnell",
         description="Kleinere Chunks, segmentierte Ausgabe, zuegig fuer CPU-Systeme.",
         max_chars=160,
-        output_mode="segments",
+        output_mode="timed_parts",
+        target_part_minutes=10,
         keep_wav=False,
         sentence_silence=0.12,
         length_scale=0.95,
@@ -31,7 +33,8 @@ QUALITY_PRESETS = [
         label="Balanciert",
         description="Robuste Standardeinstellung fuer normale Hoerbuecher.",
         max_chars=220,
-        output_mode="segments",
+        output_mode="timed_parts",
+        target_part_minutes=15,
         keep_wav=False,
         sentence_silence=0.20,
         length_scale=1.0,
@@ -42,6 +45,7 @@ QUALITY_PRESETS = [
         description="Mehr Ruhe und etwas langsamere Prosodie fuer natuerlicheres Vorlesen.",
         max_chars=260,
         output_mode="single_file",
+        target_part_minutes=20,
         keep_wav=False,
         sentence_silence=0.30,
         length_scale=1.06,
@@ -52,6 +56,7 @@ QUALITY_PRESETS = [
         description="Empfohlener XTTS-Pfad fuer natuerlichere Hoerbuchausgabe mit Sprecherprofilen.",
         max_chars=280,
         output_mode="single_file",
+        target_part_minutes=20,
         keep_wav=False,
         sentence_silence=0.24,
         length_scale=1.0,

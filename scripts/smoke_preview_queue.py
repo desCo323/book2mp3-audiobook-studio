@@ -33,6 +33,7 @@ def main() -> int:
             priority=98,
             max_chars=260,
             output_mode="single_file",
+            target_part_minutes=20,
             keep_wav=False,
             sentence_silence=0.28,
             length_scale=1.05,

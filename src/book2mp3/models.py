@@ -41,6 +41,7 @@ class JobState:
     preset_id: str
     priority: int
     output_mode: str
+    target_part_minutes: int
     keep_wav: bool
     max_chars: int
     sentence_silence: float
@@ -48,6 +49,7 @@ class JobState:
     source_file: str
     extracted_file: str
     final_output_file: str
+    final_output_files: list[str]
     chunks: list[ChunkRecord]
     logs: list[str] = field(default_factory=list)
 
@@ -63,7 +65,10 @@ class JobState:
         payload.setdefault("preset_id", preset.preset_id)
         payload.setdefault("sentence_silence", preset.sentence_silence)
         payload.setdefault("length_scale", preset.length_scale)
+        payload.setdefault("output_mode", preset.output_mode)
+        payload.setdefault("target_part_minutes", preset.target_part_minutes)
         payload.setdefault("voice_profile_id", "")
+        payload.setdefault("final_output_files", [])
         payload["chunks"] = [ChunkRecord(**chunk) for chunk in payload.get("chunks", [])]
         return cls(**payload)
 
