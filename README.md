@@ -203,10 +203,22 @@ To turn that into a local Linux self-contained bundle from the current machine:
 python scripts/populate_bundle_python_linux.py dist/book2mp3-portable
 ```
 
+To install XTTS directly into that portable app Python too:
+
+```bash
+python scripts/install_xtts_into_bundle_python.py dist/book2mp3-portable
+```
+
 Or do the larger Linux release step in one command:
 
 ```bash
 python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --archive
+```
+
+If XTTS should be available directly inside the portable app Python, build with:
+
+```bash
+python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --include-xtts-in-app-python --archive
 ```
 
 To bootstrap the optional Linux XTTS runtime with a dedicated standalone Python 3.11:

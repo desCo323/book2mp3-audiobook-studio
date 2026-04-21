@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 import platform
 import subprocess
+import sys
 from pathlib import Path
 
 from book2mp3.voice_lab import VoiceProfile
@@ -16,7 +18,7 @@ class XttsBackend:
         self.runtime_root = runtime_root
         self.logger = logger
 
-    def python_path(self) -> Path:
+    def dedicated_python_path(self) -> Path:
         system = platform.system().lower()
         if system == "windows":
             candidate = self.runtime_root / "xtts" / "windows" / "python" / "python.exe"
@@ -24,9 +26,33 @@ class XttsBackend:
             candidate = self.runtime_root / "xtts" / "linux" / "bin" / "python3"
         else:
             raise RuntimeError(f"Unsupported platform: {platform.system()}")
+        return candidate
+
+    def current_python_supports_xtts(self) -> bool:
+        return importlib.util.find_spec("TTS") is not None
+
+    def is_available(self) -> bool:
+        return self.dedicated_python_path().exists() or self.current_python_supports_xtts()
+
+    def availability_reason(self) -> str:
+        candidate = self.dedicated_python_path()
+        if candidate.exists():
+            return f"XTTS runtime gefunden: {candidate}"
+        if self.current_python_supports_xtts():
+            return f"XTTS nutzt aktuelles Python: {sys.executable}"
+        return (
+            "XTTS runtime fehlt. Installiere sie mit "
+            "`python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standalone` "
+            "oder nutze vorerst Piper."
+        )
+
+    def python_path(self) -> Path:
+        candidate = self.dedicated_python_path()
         if not candidate.exists():
+            if self.current_python_supports_xtts():
+                return Path(sys.executable)
             raise FileNotFoundError(
-                "XTTS runtime not found. Install a dedicated XTTS runtime first."
+                self.availability_reason()
             )
         return candidate
 

@@ -157,6 +157,18 @@ For a larger Linux bundle build, the optional XTTS runtime can also be included 
 python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --include-xtts-runtime
 ```
 
+If XTTS should be available directly inside the same portable app Python used by `start.sh`, install it into `python/linux`:
+
+```bash
+python scripts/install_xtts_into_bundle_python.py dist/book2mp3-linux-portable/src
+```
+
+Or build the Linux release in one step with XTTS inside the app Python:
+
+```bash
+python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --include-xtts-in-app-python --archive
+```
+
 ## Sources
 
 - Qt for Python deployment docs: https://doc.qt.io/qtforpython-6.8/deployment/deployment-pyside6-deploy.html

@@ -33,6 +33,7 @@ from book2mp3.pipeline.jobs import JobManager
 from book2mp3.preview_sessions import list_preview_sessions, update_preview_job_status
 from book2mp3.presets import QUALITY_PRESETS, get_preset
 from book2mp3.tts.piper import PiperBackend
+from book2mp3.tts.xtts import XttsBackend
 from book2mp3.ui.find_best_setting_dialog import FindBestSettingDialog
 from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
 from book2mp3.ui.worker import JobWorker
@@ -59,6 +60,7 @@ class MainWindow(QMainWindow):
         self.current_job_id: str | None = None
         self.logger = get_logger("ui")
         self.installed_voice_ids: list[str] = []
+        self.xtts_backend = XttsBackend(paths.runtime, logger=self.logger)
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
@@ -370,6 +372,16 @@ class MainWindow(QMainWindow):
                 if fallback_index >= 0:
                     self.preset_combo.setCurrentIndex(fallback_index)
         else:
+            if not self.xtts_backend.is_available():
+                QMessageBox.warning(
+                    self,
+                    "XTTS runtime fehlt",
+                    self.xtts_backend.availability_reason(),
+                )
+                fallback_index = self.backend_combo.findText("piper")
+                if fallback_index >= 0:
+                    self.backend_combo.setCurrentIndex(fallback_index)
+                return
             self.backend_combo.setStyleSheet(BETA_STYLE)
             self.voice_profile_combo.setStyleSheet(BETA_STYLE)
             self.backend_notice.show()
@@ -382,6 +394,9 @@ class MainWindow(QMainWindow):
     def update_backend_summary(self) -> None:
         profile_count = max(0, self.voice_profile_combo.count() - (1 if self.voice_profile_combo.itemData(0) == "" else 0))
         if self.backend_combo.currentText() == "xtts":
+            if not self.xtts_backend.is_available():
+                self.backend_summary.setText(f"XTTS nicht bereit. {self.xtts_backend.availability_reason()}")
+                return
             self.backend_summary.setText(
                 f"XTTS: {profile_count} Sprecherprofile verfuegbar. "
                 "Empfohlen: Preset 'Premium Natuerlich' und ein gutes WebUI-/Voice-Lab-Profil."
@@ -465,6 +480,13 @@ class MainWindow(QMainWindow):
                     self,
                     "Missing voice profile",
                     "Create or select a Voice-Lab profile for XTTS first.",
+                )
+                return
+            if not self.xtts_backend.is_available():
+                QMessageBox.warning(
+                    self,
+                    "XTTS runtime fehlt",
+                    self.xtts_backend.availability_reason(),
                 )
                 return
         job = self.manager.create_job(

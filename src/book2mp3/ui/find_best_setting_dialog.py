@@ -141,6 +141,7 @@ class FindBestSettingDialog(QDialog):
         self.current_session_id: str | None = None
         self.installed_voices: list[str] = []
         self.preview_worker: LivePreviewWorker | None = None
+        self.xtts_backend = XttsBackend(paths.runtime, logger=self.logger)
 
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
@@ -340,7 +341,10 @@ class FindBestSettingDialog(QDialog):
         if is_piper:
             self.status_label.setText("Piper aktiv: schnell und offline, aber oft synthetischer.")
         else:
-            self.status_label.setText("XTTS aktiv: bessere Chance auf natuerlichen Klang mit guten Sprecherprofilen.")
+            if not self.xtts_backend.is_available():
+                self.status_label.setText(f"XTTS nicht bereit: {self.xtts_backend.availability_reason()}")
+            else:
+                self.status_label.setText("XTTS aktiv: bessere Chance auf natuerlichen Klang mit guten Sprecherprofilen.")
 
     def restore_last_session(self) -> None:
         sessions = list_preview_sessions(self.paths)
@@ -477,6 +481,13 @@ class FindBestSettingDialog(QDialog):
                     self,
                     "Kein XTTS-Profil",
                     "Bitte zuerst ein XTTS-Sprecherprofil waehlen oder importieren.",
+                )
+                return
+            if not self.xtts_backend.is_available():
+                QMessageBox.warning(
+                    self,
+                    "XTTS runtime fehlt",
+                    self.xtts_backend.availability_reason(),
                 )
                 return
 

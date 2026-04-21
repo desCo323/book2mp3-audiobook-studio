@@ -29,6 +29,11 @@ def parse_args() -> argparse.Namespace:
         help="Bootstrap an optional dedicated XTTS runtime under runtime/xtts/linux",
     )
     parser.add_argument(
+        "--include-xtts-in-app-python",
+        action="store_true",
+        help="Install XTTS directly into the portable app Python under python/linux",
+    )
+    parser.add_argument(
         "--skip-xtts-packages",
         action="store_true",
         help="When bootstrapping XTTS runtime, skip TTS pip installation",
@@ -59,6 +64,16 @@ def main() -> int:
         ]
     )
     run(["python3", str(ROOT / "scripts" / "populate_bundle_python_linux.py"), str(program_root(output_dir))])
+    if args.include_xtts_in_app_python:
+        run(
+            [
+                "python3",
+                str(ROOT / "scripts" / "install_xtts_into_bundle_python.py"),
+                str(program_root(output_dir)),
+                "--torch-variant",
+                args.xtts_torch_variant,
+            ]
+        )
     if args.include_xtts_runtime:
         run(
             [
