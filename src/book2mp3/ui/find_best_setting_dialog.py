@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Qt, QUrl, Signal
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -147,6 +148,9 @@ class FindBestSettingDialog(QDialog):
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.handle_about_to_quit)
 
         self.setWindowTitle("Voice Tuning")
         self.resize(1040, 780)
@@ -538,7 +542,10 @@ class FindBestSettingDialog(QDialog):
                 )
                 return
 
-        self.status_label.setText("Preview wird direkt erzeugt...")
+        self.status_label.setText(
+            "Preview wird direkt erzeugt. XTTS kann je nach Text und CPU einige Zeit brauchen. "
+            "Bitte den Dialog waehrenddessen nicht schliessen."
+        )
         self.play_now_button.setEnabled(False)
         update_preview_selection(
             self.paths,
@@ -559,6 +566,7 @@ class FindBestSettingDialog(QDialog):
         )
         self.preview_worker.preview_finished.connect(self.on_preview_finished)
         self.preview_worker.preview_failed.connect(self.on_preview_failed)
+        self.preview_worker.finished.connect(self.cleanup_preview_worker)
         self.preview_worker.start()
 
     def on_preview_finished(self, session_id: str, output_mp3: str) -> None:
@@ -585,6 +593,50 @@ class FindBestSettingDialog(QDialog):
         self.status_label.setText("Preview fehlgeschlagen.")
         self.details.setPlainText(message)
         QMessageBox.warning(self, "Preview fehlgeschlagen", "Die Preview konnte nicht erzeugt werden. Details stehen unten.")
+
+    def cleanup_preview_worker(self) -> None:
+        worker = self.preview_worker
+        self.preview_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def wait_for_preview_shutdown(self) -> None:
+        if not self.preview_worker or not self.preview_worker.isRunning():
+            return
+        self.logger.warning("Waiting for live preview worker to finish before dialog shutdown")
+        self.status_label.setText("Preview laeuft noch. Warte auf sauberen Abschluss...")
+        self.preview_worker.wait()
+        self.cleanup_preview_worker()
+
+    def handle_about_to_quit(self) -> None:
+        self.wait_for_preview_shutdown()
+
+    def reject(self) -> None:
+        if self.preview_worker and self.preview_worker.isRunning():
+            self.status_label.setText(
+                "Preview laeuft noch. Bitte kurz warten, bis sie fertig ist."
+            )
+            QMessageBox.information(
+                self,
+                "Preview laeuft",
+                "Die Preview wird noch erzeugt. Bitte kurz warten, bis sie fertig ist.",
+            )
+            return
+        super().reject()
+
+    def closeEvent(self, event) -> None:
+        if self.preview_worker and self.preview_worker.isRunning():
+            self.status_label.setText(
+                "Preview laeuft noch. Bitte kurz warten, bis sie fertig ist."
+            )
+            QMessageBox.information(
+                self,
+                "Preview laeuft",
+                "Die Preview wird noch erzeugt. Bitte kurz warten, bis sie fertig ist.",
+            )
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     def play_last_preview(self) -> None:
         if not self.current_session_id:
