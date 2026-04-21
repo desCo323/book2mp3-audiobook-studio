@@ -91,7 +91,7 @@ Voice selection:
 - in the main job screen, selecting `xtts` now switches to the recommended `Premium Natuerlich` preset automatically
 - the `XTTS-Sprecher` button now first tries to auto-import a local `speakers/` folder before opening Voice Lab
 - the auto-import now also scans common old `xtts-webui` installation folders in home, documents, downloads and mounted drives
-- if no old XTTS speaker folder is found, you can use `XTTS-Starter` to install example XTTS speaker profiles directly from the upstream `xtts-webui` sample set
+- if no old XTTS speaker folder is found, you can use `XTTS-Starter` to install example XTTS speaker profiles directly from the upstream `xtts-webui` sample set and curated German `Thorsten-Voice` examples
 - XTTS profile selectors in the main UI and tuning dialog can now play the stored reference sample, so you can hear the source voice before generating a preview
 
 Simple workflow:

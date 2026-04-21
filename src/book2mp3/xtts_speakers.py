@@ -4,6 +4,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from urllib.request import urlopen
+import json
 
 from book2mp3.config import AppPaths
 from book2mp3.voice_lab import sanitize_profile_id
@@ -15,20 +16,79 @@ STARTER_XTTS_SPEAKERS = (
     {
         "display_name": "XTTS Calm Female",
         "language": "en",
-        "filename": "calm_female.wav",
-        "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/calm_female.wav",
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "calm_female.wav",
+                "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/calm_female.wav",
+            }
+        ],
     },
     {
         "display_name": "XTTS Female",
         "language": "en",
-        "filename": "female.wav",
-        "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/female.wav",
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "female.wav",
+                "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/female.wav",
+            }
+        ],
     },
     {
         "display_name": "XTTS Male",
         "language": "en",
-        "filename": "male.wav",
-        "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/male.wav",
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "male.wav",
+                "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/male.wav",
+            }
+        ],
+    },
+    {
+        "display_name": "XTTS Thorsten Neutral",
+        "language": "de",
+        "samples": [
+            {
+                "kind": "hf_first_rows",
+                "filename": "thorsten_neutral_1.wav",
+                "dataset": "Thorsten-Voice/TV-44kHz-Full",
+                "config": "TV-2022.10-Neutral",
+                "split": "train",
+                "row_index": 0,
+            },
+            {
+                "kind": "hf_first_rows",
+                "filename": "thorsten_neutral_2.wav",
+                "dataset": "Thorsten-Voice/TV-44kHz-Full",
+                "config": "TV-2022.10-Neutral",
+                "split": "train",
+                "row_index": 1,
+            },
+        ],
+    },
+    {
+        "display_name": "XTTS Thorsten Emotional",
+        "language": "de",
+        "samples": [
+            {
+                "kind": "hf_first_rows",
+                "filename": "thorsten_emotional_angry.wav",
+                "dataset": "Thorsten-Voice/TV-44kHz-Full",
+                "config": "TV-2021.06-Emotional",
+                "split": "train",
+                "row_index": 0,
+            },
+            {
+                "kind": "hf_first_rows",
+                "filename": "thorsten_emotional_amused.wav",
+                "dataset": "Thorsten-Voice/TV-44kHz-Full",
+                "config": "TV-2021.06-Emotional",
+                "split": "train",
+                "row_index": 1,
+            },
+        ],
     },
 )
 
@@ -160,6 +220,57 @@ def auto_import_xtts_speakers(paths: AppPaths, fallback_language: str) -> tuple[
     return None, []
 
 
+def _download_from_hf_first_rows(
+    tmp_root: Path,
+    dataset: str,
+    config: str,
+    split: str,
+    row_index: int,
+    filename: str,
+) -> Path:
+    api_url = (
+        "https://datasets-server.huggingface.co/first-rows"
+        f"?dataset={dataset}&config={config}&split={split}"
+    ).replace(" ", "%20")
+    payload = json.load(urlopen(api_url, timeout=30))
+    rows = payload.get("rows", [])
+    row = next((item for item in rows if int(item.get("row_idx", -1)) == row_index), None)
+    if not row:
+        raise RuntimeError(f"No Hugging Face row {row_index} found for {dataset}/{config}/{split}")
+    audio = row.get("row", {}).get("audio", [])
+    if not audio:
+        raise RuntimeError(f"No audio payload found for {dataset}/{config}/{split} row {row_index}")
+    audio_url = audio[0]["src"]
+    target = tmp_root / filename
+    with urlopen(audio_url, timeout=30) as response, target.open("wb") as handle:
+        shutil.copyfileobj(response, handle)
+    return target
+
+
+def _resolve_starter_samples(tmp_root: Path, starter: dict[str, object]) -> list[Path]:
+    resolved: list[Path] = []
+    for sample in starter["samples"]:
+        if sample["kind"] == "url":
+            downloaded = tmp_root / sample["filename"]
+            with urlopen(sample["url"], timeout=20) as response, downloaded.open("wb") as target:
+                shutil.copyfileobj(response, target)
+            resolved.append(downloaded)
+        elif sample["kind"] == "hf_first_rows":
+            resolved.append(
+                _download_from_hf_first_rows(
+                    tmp_root,
+                    sample["dataset"],
+                    sample["config"],
+                    sample["split"],
+                    sample["row_index"],
+                    sample["filename"],
+                )
+            )
+        else:
+            raise RuntimeError(f"Unsupported XTTS starter sample kind: {sample['kind']}")
+    return resolved
+
+
 def install_starter_xtts_profiles(paths: AppPaths) -> list[Path]:
     manifests: list[Path] = []
     existing_ids = {profile.profile_id for profile in list_voice_profiles(paths.voice_profiles)}
@@ -169,19 +280,17 @@ def install_starter_xtts_profiles(paths: AppPaths) -> list[Path]:
             profile_id = sanitize_profile_id(starter["display_name"])
             if profile_id in existing_ids:
                 continue
-            downloaded = tmp_root / starter["filename"]
-            with urlopen(starter["url"], timeout=20) as response, downloaded.open("wb") as target:
-                shutil.copyfileobj(response, target)
+            sample_paths = _resolve_starter_samples(tmp_root, starter)
             manifest = create_voice_profile(
                 paths.voice_profiles,
                 display_name=starter["display_name"],
                 target_language=starter["language"],
                 backend="xtts_v2",
                 notes=(
-                    "Starter XTTS sample imported from the xtts-webui repository speakers folder: "
-                    f"{starter['url']}"
+                    "Starter XTTS profile imported from curated public demo sources. "
+                    "Current sources include xtts-webui sample speakers and Thorsten-Voice CC0 German dataset rows."
                 ),
-                sample_paths=[downloaded],
+                sample_paths=sample_paths,
             )
             manifests.append(manifest)
             existing_ids.add(manifest.parent.name)

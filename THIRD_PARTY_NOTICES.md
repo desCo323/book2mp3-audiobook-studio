@@ -51,9 +51,16 @@ It is a practical notice file, not legal advice. If you distribute `book2mp3`, y
 - Sample folder used by the app: https://github.com/daswer123/xtts-webui/tree/main/speakers
 - Repository license shown upstream: `MIT`
 
+Additional German starter source:
+
+- Dataset: https://huggingface.co/datasets/Thorsten-Voice/TV-44kHz-Full
+- Dataset page states: `License: CC0`
+- Dataset page describes the `TV-2022.10-Neutral` subset as a single German male speaker with clear, high-quality speech
+
 Important note:
 
 - The app currently pulls the sample WAV files `calm_female.wav`, `female.wav` and `male.wav` from that upstream repository when the user installs XTTS starter speakers.
+- The app now also pulls a few German starter WAV files at install time from the Thorsten-Voice dataset through the Hugging Face datasets API.
 - If you redistribute those starter samples, you should preserve attribution to the upstream repository and re-check the upstream licensing state at release time.
 
 ### Piper runtime
