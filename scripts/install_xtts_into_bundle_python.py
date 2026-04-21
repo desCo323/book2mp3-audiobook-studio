@@ -7,7 +7,9 @@ import sys
 from pathlib import Path
 
 XTTS_COMPAT_PACKAGES = [
-    "transformers<5",
+    "torch<2.6",
+    "torchaudio<2.6",
+    "transformers<4.50",
 ]
 
 
@@ -50,11 +52,11 @@ def main() -> int:
                 *pip_prefix,
                 "--index-url",
                 "https://download.pytorch.org/whl/cpu",
-                "torch",
-                "torchaudio",
+                "torch<2.6",
+                "torchaudio<2.6",
             ]
         )
-        installed_packages.extend(["torch[cpu]", "torchaudio[cpu]"])
+        installed_packages.extend(["torch[cpu]<2.6", "torchaudio[cpu]<2.6"])
     run([*pip_prefix, "TTS"])
     run([*pip_prefix, *XTTS_COMPAT_PACKAGES])
     installed_packages.extend(["TTS", *XTTS_COMPAT_PACKAGES])

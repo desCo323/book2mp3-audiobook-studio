@@ -8,7 +8,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 XTTS_COMPAT_PACKAGES = [
-    "transformers<5",
+    "torch<2.6",
+    "torchaudio<2.6",
+    "transformers<4.50",
 ]
 
 
@@ -84,11 +86,11 @@ def main() -> int:
                     "install",
                     "--index-url",
                     "https://download.pytorch.org/whl/cpu",
-                    "torch",
-                    "torchaudio",
+                    "torch<2.6",
+                    "torchaudio<2.6",
                 ]
             )
-            installed_packages.extend(["torch[cpu]", "torchaudio[cpu]"])
+            installed_packages.extend(["torch[cpu]<2.6", "torchaudio[cpu]<2.6"])
         run([str(python_bin), "-m", "pip", "install", "TTS"])
         run([str(python_bin), "-m", "pip", "install", *XTTS_COMPAT_PACKAGES])
         installed_packages.extend(["TTS", *XTTS_COMPAT_PACKAGES])
