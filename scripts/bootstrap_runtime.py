@@ -22,6 +22,12 @@ PIPER_RELEASES = {
 
 VOICE_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve"
 DEFAULT_VOICES = DEFAULT_VOICE_PACK
+HIGH_FEMALE_VOICE_PACK = [
+    "en_US-lessac-high",
+    "en_US-ljspeech-high",
+    "en_GB-cori-high",
+    "es_AR-daniela-high",
+]
 
 
 def project_root() -> Path:
@@ -91,7 +97,17 @@ def install_default_voices(voices_root: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--voice", help="Voice id like de_DE-thorsten-high")
+    parser.add_argument(
+        "--voice",
+        action="append",
+        default=[],
+        help="Voice id like de_DE-thorsten-high; can be passed multiple times",
+    )
+    parser.add_argument(
+        "--install-female-high-pack",
+        action="store_true",
+        help="Install curated official female high-quality Piper voices",
+    )
     parser.add_argument(
         "--no-default-voices",
         action="store_true",
@@ -108,8 +124,11 @@ def main() -> int:
         install_piper(runtime_root)
     if not args.no_default_voices:
         install_default_voices(voices_root)
-    if args.voice:
-        install_voice(voices_root, args.voice)
+    if args.install_female_high_pack:
+        for voice_id in HIGH_FEMALE_VOICE_PACK:
+            install_voice(voices_root, voice_id)
+    for voice_id in args.voice:
+        install_voice(voices_root, voice_id)
     print("Bootstrap finished")
     return 0
 

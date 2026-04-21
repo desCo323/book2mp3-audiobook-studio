@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 LANGUAGE_LABELS = {
     "de_DE": "Deutsch",
+    "es_AR": "Espanol (AR)",
     "en_GB": "English (UK)",
     "en_US": "English (US)",
     "fr_FR": "Francais",
@@ -23,16 +24,29 @@ LANGUAGE_LABELS = {
     "ro_RO": "Romana",
 }
 
+VOICE_NOTES = {
+    "en_US-lessac-high": "female",
+    "en_US-ljspeech-high": "female",
+    "en_GB-cori-high": "female",
+    "es_AR-daniela-high": "female",
+    "en_US-amy-medium": "female",
+    "en_GB-jenny_dioco-medium": "female",
+    "fr_FR-siwis-medium": "female",
+    "sv_SE-lisa-medium": "female",
+}
+
 PREFERRED_VOICE_ORDER = [
+    "en_US-ljspeech-high",
+    "en_US-lessac-high",
+    "en_GB-cori-high",
+    "es_AR-daniela-high",
     "de_DE-thorsten_emotional-medium",
     "de_DE-thorsten-high",
     "de_DE-mls-medium",
     "de_DE-kerstin-low",
-    "en_US-lessac-high",
     "en_US-libritts-high",
     "en_US-amy-medium",
     "en_US-ryan-high",
-    "en_GB-cori-high",
     "en_GB-jenny_dioco-medium",
     "en_GB-alba-medium",
     "fr_FR-siwis-medium",
@@ -54,15 +68,17 @@ PREFERRED_VOICE_ORDER = [
 ]
 
 DEFAULT_VOICE_PACK = [
+    "en_US-ljspeech-high",
+    "en_US-lessac-high",
+    "en_GB-cori-high",
+    "es_AR-daniela-high",
     "de_DE-thorsten_emotional-medium",
     "de_DE-thorsten-high",
     "de_DE-mls-medium",
     "de_DE-kerstin-low",
-    "en_US-lessac-high",
     "en_US-libritts-high",
     "en_US-amy-medium",
     "en_US-ryan-high",
-    "en_GB-cori-high",
     "en_GB-jenny_dioco-medium",
     "en_GB-alba-medium",
     "fr_FR-siwis-medium",
@@ -102,6 +118,9 @@ def voice_name(voice_id: str) -> str:
 
 
 def format_voice_label(voice_id: str) -> str:
+    note = VOICE_NOTES.get(voice_id, "")
+    if note:
+        return f"{voice_language_label(voice_id)} | {voice_name(voice_id)} | {voice_quality(voice_id)} | {note}"
     return f"{voice_language_label(voice_id)} | {voice_name(voice_id)} | {voice_quality(voice_id)}"
 
 
