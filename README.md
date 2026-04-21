@@ -65,6 +65,7 @@ XTTS note:
 - the app can now import an `xtts-webui` style `speakers/` folder into reusable XTTS voice profiles
 - the live tuning dialog now supports both `piper` and `xtts` previews
 - the main job UI now recommends XTTS with `Premium Natuerlich` when speaker profiles exist
+- the app can now auto-detect local `speakers/` folders for XTTS and import them into profiles
 
 ## Project layout
 

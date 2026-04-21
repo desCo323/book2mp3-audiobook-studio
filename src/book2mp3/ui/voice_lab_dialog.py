@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from book2mp3.config import AppPaths
-from book2mp3.xtts_speakers import import_xtts_webui_speakers
+from book2mp3.xtts_speakers import auto_import_xtts_speakers, import_xtts_webui_speakers
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_lab import create_voice_profile
 
@@ -76,6 +76,9 @@ class VoiceLabDialog(QDialog):
         add_samples_button = QPushButton("Samples hinzufuegen")
         add_samples_button.clicked.connect(self.add_samples)
         sample_row.addWidget(add_samples_button)
+        auto_import_button = QPushButton("XTTS-Sprecher automatisch suchen")
+        auto_import_button.clicked.connect(self.auto_import_webui_speakers)
+        sample_row.addWidget(auto_import_button)
         import_webui_button = QPushButton("XTTS-WebUI-Sprecher importieren")
         import_webui_button.clicked.connect(self.import_webui_speakers)
         sample_row.addWidget(import_webui_button)
@@ -153,6 +156,36 @@ class VoiceLabDialog(QDialog):
             f"{len(manifests)} XTTS-Sprecherprofile aus dem WebUI-Ordner importiert.",
         )
 
+    def auto_import_webui_speakers(self) -> None:
+        source_root, manifests = auto_import_xtts_speakers(
+            self.paths,
+            fallback_language=self.language_combo.currentText(),
+        )
+        self.refresh_existing_profiles()
+        if not source_root or not manifests:
+            QMessageBox.warning(
+                self,
+                "Keine XTTS-Sprecher gefunden",
+                "Es wurde kein befuellter speakers-Ordner gefunden. "
+                "Lege einen XTTS-WebUI speakers-Ordner unter src/speakers, speakers/ oder xtts-webui/speakers ab.",
+            )
+            return
+        self.details.setPlainText(
+            json.dumps(
+                {
+                    "imported_profiles": [manifest.parent.name for manifest in manifests],
+                    "source_folder": str(source_root),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        QMessageBox.information(
+            self,
+            "XTTS-Sprecher importiert",
+            f"{len(manifests)} XTTS-Sprecherprofile automatisch aus {source_root} importiert.",
+        )
+
     def save_profile(self) -> None:
         name = self.name_edit.text().strip()
         if not name:
@@ -186,5 +219,6 @@ class VoiceLabDialog(QDialog):
             self.profile_list.addItem(profile.parent.name)
         self.details.setPlainText(
             "Vorhandene Voice-Lab-Profile werden unter workspace/voice_profiles gespeichert.\n"
-            "XTTS/Custom Voices sind im UI farblich als Beta markiert."
+            "XTTS/Custom Voices sind im UI farblich als Beta markiert.\n"
+            "Wenn noch keine Profile da sind, nutze 'XTTS-Sprecher automatisch suchen' oder importiere einen WebUI speakers-Ordner."
         )

@@ -89,6 +89,7 @@ Voice selection:
 - the live tuning dialog can now switch between `piper` and `xtts`
 - XTTS uses imported speaker profiles instead of a fixed internal voice list
 - in the main job screen, selecting `xtts` now switches to the recommended `Premium Natuerlich` preset automatically
+- the `XTTS-Sprecher` button now first tries to auto-import a local `speakers/` folder before opening Voice Lab
 
 Simple workflow:
 

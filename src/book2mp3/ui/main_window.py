@@ -41,6 +41,7 @@ from book2mp3.voice_catalog import (
     language_choices,
     voice_language_code,
 )
+from book2mp3.xtts_speakers import auto_import_xtts_speakers
 from book2mp3.voice_lab import list_voice_profiles
 
 BETA_STYLE = "background-color: #fff1cc; border: 1px solid #d18b00; color: #6b4b00;"
@@ -146,6 +147,9 @@ class MainWindow(QMainWindow):
 
         self.voice_profile_combo = QComboBox()
         form.addRow("Voice profile", self.voice_profile_combo)
+        self.voice_profile_hint = QLabel("")
+        self.voice_profile_hint.setWordWrap(True)
+        form.addRow("XTTS-Profile", self.voice_profile_hint)
 
         self.preset_combo = QComboBox()
         for preset in QUALITY_PRESETS:
@@ -204,7 +208,7 @@ class MainWindow(QMainWindow):
         buttons.addWidget(self.voice_lab_button)
         xtts_import_button = QPushButton("XTTS-Sprecher")
         xtts_import_button.setStyleSheet(BETA_STYLE)
-        xtts_import_button.clicked.connect(self.open_voice_lab)
+        xtts_import_button.clicked.connect(self.import_or_open_xtts)
         buttons.addWidget(xtts_import_button)
         create_layout.addLayout(buttons)
 
@@ -294,8 +298,14 @@ class MainWindow(QMainWindow):
                     f"{profile.target_language} | {profile.display_name}",
                     profile.profile_id,
                 )
+            self.voice_profile_hint.setText(
+                f"{len(profiles)} XTTS-Profile verfuegbar. Gute Resultate haengen von den Referenzsamples ab."
+            )
         else:
             self.voice_profile_combo.addItem("No voice profiles found", "")
+            self.voice_profile_hint.setText(
+                "Keine XTTS-Profile vorhanden. Importiere einen xtts-webui speakers-Ordner oder erstelle ein Voice-Lab-Profil."
+            )
         self.update_backend_summary()
 
     def on_backend_changed(self) -> None:
@@ -496,6 +506,17 @@ class MainWindow(QMainWindow):
         dialog = VoiceLabDialog(self.paths, self)
         dialog.exec()
         self.refresh_voice_profiles()
+
+    def import_or_open_xtts(self) -> None:
+        source_root, manifests = auto_import_xtts_speakers(self.paths, fallback_language="de")
+        self.refresh_voice_profiles()
+        if manifests:
+            self.status_label.setText(f"XTTS-Sprecher importiert: {len(manifests)} aus {source_root}")
+            backend_index = self.backend_combo.findText("xtts")
+            if backend_index >= 0:
+                self.backend_combo.setCurrentIndex(backend_index)
+            return
+        self.open_voice_lab()
 
     def open_find_best_setting(self) -> None:
         dialog = FindBestSettingDialog(self.paths, self.manager, self)
