@@ -9,6 +9,11 @@ from pathlib import Path
 import requests
 
 
+def app_root(root: Path) -> Path:
+    candidate = root / "src"
+    return candidate if candidate.exists() else root
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("bundle_root", help="Portable bundle root created by build_portable_bundle.py")
@@ -23,7 +28,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     bundle_root = Path(args.bundle_root).resolve()
-    target = bundle_root / "python" / "windows"
+    program_root = app_root(bundle_root)
+    target = program_root / "python" / "windows"
     target.mkdir(parents=True, exist_ok=True)
 
     response = requests.get(args.url, timeout=300)
@@ -42,7 +48,7 @@ def main() -> int:
                     ".",
                     "Lib",
                     "Lib/site-packages",
-                    "../../src",
+                    "../..",
                     "import site",
                     "",
                 ]
@@ -53,6 +59,7 @@ def main() -> int:
 
     manifest = {
         "bundle_root": str(bundle_root),
+        "program_root": str(program_root),
         "windows_python": str(target),
         "source_url": args.url,
         "patched_pth_files": patched_files,

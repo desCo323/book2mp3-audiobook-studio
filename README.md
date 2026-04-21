@@ -236,3 +236,15 @@ python scripts/populate_bundle_python_linux.py src
 ```
 
 After that, `src/start.sh` and `src/book2mp3/start.sh` start with `src/python/linux/` and no longer need a local system Python.
+
+To prepare the local `src/` program folder for Windows as well, including the official embeddable Python and unpacked `win_amd64` dependency wheels:
+
+```bash
+python scripts/populate_bundle_python_windows.py src --clean
+```
+
+As verified on April 21, 2026, the default Windows embeddable source used by that script is:
+
+```text
+https://www.python.org/ftp/python/3.13.13/python-3.13.13-embeddable-amd64.zip
+```

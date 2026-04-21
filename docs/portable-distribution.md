@@ -128,6 +128,25 @@ Then install the application packages into that embedded runtime:
 python scripts/install_windows_bundle_packages.py dist/book2mp3-portable
 ```
 
+For the current local `src/` program folder, or to prepare a bundle directly from Linux, use the higher-level Windows populator:
+
+```bash
+python scripts/populate_bundle_python_windows.py src --clean
+```
+
+That path now:
+
+- downloads the official Windows embeddable Python ZIP
+- patches the `. _pth` file so `src/` is the import root
+- downloads `win_amd64` wheels for the app dependencies
+- unpacks those wheels directly into `python/windows/Lib/site-packages`
+
+As of April 21, 2026, the default verified embeddable source URL is:
+
+```text
+https://www.python.org/ftp/python/3.13.13/python-3.13.13-embeddable-amd64.zip
+```
+
 ## XTTS runtime note
 
 The current XTTS integration is intentionally separated from the main app runtime.
