@@ -159,14 +159,15 @@ Reason:
 Recommended setup path:
 
 ```bash
-python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standalone
+python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standalone --torch-variant auto
 ```
 
 That path now:
 
 - downloads a relocatable Python 3.11 build from `astral-sh/python-build-standalone`
 - installs it directly into `runtime/xtts/linux`
-- installs CPU-first `torch` and `torchaudio` by default to avoid dragging huge CUDA dependencies into the portable runtime
+- supports `--torch-variant auto`, `cpu` and `cuda`
+- with `auto`, first tries CUDA on NVIDIA systems and falls back to CPU if the post-install CUDA probe fails
 - optionally installs `TTS` into that dedicated runtime
 - writes both a standalone-Python manifest and an XTTS runtime manifest
 

@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import wave
 from pathlib import Path
 
@@ -63,19 +64,23 @@ def main() -> int:
 
         first_wav = app_root / "out" / "first.wav"
         second_wav = app_root / "out" / "second.wav"
+        first_started = time.perf_counter()
         backend.synthesize_many_to_wavs(
             ["Das ist ein erster kurzer XTTS Test."],
             profile,
             [first_wav],
         )
+        first_seconds = time.perf_counter() - first_started
         first_connection = backend.server_connection()
         first_pid = first_connection.process.pid
 
+        second_started = time.perf_counter()
         backend.synthesize_many_to_wavs(
             ["Das ist ein zweiter kurzer XTTS Test."],
             profile,
             [second_wav],
         )
+        second_seconds = time.perf_counter() - second_started
         second_connection = backend.server_connection()
         second_pid = second_connection.process.pid
 
@@ -91,6 +96,8 @@ def main() -> int:
             "first_output": str(first_wav),
             "second_output": str(second_wav),
             "server_pid": first_pid,
+            "first_seconds": round(first_seconds, 2),
+            "second_seconds": round(second_seconds, 2),
         }
         print(json.dumps(summary, indent=2))
     return 0

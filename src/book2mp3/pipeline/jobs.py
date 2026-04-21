@@ -253,10 +253,15 @@ class JobManager:
     ) -> JobState:
         state = self.prepare_job(state)
         logger = self.job_logger(state)
+        app_settings = load_app_settings(self.paths.app_settings_file)
         if state.backend == "piper":
             backend = PiperBackend(self.paths.runtime, self.paths.voices, logger=logger)
         elif state.backend == "xtts":
-            backend = XttsBackend(self.paths.runtime, logger=logger)
+            backend = XttsBackend(
+                self.paths.runtime,
+                logger=logger,
+                device_mode=app_settings.xtts_device_mode,
+            )
         else:
             raise ValueError(f"Unsupported backend: {state.backend}")
 

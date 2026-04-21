@@ -15,6 +15,7 @@ class AppSettings:
     default_keep_wav: bool = False
     default_max_chars: int = 220
     default_priority: int = 50
+    xtts_device_mode: str = "auto"
 
 
 def load_app_settings(path: Path) -> AppSettings:

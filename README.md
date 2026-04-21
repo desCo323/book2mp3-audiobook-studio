@@ -57,11 +57,15 @@ Current user-facing features:
 - `Find Best Setting` as a simple live preview mode: choose a book, hear a random excerpt, tweak 3 controls, press play
 - first Voice Lab dialog for collecting custom voice references
 - backend choice between `piper` and `xtts`
+- XTTS device mode option: `Auto`, `CPU erzwingen`, `CUDA bevorzugen`
+- XTTS CUDA probe in the UI, so users can see whether the runtime really uses CUDA
+- custom Piper model import for external `.onnx` + `.onnx.json` voices
 - detailed logs for debugging
 
 XTTS note:
 
 - XTTS quality usually comes from good speaker reference samples, not from a fixed built-in voice list
+- XTTS speed depends heavily on whether the dedicated XTTS runtime really has working CUDA; the UI now exposes an explicit runtime probe
 - the app can now import an `xtts-webui` style `speakers/` folder into reusable XTTS voice profiles
 - the live tuning dialog now supports both `piper` and `xtts` previews
 - the main job UI now recommends XTTS with `Premium Natuerlich` when speaker profiles exist
@@ -228,6 +232,14 @@ python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standa
 ```
 
 This setup now prefers CPU Torch wheels by default so the portable runtime does not accidentally pull the full CUDA stack.
+
+If you want XTTS to try CUDA on NVIDIA systems, use:
+
+```bash
+python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standalone --torch-variant auto
+```
+
+The runtime now probes CUDA after install and reports whether it actually worked.
 
 To make the local `src/` program folder itself self-contained on Linux, populate the embedded app Python directly:
 

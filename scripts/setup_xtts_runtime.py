@@ -35,15 +35,76 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--torch-variant",
-        choices=["cpu", "default"],
-        default="cpu",
-        help="Install CPU-first torch packages by default to avoid pulling large CUDA runtimes",
+        choices=["cpu", "default", "cuda", "auto"],
+        default="auto",
+        help="Torch package preference. 'auto' tries CUDA on NVIDIA systems and falls back to CPU if probe fails.",
     )
     return parser.parse_args()
 
 
 def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
+
+
+def host_has_nvidia_gpu() -> bool:
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except Exception:
+        return False
+    return bool(result.stdout.strip())
+
+
+def install_torch_variant(python_bin: Path, variant: str) -> list[str]:
+    if variant == "cpu":
+        run(
+            [
+                str(python_bin),
+                "-m",
+                "pip",
+                "install",
+                "--index-url",
+                "https://download.pytorch.org/whl/cpu",
+                "torch<2.6",
+                "torchaudio<2.6",
+            ]
+        )
+        return ["torch[cpu]<2.6", "torchaudio[cpu]<2.6"]
+    if variant == "cuda":
+        run(
+            [
+                str(python_bin),
+                "-m",
+                "pip",
+                "install",
+                "--index-url",
+                "https://download.pytorch.org/whl/cu124",
+                "torch<2.6",
+                "torchaudio<2.6",
+            ]
+        )
+        return ["torch[cu124]<2.6", "torchaudio[cu124]<2.6"]
+    run([str(python_bin), "-m", "pip", "install", "torch<2.6", "torchaudio<2.6"])
+    return ["torch<2.6", "torchaudio<2.6"]
+
+
+def cuda_probe(python_bin: Path) -> dict[str, object]:
+    checker = ROOT / "scripts" / "check_xtts_cuda.py"
+    result = subprocess.run(
+        [str(python_bin), str(checker)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if not result.stdout.strip():
+        return {"ok": False, "error": result.stderr.strip() or "No probe output"}
+    payload = json.loads(result.stdout)
+    payload["returncode"] = result.returncode
+    return payload
 
 
 def bootstrap_linux_standalone(runtime_root: Path, tag: str) -> Path:
@@ -75,32 +136,33 @@ def main() -> int:
         raise SystemExit("Provide either --python or --bootstrap-linux-standalone")
 
     installed_packages: list[str] = []
+    selected_torch_variant = args.torch_variant
+    if selected_torch_variant == "auto":
+        selected_torch_variant = "cuda" if host_has_nvidia_gpu() else "cpu"
     if not args.skip_package_install:
         run([str(python_bin), "-m", "pip", "install", "-U", "pip", "setuptools", "wheel"])
-        if args.torch_variant == "cpu":
-            run(
-                [
-                    str(python_bin),
-                    "-m",
-                    "pip",
-                    "install",
-                    "--index-url",
-                    "https://download.pytorch.org/whl/cpu",
-                    "torch<2.6",
-                    "torchaudio<2.6",
-                ]
-            )
-            installed_packages.extend(["torch[cpu]<2.6", "torchaudio[cpu]<2.6"])
+        installed_packages.extend(install_torch_variant(python_bin, selected_torch_variant))
         run([str(python_bin), "-m", "pip", "install", "TTS"])
         run([str(python_bin), "-m", "pip", "install", *XTTS_COMPAT_PACKAGES])
         installed_packages.extend(["TTS", *XTTS_COMPAT_PACKAGES])
+        probe = cuda_probe(python_bin)
+        if args.torch_variant == "auto" and selected_torch_variant == "cuda" and not probe.get("cuda_available"):
+            install_torch_variant(python_bin, "cpu")
+            selected_torch_variant = "cpu"
+            installed_packages = [item for item in installed_packages if not item.startswith("torch")]
+            installed_packages[:0] = ["torch[cpu]<2.6", "torchaudio[cpu]<2.6"]
+            probe = cuda_probe(python_bin)
+    else:
+        probe = cuda_probe(python_bin)
 
     manifest = {
         "runtime_root": str(runtime_root),
         "python": str(python_bin),
         "packages": installed_packages,
         "portable_python_manifest": str(portable_manifest_path) if portable_manifest_path else "",
-        "torch_variant": args.torch_variant,
+        "requested_torch_variant": args.torch_variant,
+        "installed_torch_variant": selected_torch_variant,
+        "cuda_probe": probe,
     }
     (runtime_root / "xtts-runtime-manifest.json").write_text(
         json.dumps(manifest, indent=2),

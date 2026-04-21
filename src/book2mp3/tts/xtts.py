@@ -9,6 +9,7 @@ import platform
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,9 +29,13 @@ class XttsBackend:
     _server_connections: dict[str, _XttsServerConnection] = {}
     _atexit_registered = False
 
-    def __init__(self, runtime_root: Path, logger: logging.Logger | None = None) -> None:
+    def __init__(self, runtime_root: Path, logger: logging.Logger | None = None, device_mode: str = "auto") -> None:
         self.runtime_root = runtime_root
         self.logger = logger
+        self.device_mode = device_mode
+
+    def set_device_mode(self, device_mode: str) -> None:
+        self.device_mode = device_mode
 
     def dedicated_python_path(self) -> Path:
         system = platform.system().lower()
@@ -70,6 +75,19 @@ class XttsBackend:
             )
         return candidate
 
+    def runtime_probe(self) -> dict[str, object]:
+        checker = Path(__file__).resolve().parents[3] / "scripts" / "check_xtts_cuda.py"
+        env = self.subprocess_env()
+        result = subprocess.run(
+            [str(self.python_path()), str(checker)],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        if result.returncode not in {0, 1}:
+            raise RuntimeError(f"XTTS runtime probe failed: {result.stderr.strip() or result.stdout.strip()}")
+        return json.loads(result.stdout)
+
     def subprocess_env(self) -> dict[str, str]:
         env = os.environ.copy()
         python_path = self.python_path()
@@ -92,7 +110,7 @@ class XttsBackend:
         return os.environ.get("BOOK2MP3_DISABLE_XTTS_SERVER", "").strip() not in {"1", "true", "yes"}
 
     def server_key(self) -> str:
-        return str(self.python_path().resolve())
+        return f"{self.python_path().resolve()}::{self.device_mode}"
 
     @classmethod
     def shutdown_all_servers(cls) -> None:
@@ -236,8 +254,15 @@ class XttsBackend:
         profile: VoiceProfile,
         wav_path: Path,
         length_scale: float = 1.0,
+        enable_text_splitting: bool = False,
     ) -> None:
-        self.synthesize_many_to_wavs([text], profile, [wav_path], length_scale=length_scale)
+        self.synthesize_many_to_wavs(
+            [text],
+            profile,
+            [wav_path],
+            length_scale=length_scale,
+            enable_text_splitting=enable_text_splitting,
+        )
 
     def synthesize_many_to_wavs(
         self,
@@ -245,6 +270,7 @@ class XttsBackend:
         profile: VoiceProfile,
         wav_paths: list[Path],
         length_scale: float = 1.0,
+        enable_text_splitting: bool = False,
     ) -> None:
         if len(texts) != len(wav_paths):
             raise ValueError("texts and wav_paths must have the same length")
@@ -257,17 +283,31 @@ class XttsBackend:
             "model_name": profile.preferred_model,
             "output_files": [str(path) for path in wav_paths],
             "length_scale": length_scale,
+            "enable_text_splitting": enable_text_splitting,
+            "device_mode": self.device_mode,
         }
         if self.logger:
             self.logger.debug("Synthesizing %s chunk(s) with XTTS payload", len(texts))
             self.logger.debug("XTTS payload: %s", payload)
+        started = time.perf_counter()
         try:
             if self.server_enabled():
                 response = self._request_server(payload)
                 if self.logger:
                     self.logger.debug("XTTS server response: %s", response)
+                    self.logger.info(
+                        "XTTS server synthesis finished in %.2fs for %s text item(s)",
+                        time.perf_counter() - started,
+                        len(texts),
+                    )
                 return
         except Exception:
             if self.logger:
                 self.logger.exception("Persistent XTTS server request failed, falling back to one-shot worker")
         self._run_one_shot(payload)
+        if self.logger:
+            self.logger.info(
+                "XTTS one-shot synthesis finished in %.2fs for %s text item(s)",
+                time.perf_counter() - started,
+                len(texts),
+            )

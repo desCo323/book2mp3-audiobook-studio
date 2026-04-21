@@ -31,6 +31,7 @@ from book2mp3.app_settings import AppSettings, load_app_settings, reset_workspac
 from book2mp3.config import AppPaths
 from book2mp3.models import JobState
 from book2mp3.pipeline.jobs import JobManager
+from book2mp3.piper_custom import default_config_for_model, import_custom_piper_model
 from book2mp3.preview_sessions import list_preview_sessions, update_preview_job_status
 from book2mp3.presets import QUALITY_PRESETS, get_preset
 from book2mp3.tts.piper import PiperBackend
@@ -64,6 +65,8 @@ class MainWindow(QMainWindow):
         self.logger = get_logger("ui")
         self.installed_voice_ids: list[str] = []
         self.xtts_backend = XttsBackend(paths.runtime, logger=self.logger)
+        self.xtts_backend.set_device_mode(self.app_settings.xtts_device_mode)
+        self.xtts_probe_cache: dict[str, object] | None = None
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
@@ -176,6 +179,23 @@ class MainWindow(QMainWindow):
         self.backend_summary.setWordWrap(True)
         form.addRow("Backend-Status", self.backend_summary)
 
+        self.xtts_device_combo = QComboBox()
+        self.xtts_device_combo.addItem("Auto", "auto")
+        self.xtts_device_combo.addItem("CPU erzwingen", "cpu")
+        self.xtts_device_combo.addItem("CUDA bevorzugen", "cuda")
+        self.xtts_device_combo.currentIndexChanged.connect(self.on_xtts_device_mode_changed)
+        form.addRow("XTTS-Geraet", self.xtts_device_combo)
+
+        xtts_runtime_row = QHBoxLayout()
+        xtts_probe_button = QPushButton("XTTS CUDA pruefen")
+        xtts_probe_button.clicked.connect(self.show_xtts_runtime_probe)
+        xtts_runtime_row.addWidget(xtts_probe_button)
+        form.addRow("XTTS-Test", self._wrap(xtts_runtime_row))
+
+        self.xtts_runtime_hint = QLabel("")
+        self.xtts_runtime_hint.setWordWrap(True)
+        form.addRow("XTTS-Runtime", self.xtts_runtime_hint)
+
         self.voice_profile_combo = QComboBox()
         self.voice_profile_combo.currentIndexChanged.connect(self.refresh_selected_voice_profile)
         form.addRow("XTTS-Profil", self.voice_profile_combo)
@@ -255,6 +275,9 @@ class MainWindow(QMainWindow):
         self.priority_button = QPushButton("Prioritaet anwenden")
         self.priority_button.clicked.connect(self.apply_priority_to_selected)
         buttons.addWidget(self.priority_button)
+        import_piper_button = QPushButton("Piper-Modell importieren")
+        import_piper_button.clicked.connect(self.import_custom_piper_voice)
+        buttons.addWidget(import_piper_button)
         voices_button = QPushButton("Stimmen neu laden")
         voices_button.clicked.connect(self.refresh_voice_list)
         buttons.addWidget(voices_button)
@@ -394,6 +417,36 @@ class MainWindow(QMainWindow):
         self.refresh_selected_voice_profile()
         self.update_backend_summary()
 
+    def probe_xtts_runtime(self, *, refresh: bool = False) -> dict[str, object] | None:
+        if self.xtts_probe_cache is not None and not refresh:
+            return self.xtts_probe_cache
+        if not self.xtts_backend.is_available():
+            self.xtts_probe_cache = None
+            self.xtts_runtime_hint.setText(self.xtts_backend.availability_reason())
+            return None
+        try:
+            self.xtts_probe_cache = self.xtts_backend.runtime_probe()
+        except Exception as exc:
+            self.xtts_probe_cache = {"ok": False, "error": str(exc)}
+        probe = self.xtts_probe_cache
+        if probe.get("ok"):
+            if probe.get("cuda_available"):
+                gpu_names = ", ".join(probe.get("gpu_names", [])) or "CUDA-GPU"
+                self.xtts_runtime_hint.setText(
+                    f"CUDA aktiv in XTTS-Runtime. Geraete: {gpu_names}. Torch {probe.get('torch_version', '-')}"
+                )
+            else:
+                host = probe.get("host_nvidia_smi", {})
+                host_hint = ""
+                if isinstance(host, dict) and host.get("found") and host.get("gpus"):
+                    host_hint = f" Host sieht NVIDIA: {', '.join(host.get('gpus', []))}."
+                self.xtts_runtime_hint.setText(
+                    f"XTTS-Runtime laeuft aktuell auf CPU. Torch {probe.get('torch_version', '-')}.{host_hint}"
+                )
+        else:
+            self.xtts_runtime_hint.setText(f"XTTS-Probe fehlgeschlagen: {probe.get('error', 'unbekannt')}")
+        return self.xtts_probe_cache
+
     def refresh_selected_voice_profile(self) -> None:
         profile_id = self.voice_profile_combo.currentData() or ""
         if not profile_id:
@@ -417,6 +470,7 @@ class MainWindow(QMainWindow):
         self.voice_combo.setEnabled(is_piper)
         self.voice_language_combo.setEnabled(is_piper)
         self.voice_profile_combo.setEnabled(not is_piper)
+        self.xtts_device_combo.setEnabled(not is_piper)
         if is_piper:
             self.backend_combo.setStyleSheet("")
             self.voice_profile_combo.setStyleSheet("")
@@ -439,6 +493,7 @@ class MainWindow(QMainWindow):
             self.backend_combo.setStyleSheet(BETA_STYLE)
             self.voice_profile_combo.setStyleSheet(BETA_STYLE)
             self.backend_notice.show()
+            self.xtts_backend.set_device_mode(self.xtts_device_combo.currentData() or "auto")
             if self.preset_combo.currentData() in {"fast_cpu", "balanced", "natural"}:
                 xtts_index = self.preset_combo.findData("premium_natural")
                 if xtts_index >= 0:
@@ -450,6 +505,15 @@ class MainWindow(QMainWindow):
         if self.backend_combo.currentText() == "xtts":
             if not self.xtts_backend.is_available():
                 self.backend_summary.setText(f"XTTS nicht bereit. {self.xtts_backend.availability_reason()}")
+                return
+            probe = self.probe_xtts_runtime()
+            if probe and probe.get("ok"):
+                actual_device = "CUDA" if probe.get("cuda_available") else "CPU"
+                self.backend_summary.setText(
+                    f"XTTS: {profile_count} Sprecherprofile verfuegbar. "
+                    f"Geraetemodus {self.xtts_device_combo.currentData() or 'auto'}, aktuelle Runtime {actual_device}. "
+                    "Empfohlen: Preset 'Premium Natuerlich' und ein gutes WebUI-/Voice-Lab-Profil."
+                )
                 return
             self.backend_summary.setText(
                 f"XTTS: {profile_count} Sprecherprofile verfuegbar. "
@@ -472,6 +536,9 @@ class MainWindow(QMainWindow):
         self.keep_wav_checkbox.setChecked(self.app_settings.default_keep_wav)
         self.max_chars_spin.setValue(self.app_settings.default_max_chars)
         self.priority_spin.setValue(self.app_settings.default_priority)
+        device_index = self.xtts_device_combo.findData(self.app_settings.xtts_device_mode)
+        if device_index >= 0:
+            self.xtts_device_combo.setCurrentIndex(device_index)
 
     def refresh_jobs(self) -> None:
         self.jobs_list.clear()
@@ -694,6 +761,37 @@ class MainWindow(QMainWindow):
             else "Debug-Logging reduziert. Nur wichtigere Infos und Fehler werden protokolliert."
         )
 
+    def on_xtts_device_mode_changed(self) -> None:
+        device_mode = self.xtts_device_combo.currentData() or "auto"
+        self.app_settings.xtts_device_mode = device_mode
+        save_app_settings(self.paths.app_settings_file, self.app_settings)
+        self.xtts_backend.set_device_mode(device_mode)
+        self.xtts_probe_cache = None
+        self.update_backend_summary()
+
+    def show_xtts_runtime_probe(self) -> None:
+        probe = self.probe_xtts_runtime(refresh=True)
+        if not probe:
+            QMessageBox.warning(self, "XTTS runtime fehlt", self.xtts_backend.availability_reason())
+            return
+        if probe.get("ok"):
+            actual = "CUDA" if probe.get("cuda_available") else "CPU"
+            gpu_names = probe.get("gpu_names", [])
+            host = probe.get("host_nvidia_smi", {})
+            host_text = ", ".join(host.get("gpus", [])) if isinstance(host, dict) else ""
+            message = (
+                f"XTTS Runtime OK\n\n"
+                f"Gewuenschter Modus: {self.xtts_device_combo.currentData() or 'auto'}\n"
+                f"Aktueller Modus: {actual}\n"
+                f"Torch: {probe.get('torch_version', '-')}\n"
+                f"CUDA verfuegbar: {probe.get('cuda_available')}\n"
+                f"GPU(s): {', '.join(gpu_names) or '-'}\n"
+                f"Host NVIDIA: {host_text or '-'}"
+            )
+            QMessageBox.information(self, "XTTS Probe", message)
+        else:
+            QMessageBox.warning(self, "XTTS Probe", f"XTTS-Probe fehlgeschlagen:\n{probe.get('error', 'unbekannt')}")
+
     def reset_application_state(self) -> None:
         if self.worker and self.worker.isRunning():
             QMessageBox.warning(self, "Job laeuft", "Bitte zuerst den aktuellen Job stoppen, bevor du alles zuruecksetzt.")
@@ -712,6 +810,8 @@ class MainWindow(QMainWindow):
         configure_logging(self.paths.logs, debug_enabled=self.app_settings.debug_logging, force_reset=True)
         self.manager = JobManager(self.paths)
         self.current_job_id = None
+        self.xtts_backend.set_device_mode(self.app_settings.xtts_device_mode)
+        self.xtts_probe_cache = None
         self.debug_logging_checkbox.setChecked(self.app_settings.debug_logging)
         self.source_edit.clear()
         self.apply_default_controls()
@@ -763,6 +863,45 @@ class MainWindow(QMainWindow):
             return
         self.status_label.setText("XTTS-Starter waren bereits installiert.")
         self.xtts_scan_hint.setText("XTTS-Starterprofile sind bereits vorhanden.")
+
+    def import_custom_piper_voice(self) -> None:
+        model_filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Piper ONNX-Modell waehlen",
+            str(self.paths.root),
+            "Piper model (*.onnx)",
+        )
+        if not model_filename:
+            return
+        model_path = Path(model_filename)
+        try:
+            config_path = default_config_for_model(model_path)
+        except FileNotFoundError:
+            config_filename, _ = QFileDialog.getOpenFileName(
+                self,
+                "Piper JSON-Konfiguration waehlen",
+                str(model_path.parent),
+                "Piper config (*.json)",
+            )
+            if not config_filename:
+                QMessageBox.warning(
+                    self,
+                    "Config fehlt",
+                    "Ein Piper-Modell braucht die passende .onnx.json-Datei.",
+                )
+                return
+            config_path = Path(config_filename)
+        imported = import_custom_piper_model(self.paths.voices, model_path, config_path)
+        self.refresh_voice_list()
+        voice_index = self.voice_combo.findData(imported.voice_id)
+        if voice_index >= 0:
+            self.voice_combo.setCurrentIndex(voice_index)
+        self.status_label.setText(f"Custom-Piper-Stimme importiert: {imported.voice_id}")
+        QMessageBox.information(
+            self,
+            "Piper importiert",
+            f"Custom-Piper-Stimme installiert:\n{imported.voice_id}\n\n{imported.model_path}",
+        )
 
     def preview_xtts_reference(self) -> None:
         profile_id = self.voice_profile_combo.currentData() or ""

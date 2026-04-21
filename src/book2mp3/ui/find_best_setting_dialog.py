@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from book2mp3.config import AppPaths
+from book2mp3.app_settings import load_app_settings, save_app_settings
 from book2mp3.pipeline.audio import concat_mp3_files, wav_to_mp3
 from book2mp3.pipeline.chunking import split_text
 from book2mp3.preview_sessions import (
@@ -67,6 +68,7 @@ class LivePreviewWorker(QThread):
         max_chars: int,
         sentence_silence: float,
         length_scale: float,
+        xtts_device_mode: str,
     ) -> None:
         super().__init__()
         self.paths = paths
@@ -77,6 +79,7 @@ class LivePreviewWorker(QThread):
         self.max_chars = max_chars
         self.sentence_silence = sentence_silence
         self.length_scale = length_scale
+        self.xtts_device_mode = xtts_device_mode
         self.logger = get_logger("live_preview")
 
     def run(self) -> None:
@@ -91,8 +94,15 @@ class LivePreviewWorker(QThread):
             text = Path(session.preview_source_file).read_text(encoding="utf-8")
             chunks = split_text(text, self.max_chars)
             piper_backend = PiperBackend(self.paths.runtime, self.paths.voices, logger=self.logger)
-            xtts_backend = XttsBackend(self.paths.runtime, logger=self.logger)
+            xtts_backend = XttsBackend(self.paths.runtime, logger=self.logger, device_mode=self.xtts_device_mode)
             mp3_files: list[Path] = []
+            self.logger.info(
+                "Live preview start backend=%s excerpt_chars=%s external_chunks=%s max_chars=%s",
+                self.backend,
+                len(text),
+                len(chunks),
+                self.max_chars,
+            )
 
             if self.backend == "piper":
                 for index, chunk in enumerate(chunks, start=1):
@@ -109,13 +119,16 @@ class LivePreviewWorker(QThread):
                     mp3_files.append(mp3_path)
             else:
                 profile = load_voice_profile(self.paths.voice_profiles, self.voice_profile_id)
-                wav_paths = [wav_root / f"{index:03d}.wav" for index in range(1, len(chunks) + 1)]
-                mp3_paths = [mp3_root / f"{index:03d}.mp3" for index in range(1, len(chunks) + 1)]
+                # XTTS preview sounds better and avoids extra overhead if the excerpt is rendered in one pass
+                # and the model does its own sentence splitting internally.
+                wav_paths = [wav_root / "001.wav"]
+                mp3_paths = [mp3_root / "001.mp3"]
                 xtts_backend.synthesize_many_to_wavs(
-                    chunks,
+                    [text],
                     profile,
                     wav_paths,
                     length_scale=self.length_scale,
+                    enable_text_splitting=True,
                 )
                 for wav_path, mp3_path in zip(wav_paths, mp3_paths, strict=True):
                     wav_to_mp3(wav_path, mp3_path, logger=self.logger)
@@ -146,11 +159,12 @@ class FindBestSettingDialog(QDialog):
         super().__init__(parent)
         self.paths = paths
         self.logger = get_logger("find_best_setting")
+        self.app_settings = load_app_settings(paths.app_settings_file)
         self.current_source: Path | None = None
         self.current_session_id: str | None = None
         self.installed_voices: list[str] = []
         self.preview_worker: LivePreviewWorker | None = None
-        self.xtts_backend = XttsBackend(paths.runtime, logger=self.logger)
+        self.xtts_backend = XttsBackend(paths.runtime, logger=self.logger, device_mode=self.app_settings.xtts_device_mode)
 
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
@@ -214,6 +228,16 @@ class FindBestSettingDialog(QDialog):
         self.voice_profile_combo = QComboBox()
         self.voice_profile_combo.currentIndexChanged.connect(self.refresh_selected_voice_profile)
         form.addRow("XTTS-Profil", self.voice_profile_combo)
+
+        self.xtts_device_combo = QComboBox()
+        self.xtts_device_combo.addItem("Auto", "auto")
+        self.xtts_device_combo.addItem("CPU erzwingen", "cpu")
+        self.xtts_device_combo.addItem("CUDA bevorzugen", "cuda")
+        device_index = self.xtts_device_combo.findData(self.app_settings.xtts_device_mode)
+        self.xtts_device_combo.setCurrentIndex(device_index if device_index >= 0 else 0)
+        self.xtts_device_combo.currentIndexChanged.connect(self.on_xtts_device_mode_changed)
+        form.addRow("XTTS-Geraet", self.xtts_device_combo)
+
         self.voice_profile_details = QLabel("")
         self.voice_profile_details.setWordWrap(True)
         form.addRow("Profil-Info", self.voice_profile_details)
@@ -392,13 +416,18 @@ class FindBestSettingDialog(QDialog):
         self.voice_combo.setEnabled(is_piper)
         self.voice_language_combo.setEnabled(is_piper)
         self.voice_profile_combo.setEnabled(not is_piper)
+        self.xtts_device_combo.setEnabled(not is_piper)
         if is_piper:
             self.status_label.setText("Piper aktiv: schnell und offline, aber oft synthetischer.")
         else:
+            self.xtts_backend.set_device_mode(self.xtts_device_combo.currentData() or "auto")
             if not self.xtts_backend.is_available():
                 self.status_label.setText(f"XTTS nicht bereit: {self.xtts_backend.availability_reason()}")
             else:
-                self.status_label.setText("XTTS aktiv: bessere Chance auf natuerlichen Klang mit guten Sprecherprofilen.")
+                self.status_label.setText(
+                    "XTTS aktiv: bessere Chance auf natuerlichen Klang mit guten Sprecherprofilen. "
+                    f"Geraet: {self.xtts_device_combo.currentData() or 'auto'}."
+                )
 
     def restore_last_session(self) -> None:
         sessions = list_preview_sessions(self.paths)
@@ -521,7 +550,10 @@ class FindBestSettingDialog(QDialog):
         self.sentence_label.setText(f"{sentence_silence:.2f}s")
         self.length_label.setText(f"{length_scale:.2f}")
         if self.backend_combo.currentText() == "xtts":
-            hint = "XTTS: gute Referenzsamples sind wichtiger als die letzten Regler-Prozent."
+            hint = (
+                "XTTS: gute Referenzsamples sind wichtiger als die letzten Regler-Prozent. "
+                f"Geraet: {self.xtts_device_combo.currentData() or 'auto'}."
+            )
         elif max_chars >= 240 and sentence_silence >= 0.24 and length_scale >= 1.02:
             hint = "Eher natuerlich und ruhiger."
         elif max_chars <= 190 and sentence_silence <= 0.16 and length_scale <= 0.98:
@@ -592,11 +624,19 @@ class FindBestSettingDialog(QDialog):
             self.max_chars_spin.value(),
             self.sentence_slider.value() / 100,
             self.length_slider.value() / 100,
+            self.xtts_device_combo.currentData() or "auto",
         )
         self.preview_worker.preview_finished.connect(self.on_preview_finished)
         self.preview_worker.preview_failed.connect(self.on_preview_failed)
         self.preview_worker.finished.connect(self.cleanup_preview_worker)
         self.preview_worker.start()
+
+    def on_xtts_device_mode_changed(self) -> None:
+        device_mode = self.xtts_device_combo.currentData() or "auto"
+        self.app_settings.xtts_device_mode = device_mode
+        save_app_settings(self.paths.app_settings_file, self.app_settings)
+        self.xtts_backend.set_device_mode(device_mode)
+        self.update_helper_text()
 
     def on_preview_finished(self, session_id: str, output_mp3: str) -> None:
         self.play_now_button.setEnabled(True)

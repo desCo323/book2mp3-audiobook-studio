@@ -40,8 +40,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--xtts-torch-variant",
-        choices=["cpu", "default"],
-        default="cpu",
+        choices=["cpu", "default", "cuda", "auto"],
+        default="auto",
         help="Torch package preference for XTTS runtime bootstrapping",
     )
     return parser.parse_args()

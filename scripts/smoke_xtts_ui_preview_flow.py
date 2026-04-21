@@ -44,8 +44,15 @@ def create_dummy_wav(path: Path, seconds: int = 4) -> None:
         wav_file.writeframes(b"\x00\x00" * 16000 * seconds)
 
 
-def synthesize_dummy_wav(self: XttsBackend, text: str, profile, wav_path: Path, length_scale: float = 1.0) -> None:
-    del self, text, profile, length_scale
+def synthesize_dummy_wav(
+    self: XttsBackend,
+    text: str,
+    profile,
+    wav_path: Path,
+    length_scale: float = 1.0,
+    enable_text_splitting: bool = False,
+) -> None:
+    del self, text, profile, length_scale, enable_text_splitting
     create_dummy_wav(wav_path, seconds=2)
 
 
@@ -55,8 +62,9 @@ def synthesize_dummy_wavs(
     profile,
     wav_paths: list[Path],
     length_scale: float = 1.0,
+    enable_text_splitting: bool = False,
 ) -> None:
-    del self, texts, profile, length_scale
+    del self, texts, profile, length_scale, enable_text_splitting
     for wav_path in wav_paths:
         create_dummy_wav(wav_path, seconds=2)
 
