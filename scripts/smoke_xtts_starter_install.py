@@ -14,8 +14,8 @@ def main() -> int:
         paths = AppPaths.from_project_root(root)
         paths.ensure()
         manifests = install_starter_xtts_profiles(paths)
-        if len(manifests) < 5:
-            raise AssertionError(f"Expected at least 5 starter manifests, got {len(manifests)}")
+        if len(manifests) < 7:
+            raise AssertionError(f"Expected at least 7 starter manifests, got {len(manifests)}")
         print(
             json.dumps(
                 {

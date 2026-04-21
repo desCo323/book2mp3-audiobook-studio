@@ -61,6 +61,7 @@ Important note:
 
 - The app currently pulls the sample WAV files `calm_female.wav`, `female.wav` and `male.wav` from that upstream repository when the user installs XTTS starter speakers.
 - The app now also pulls a few German starter WAV files at install time from the Thorsten-Voice dataset through the Hugging Face datasets API.
+- Some German female starter profiles are currently built from curated public female reference samples while targeting German generation in XTTS. Those still reuse the `xtts-webui` sample WAV files listed above.
 - If you redistribute those starter samples, you should preserve attribution to the upstream repository and re-check the upstream licensing state at release time.
 
 ### Piper runtime

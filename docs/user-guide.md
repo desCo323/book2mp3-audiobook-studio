@@ -93,6 +93,7 @@ Voice selection:
 - the auto-import now also scans common old `xtts-webui` installation folders in home, documents, downloads and mounted drives
 - if no old XTTS speaker folder is found, you can use `XTTS-Starter` to install example XTTS speaker profiles directly from the upstream `xtts-webui` sample set and curated German `Thorsten-Voice` examples
 - XTTS profile selectors in the main UI and tuning dialog can now play the stored reference sample, so you can hear the source voice before generating a preview
+- there are now also German female XTTS starter profiles that use cross-language cloning with `de` as target language for a faster usable default
 
 Simple workflow:
 

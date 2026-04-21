@@ -25,12 +25,34 @@ STARTER_XTTS_SPEAKERS = (
         ],
     },
     {
+        "display_name": "XTTS Deutsch Weiblich Warm",
+        "language": "de",
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "de_warm_female.wav",
+                "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/calm_female.wav",
+            }
+        ],
+    },
+    {
         "display_name": "XTTS Female",
         "language": "en",
         "samples": [
             {
                 "kind": "url",
                 "filename": "female.wav",
+                "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/female.wav",
+            }
+        ],
+    },
+    {
+        "display_name": "XTTS Deutsch Weiblich Klar",
+        "language": "de",
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "de_clear_female.wav",
                 "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/female.wav",
             }
         ],

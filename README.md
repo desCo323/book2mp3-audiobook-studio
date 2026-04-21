@@ -69,6 +69,7 @@ XTTS note:
 - the XTTS migration path now also scans common old `xtts-webui` installation locations
 - if no old XTTS installation exists, the app can now install starter XTTS sample profiles including English `xtts-webui` examples and German `Thorsten-Voice` examples
 - XTTS profiles can now be previewed directly in the UI via their stored reference sample before you run a synthesis test
+- for German female XTTS use, the app now also ships cross-language female starter profiles with `de` as target language, based on curated female reference samples
 
 ## Project layout
 
