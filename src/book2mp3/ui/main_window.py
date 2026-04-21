@@ -41,7 +41,7 @@ from book2mp3.voice_catalog import (
     language_choices,
     voice_language_code,
 )
-from book2mp3.xtts_speakers import auto_import_xtts_speakers
+from book2mp3.xtts_speakers import auto_import_xtts_speakers, install_starter_xtts_profiles
 from book2mp3.voice_lab import list_voice_profiles
 
 BETA_STYLE = "background-color: #fff1cc; border: 1px solid #d18b00; color: #6b4b00;"
@@ -213,6 +213,10 @@ class MainWindow(QMainWindow):
         xtts_import_button.setStyleSheet(BETA_STYLE)
         xtts_import_button.clicked.connect(self.import_or_open_xtts)
         buttons.addWidget(xtts_import_button)
+        xtts_starter_button = QPushButton("XTTS-Starter")
+        xtts_starter_button.setStyleSheet(BETA_STYLE)
+        xtts_starter_button.clicked.connect(self.install_xtts_starters)
+        buttons.addWidget(xtts_starter_button)
         create_layout.addLayout(buttons)
 
         self.progress_bar = QProgressBar()
@@ -311,7 +315,7 @@ class MainWindow(QMainWindow):
                 "Keine XTTS-Profile vorhanden. Importiere einen xtts-webui speakers-Ordner oder erstelle ein Voice-Lab-Profil."
             )
             self.xtts_scan_hint.setText(
-                "Nutze 'XTTS-Sprecher', damit die App typische alte xtts-webui-Installationen automatisch durchsucht."
+                "Nutze 'XTTS-Sprecher' fuer Auto-Import alter WebUI-Ordner oder 'XTTS-Starter' fuer sofort nutzbare Beispielsprecher."
             )
         self.update_backend_summary()
 
@@ -524,10 +528,32 @@ class MainWindow(QMainWindow):
             if backend_index >= 0:
                 self.backend_combo.setCurrentIndex(backend_index)
             return
+        starter_manifests = install_starter_xtts_profiles(self.paths)
+        self.refresh_voice_profiles()
+        if starter_manifests:
+            self.status_label.setText(f"XTTS-Starter installiert: {len(starter_manifests)} Profile")
+            self.xtts_scan_hint.setText("Keine Altinstallation gefunden. XTTS-Starterprofile wurden stattdessen installiert.")
+            backend_index = self.backend_combo.findText("xtts")
+            if backend_index >= 0:
+                self.backend_combo.setCurrentIndex(backend_index)
+            return
         self.xtts_scan_hint.setText(
-            "Kein befuellter XTTS speakers-Ordner gefunden. Oeffne Voice Lab fuer Details und manuelle Auswahl."
+            "Kein befuellter XTTS speakers-Ordner gefunden und keine Starterprofile installiert. Oeffne Voice Lab fuer Details und manuelle Auswahl."
         )
         self.open_voice_lab()
+
+    def install_xtts_starters(self) -> None:
+        manifests = install_starter_xtts_profiles(self.paths)
+        self.refresh_voice_profiles()
+        if manifests:
+            self.status_label.setText(f"XTTS-Starter installiert: {len(manifests)}")
+            self.xtts_scan_hint.setText("XTTS-Starterprofile sind jetzt verfuegbar.")
+            backend_index = self.backend_combo.findText("xtts")
+            if backend_index >= 0:
+                self.backend_combo.setCurrentIndex(backend_index)
+            return
+        self.status_label.setText("XTTS-Starter waren bereits installiert.")
+        self.xtts_scan_hint.setText("XTTS-Starterprofile sind bereits vorhanden.")
 
     def open_find_best_setting(self) -> None:
         dialog = FindBestSettingDialog(self.paths, self.manager, self)

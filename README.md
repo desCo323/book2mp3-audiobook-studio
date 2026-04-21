@@ -67,6 +67,7 @@ XTTS note:
 - the main job UI now recommends XTTS with `Premium Natuerlich` when speaker profiles exist
 - the app can now auto-detect local `speakers/` folders for XTTS and import them into profiles
 - the XTTS migration path now also scans common old `xtts-webui` installation locations
+- if no old XTTS installation exists, the app can now install three starter XTTS sample profiles from the `xtts-webui` sample speaker folder
 
 ## Project layout
 

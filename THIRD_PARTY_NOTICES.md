@@ -44,6 +44,18 @@ It is a practical notice file, not legal advice. If you distribute `book2mp3`, y
 
 ## Runtime and binary components
 
+### XTTS starter speaker samples
+
+- Purpose: optional starter XTTS voice-profile samples so the XTTS path is not empty on first use
+- Source repository: https://github.com/daswer123/xtts-webui
+- Sample folder used by the app: https://github.com/daswer123/xtts-webui/tree/main/speakers
+- Repository license shown upstream: `MIT`
+
+Important note:
+
+- The app currently pulls the sample WAV files `calm_female.wav`, `female.wav` and `male.wav` from that upstream repository when the user installs XTTS starter speakers.
+- If you redistribute those starter samples, you should preserve attribution to the upstream repository and re-check the upstream licensing state at release time.
+
 ### Piper runtime
 
 - Purpose: local text-to-speech synthesis

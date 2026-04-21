@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
+from urllib.request import urlopen
 
 from book2mp3.config import AppPaths
 from book2mp3.voice_lab import sanitize_profile_id
@@ -8,6 +11,26 @@ from book2mp3.voice_lab import SUPPORTED_SAMPLE_EXTENSIONS, create_voice_profile
 
 
 LANGUAGE_HINTS = {"de", "en", "fr", "es", "it", "nl", "pl", "pt", "tr", "ru", "cs", "ar", "zh", "ja", "hu", "ko"}
+STARTER_XTTS_SPEAKERS = (
+    {
+        "display_name": "XTTS Calm Female",
+        "language": "en",
+        "filename": "calm_female.wav",
+        "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/calm_female.wav",
+    },
+    {
+        "display_name": "XTTS Female",
+        "language": "en",
+        "filename": "female.wav",
+        "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/female.wav",
+    },
+    {
+        "display_name": "XTTS Male",
+        "language": "en",
+        "filename": "male.wav",
+        "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/male.wav",
+    },
+)
 
 
 def _audio_files(root: Path) -> list[Path]:
@@ -135,6 +158,34 @@ def auto_import_xtts_speakers(paths: AppPaths, fallback_language: str) -> tuple[
         if manifests:
             return candidate, manifests
     return None, []
+
+
+def install_starter_xtts_profiles(paths: AppPaths) -> list[Path]:
+    manifests: list[Path] = []
+    existing_ids = {profile.profile_id for profile in list_voice_profiles(paths.voice_profiles)}
+    with tempfile.TemporaryDirectory(prefix="book2mp3-xtts-starters-") as tmp_dir:
+        tmp_root = Path(tmp_dir)
+        for starter in STARTER_XTTS_SPEAKERS:
+            profile_id = sanitize_profile_id(starter["display_name"])
+            if profile_id in existing_ids:
+                continue
+            downloaded = tmp_root / starter["filename"]
+            with urlopen(starter["url"], timeout=20) as response, downloaded.open("wb") as target:
+                shutil.copyfileobj(response, target)
+            manifest = create_voice_profile(
+                paths.voice_profiles,
+                display_name=starter["display_name"],
+                target_language=starter["language"],
+                backend="xtts_v2",
+                notes=(
+                    "Starter XTTS sample imported from the xtts-webui repository speakers folder: "
+                    f"{starter['url']}"
+                ),
+                sample_paths=[downloaded],
+            )
+            manifests.append(manifest)
+            existing_ids.add(manifest.parent.name)
+    return manifests
 
 
 def describe_candidate_speaker_roots(paths: AppPaths) -> list[dict[str, object]]:

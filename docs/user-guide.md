@@ -91,6 +91,7 @@ Voice selection:
 - in the main job screen, selecting `xtts` now switches to the recommended `Premium Natuerlich` preset automatically
 - the `XTTS-Sprecher` button now first tries to auto-import a local `speakers/` folder before opening Voice Lab
 - the auto-import now also scans common old `xtts-webui` installation folders in home, documents, downloads and mounted drives
+- if no old XTTS speaker folder is found, you can use `XTTS-Starter` to install example XTTS speaker profiles directly from the upstream `xtts-webui` sample set
 
 Simple workflow:
 
@@ -155,6 +156,7 @@ What it does now:
 
 - stores custom speaker profiles
 - imports `xtts-webui` style speaker folders into XTTS profiles
+- can install a small starter XTTS sample pack so XTTS is not empty on first use
 - keeps those imported profiles available in the main XTTS voice-profile selector
 - copies reference audio into `workspace/voice_profiles/`
 - saves a profile manifest
