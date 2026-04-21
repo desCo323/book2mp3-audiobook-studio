@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -28,16 +29,21 @@ def main() -> int:
     python_bin = program_root / "python" / "linux" / "bin" / "python3"
     if not python_bin.exists():
         raise FileNotFoundError(f"Portable bundle python not found: {python_bin}")
+    if sys.version_info >= (3, 12):
+        raise SystemExit(
+            "XTTS cannot currently be installed into the portable app Python on this base version. "
+            "Upstream `TTS` does not publish compatible wheels for Python 3.12+ here. "
+            "Use the bundled dedicated XTTS runtime instead: "
+            "`python scripts/build_linux_portable_release.py <out> --include-xtts-runtime`"
+        )
 
     installed_packages: list[str] = []
-    run([str(python_bin), "-m", "pip", "install", "-U", "pip", "setuptools", "wheel"])
+    pip_prefix = [str(python_bin), "-m", "pip", "install", "--break-system-packages"]
+    run([*pip_prefix, "-U", "pip", "setuptools", "wheel"])
     if args.torch_variant == "cpu":
         run(
             [
-                str(python_bin),
-                "-m",
-                "pip",
-                "install",
+                *pip_prefix,
                 "--index-url",
                 "https://download.pytorch.org/whl/cpu",
                 "torch",
@@ -45,7 +51,7 @@ def main() -> int:
             ]
         )
         installed_packages.extend(["torch[cpu]", "torchaudio[cpu]"])
-    run([str(python_bin), "-m", "pip", "install", "TTS"])
+    run([*pip_prefix, "TTS"])
     installed_packages.append("TTS")
 
     manifest = {
