@@ -168,3 +168,18 @@ def filter_voice_ids(
     if high_only:
         filtered = [voice_id for voice_id in filtered if voice_quality(voice_id) == "high"]
     return sort_voice_ids(filtered)
+
+
+def voice_filter_empty_message(language_code: str, *, female_only: bool = False, high_only: bool = False) -> str:
+    if language_code == "de_DE" and female_only and high_only:
+        return (
+            "Keine deutsche weibliche Piper-Stimme in high verfuegbar. "
+            "Nimm XTTS fuer natuerliche deutsche Frauenstimmen oder entferne den high-Filter."
+        )
+    if female_only and high_only:
+        return "Keine weibliche high-Piper-Stimme fuer diesen Filter gefunden"
+    if female_only:
+        return "Keine Frauenstimme fuer diesen Filter gefunden"
+    if high_only:
+        return "Keine high-Piper-Stimme fuer diesen Filter gefunden"
+    return "Keine Stimme fuer diesen Filter gefunden"

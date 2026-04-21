@@ -43,6 +43,7 @@ from book2mp3.voice_catalog import (
     filter_voice_ids,
     format_voice_label,
     language_choices,
+    voice_filter_empty_message,
     voice_language_code,
 )
 from book2mp3.xtts_speakers import auto_import_xtts_speakers, install_starter_xtts_profiles
@@ -359,7 +360,14 @@ class MainWindow(QMainWindow):
             selected_index = self.voice_combo.findData(selected_voice_id)
             self.voice_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
         else:
-            self.voice_combo.addItem("Keine Stimme fuer diesen Filter gefunden", "")
+            self.voice_combo.addItem(
+                voice_filter_empty_message(
+                    language_code,
+                    female_only=self.voice_female_only_checkbox.isChecked(),
+                    high_only=self.voice_high_only_checkbox.isChecked(),
+                ),
+                "",
+            )
 
     def refresh_voice_profiles(self) -> None:
         self.voice_profile_combo.clear()
