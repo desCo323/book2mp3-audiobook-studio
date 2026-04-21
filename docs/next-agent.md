@@ -28,6 +28,30 @@ The repository was initialized from a loose folder, not from an existing local g
 - includes a defined portable bundle layout with app-local Python requirement
 - marks unfinished XTTS/custom-voice UI paths in orange beta styling
 - can bootstrap a dedicated Linux XTTS runtime with standalone Python 3.11
+- can now probe XTTS CUDA capability from the UI and choose `Auto`, `CPU`, or `CUDA`
+- can import external custom Piper `.onnx` + `.onnx.json` models into the app
+
+## Verified local runtime state
+
+As of April 21, 2026 on this workstation:
+
+- host GPU: `NVIDIA GeForce RTX 3050 Laptop GPU`
+- driver: `580.126.09`
+- XTTS runtime Python: `src/runtime/xtts/linux/bin/python3`
+- XTTS runtime torch: `2.6.0+cu124`
+- XTTS runtime CUDA probe: `cuda_available = true`
+
+Real validation commands that were green:
+
+- `PYTHONPATH=src python3 scripts/smoke_xtts_cuda_probe.py`
+- `PYTHONPATH=src python3 scripts/smoke_xtts_persistent_server.py`
+
+Most recent real timing after the CUDA runtime fix:
+
+- first XTTS request in a fresh worker: about `31.11s`
+- second XTTS request in the warm persistent worker: about `1.55s`
+
+This is a large improvement over the prior CPU-only state, but first-request latency is still noticeable because model load is expensive.
 
 ## Important constraints
 
@@ -39,9 +63,9 @@ The repository was initialized from a loose folder, not from an existing local g
 ## High-value next tasks
 
 1. Add a voice management screen that discovers installed voices and offers guided download.
-2. Make the XTTS runtime path run an actual synthesis smoke test on Linux with the new CPU-first torch install path.
-3. Push the Windows self-contained bundle path from prepared scripts to a fully validated build.
-4. Extend GUI automation beyond the current smoke scripts.
+2. Push the Windows self-contained bundle path from prepared scripts to a fully validated build.
+3. Extend GUI automation beyond the current smoke scripts.
+4. If XTTS still feels too slow in practice, profile first-request latency separately from warm-worker latency before changing synthesis logic again.
 
 ## Files to read first
 
@@ -55,6 +79,6 @@ The repository was initialized from a loose folder, not from an existing local g
 ## Known gaps
 
 - Windows self-contained packaging is prepared but not yet practically validated end-to-end
-- XTTS runtime packaging exists, but a full heavyweight synthesis smoke path is still missing
-- plain `pip install TTS` on Linux tries to pull very large CUDA dependencies; the runtime bootstrap now defaults to CPU-first torch wheels to avoid that
+- XTTS runtime packaging exists and CUDA can be validated locally, but first-request latency is still high enough that users may still perceive XTTS as slow
+- plain `pip install TTS` on Linux tries to pull very large CUDA dependencies; the runtime bootstrap now supports `--torch-variant auto|cpu|cuda` and validates the result with a CUDA probe
 - GUI interaction testing is still lighter than the non-GUI smoke coverage
