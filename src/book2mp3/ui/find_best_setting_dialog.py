@@ -94,10 +94,10 @@ class LivePreviewWorker(QThread):
             xtts_backend = XttsBackend(self.paths.runtime, logger=self.logger)
             mp3_files: list[Path] = []
 
-            for index, chunk in enumerate(chunks, start=1):
-                wav_path = wav_root / f"{index:03d}.wav"
-                mp3_path = mp3_root / f"{index:03d}.mp3"
-                if self.backend == "piper":
+            if self.backend == "piper":
+                for index, chunk in enumerate(chunks, start=1):
+                    wav_path = wav_root / f"{index:03d}.wav"
+                    mp3_path = mp3_root / f"{index:03d}.mp3"
                     piper_backend.synthesize_to_wav(
                         chunk,
                         self.voice_id,
@@ -105,16 +105,21 @@ class LivePreviewWorker(QThread):
                         sentence_silence=self.sentence_silence,
                         length_scale=self.length_scale,
                     )
-                else:
-                    profile = load_voice_profile(self.paths.voice_profiles, self.voice_profile_id)
-                    xtts_backend.synthesize_to_wav(
-                        chunk,
-                        profile,
-                        wav_path,
-                        length_scale=self.length_scale,
-                    )
-                wav_to_mp3(wav_path, mp3_path, logger=self.logger)
-                mp3_files.append(mp3_path)
+                    wav_to_mp3(wav_path, mp3_path, logger=self.logger)
+                    mp3_files.append(mp3_path)
+            else:
+                profile = load_voice_profile(self.paths.voice_profiles, self.voice_profile_id)
+                wav_paths = [wav_root / f"{index:03d}.wav" for index in range(1, len(chunks) + 1)]
+                mp3_paths = [mp3_root / f"{index:03d}.mp3" for index in range(1, len(chunks) + 1)]
+                xtts_backend.synthesize_many_to_wavs(
+                    chunks,
+                    profile,
+                    wav_paths,
+                    length_scale=self.length_scale,
+                )
+                for wav_path, mp3_path in zip(wav_paths, mp3_paths, strict=True):
+                    wav_to_mp3(wav_path, mp3_path, logger=self.logger)
+                    mp3_files.append(mp3_path)
 
             final_mp3 = preview_root / "preview.mp3"
             concat_mp3_files(mp3_files, final_mp3, logger=self.logger)

@@ -75,17 +75,29 @@ def main() -> int:
     except Exception as exc:
         raise SystemExit(f"XTTS runtime is not installed correctly: {exc}")
 
-    output_file = Path(payload["output_file"])
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    texts = payload.get("texts")
+    output_files = payload.get("output_files")
+    if texts is None:
+        texts = [payload["text"]]
+    if output_files is None:
+        output_files = [payload["output_file"]]
+    if len(texts) != len(output_files):
+        raise SystemExit("XTTS payload mismatch: texts and output_files must have same length")
+
     tts = TTS(payload["model_name"])
-    tts.tts_to_file(
-        text=payload["text"],
-        speaker_wav=payload["speaker_wav"],
-        language=payload["language"],
-        file_path=str(output_file),
-        speed=1.0 / float(payload.get("length_scale", 1.0)),
-    )
-    print(json.dumps({"ok": True, "output_file": str(output_file)}))
+    written_files: list[str] = []
+    for text, output_file_value in zip(texts, output_files, strict=True):
+        output_file = Path(output_file_value)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        tts.tts_to_file(
+            text=text,
+            speaker_wav=payload["speaker_wav"],
+            language=payload["language"],
+            file_path=str(output_file),
+            speed=1.0 / float(payload.get("length_scale", 1.0)),
+        )
+        written_files.append(str(output_file))
+    print(json.dumps({"ok": True, "output_files": written_files}))
     return 0
 
 

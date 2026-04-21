@@ -82,21 +82,33 @@ class XttsBackend:
         wav_path: Path,
         length_scale: float = 1.0,
     ) -> None:
-        wav_path.parent.mkdir(parents=True, exist_ok=True)
+        self.synthesize_many_to_wavs([text], profile, [wav_path], length_scale=length_scale)
+
+    def synthesize_many_to_wavs(
+        self,
+        texts: list[str],
+        profile: VoiceProfile,
+        wav_paths: list[Path],
+        length_scale: float = 1.0,
+    ) -> None:
+        if len(texts) != len(wav_paths):
+            raise ValueError("texts and wav_paths must have the same length")
+        for wav_path in wav_paths:
+            wav_path.parent.mkdir(parents=True, exist_ok=True)
         worker = Path(__file__).resolve().parents[3] / "scripts" / "xtts_worker.py"
         payload = {
-            "text": text,
+            "texts": texts,
             "language": profile.target_language,
             "speaker_wav": profile.samples,
             "model_name": profile.preferred_model,
-            "output_file": str(wav_path),
+            "output_files": [str(path) for path in wav_paths],
             "length_scale": length_scale,
         }
         python_path = self.python_path()
         cmd = [str(python_path), str(worker)]
         env = self.subprocess_env()
         if self.logger:
-            self.logger.debug("Synthesizing chunk with XTTS command: %s", cmd)
+            self.logger.debug("Synthesizing %s chunk(s) with XTTS command: %s", len(texts), cmd)
             self.logger.debug("XTTS payload: %s", payload)
             self.logger.debug(
                 "XTTS env override: %s",

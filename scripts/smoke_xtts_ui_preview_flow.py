@@ -49,6 +49,18 @@ def synthesize_dummy_wav(self: XttsBackend, text: str, profile, wav_path: Path, 
     create_dummy_wav(wav_path, seconds=2)
 
 
+def synthesize_dummy_wavs(
+    self: XttsBackend,
+    texts: list[str],
+    profile,
+    wav_paths: list[Path],
+    length_scale: float = 1.0,
+) -> None:
+    del self, texts, profile, length_scale
+    for wav_path in wav_paths:
+        create_dummy_wav(wav_path, seconds=2)
+
+
 def main() -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     with tempfile.TemporaryDirectory(prefix="book2mp3-smoke-xtts-ui-") as tmp_dir:
@@ -72,7 +84,9 @@ def main() -> int:
         profile_id = manifest.parent.name
 
         original = XttsBackend.synthesize_to_wav
+        original_many = XttsBackend.synthesize_many_to_wavs
         XttsBackend.synthesize_to_wav = synthesize_dummy_wav
+        XttsBackend.synthesize_many_to_wavs = synthesize_dummy_wavs
         try:
             app = QApplication([])
             QMessageBox.information = staticmethod(lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
@@ -131,6 +145,7 @@ def main() -> int:
             app.quit()
         finally:
             XttsBackend.synthesize_to_wav = original
+            XttsBackend.synthesize_many_to_wavs = original_many
     return 0
 
 

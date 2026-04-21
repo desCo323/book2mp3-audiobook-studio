@@ -269,6 +269,11 @@ class JobManager:
             state.output_mode,
             state.preset_id,
         )
+        xtts_profile = None
+        xtts_batch_size = 4
+        if state.backend == "xtts":
+            xtts_profile = load_voice_profile(self.paths.voice_profiles, state.voice_profile_id)
+            logger.info("XTTS batching enabled with batch_size=%s", xtts_batch_size)
         for idx, chunk in enumerate(state.chunks, start=1):
             if should_stop and should_stop():
                 state.status = "stopped"
@@ -283,12 +288,12 @@ class JobManager:
                 continue
 
             try:
-                text = Path(chunk.text_file).read_text(encoding="utf-8")
-                logger.info("Processing chunk %s/%s", chunk.index, len(state.chunks))
-                logger.debug("Chunk source file: %s", chunk.text_file)
-                logger.debug("Chunk output wav: %s", chunk.wav_file)
-                logger.debug("Chunk output mp3: %s", chunk.mp3_file)
                 if state.backend == "piper":
+                    text = Path(chunk.text_file).read_text(encoding="utf-8")
+                    logger.info("Processing chunk %s/%s", chunk.index, len(state.chunks))
+                    logger.debug("Chunk source file: %s", chunk.text_file)
+                    logger.debug("Chunk output wav: %s", chunk.wav_file)
+                    logger.debug("Chunk output mp3: %s", chunk.mp3_file)
                     backend.synthesize_to_wav(
                         text,
                         state.voice_id,
@@ -296,28 +301,58 @@ class JobManager:
                         sentence_silence=state.sentence_silence,
                         length_scale=state.length_scale,
                     )
+                    wav_to_mp3(Path(chunk.wav_file), Path(chunk.mp3_file), logger=logger)
+                    if not state.keep_wav and Path(chunk.wav_file).exists():
+                        Path(chunk.wav_file).unlink()
+                        logger.debug("Removed intermediate WAV %s", chunk.wav_file)
+                    state.chunks[chunk.index - 1] = replace(
+                        chunk,
+                        status="done",
+                        error="",
+                        updated_at=utc_now(),
+                    )
+                    state.append_log(f"Processed chunk {chunk.index}/{len(state.chunks)}")
+                    self.save_state(state)
+                    if progress:
+                        progress(idx, len(state.chunks), f"Chunk {chunk.index} finished")
                 else:
-                    profile = load_voice_profile(self.paths.voice_profiles, state.voice_profile_id)
-                    backend.synthesize_to_wav(
-                        text,
-                        profile,
-                        Path(chunk.wav_file),
+                    pending_chunks = [
+                        candidate
+                        for candidate in state.chunks
+                        if candidate.status != "done" or not Path(candidate.mp3_file).exists()
+                    ]
+                    batch = pending_chunks[:xtts_batch_size]
+                    texts = [Path(item.text_file).read_text(encoding="utf-8") for item in batch]
+                    wav_paths = [Path(item.wav_file) for item in batch]
+                    logger.info(
+                        "Processing XTTS batch starting at chunk %s with %s chunk(s)",
+                        batch[0].index,
+                        len(batch),
+                    )
+                    backend.synthesize_many_to_wavs(
+                        texts,
+                        xtts_profile,
+                        wav_paths,
                         length_scale=state.length_scale,
                     )
-                wav_to_mp3(Path(chunk.wav_file), Path(chunk.mp3_file), logger=logger)
-                if not state.keep_wav and Path(chunk.wav_file).exists():
-                    Path(chunk.wav_file).unlink()
-                    logger.debug("Removed intermediate WAV %s", chunk.wav_file)
-                state.chunks[chunk.index - 1] = replace(
-                    chunk,
-                    status="done",
-                    error="",
-                    updated_at=utc_now(),
-                )
-                state.append_log(f"Processed chunk {chunk.index}/{len(state.chunks)}")
-                self.save_state(state)
-                if progress:
-                    progress(idx, len(state.chunks), f"Chunk {chunk.index} finished")
+                    for item in batch:
+                        wav_to_mp3(Path(item.wav_file), Path(item.mp3_file), logger=logger)
+                        if not state.keep_wav and Path(item.wav_file).exists():
+                            Path(item.wav_file).unlink()
+                            logger.debug("Removed intermediate WAV %s", item.wav_file)
+                        state.chunks[item.index - 1] = replace(
+                            item,
+                            status="done",
+                            error="",
+                            updated_at=utc_now(),
+                        )
+                        state.append_log(f"Processed chunk {item.index}/{len(state.chunks)}")
+                    self.save_state(state)
+                    if progress:
+                        progress(batch[-1].index, len(state.chunks), f"XTTS batch {batch[0].index}-{batch[-1].index} finished")
+                    skip_count = len(batch) - 1
+                    if skip_count > 0:
+                        idx += skip_count
             except Exception as exc:
                 logger.exception("Chunk %s failed", chunk.index)
                 state.chunks[chunk.index - 1] = replace(
