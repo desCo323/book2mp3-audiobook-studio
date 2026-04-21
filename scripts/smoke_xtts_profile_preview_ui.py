@@ -17,6 +17,20 @@ from book2mp3.voice_lab import create_voice_profile
 
 
 ROOT = Path("/home/codex/repo/book2mp3")
+APP_SRC_ROOT = ROOT / "src"
+
+
+def runtime_fixture_root() -> Path:
+    candidate = APP_SRC_ROOT / "runtime"
+    return candidate if candidate.exists() else ROOT / "runtime"
+
+
+def ensure_runtime_fixture(app_root: Path) -> None:
+    runtime_target = runtime_fixture_root()
+    runtime_link = app_root / "runtime"
+    if runtime_link.exists():
+        return
+    runtime_link.symlink_to(runtime_target, target_is_directory=True)
 
 
 def create_dummy_wav(path: Path, seconds: int = 3) -> None:
@@ -33,7 +47,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="book2mp3-smoke-xtts-profile-ui-") as tmp_dir:
         app_root = Path(tmp_dir) / "src"
         app_root.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(ROOT / "runtime", app_root / "runtime", dirs_exist_ok=True)
+        ensure_runtime_fixture(app_root)
         shutil.copytree(ROOT / "voices", app_root / "voices", dirs_exist_ok=True)
         paths = AppPaths.from_project_root(app_root)
         paths.ensure()
