@@ -92,6 +92,7 @@ Voice selection:
 - the `XTTS-Sprecher` button now first tries to auto-import a local `speakers/` folder before opening Voice Lab
 - the auto-import now also scans common old `xtts-webui` installation folders in home, documents, downloads and mounted drives
 - if no old XTTS speaker folder is found, you can use `XTTS-Starter` to install example XTTS speaker profiles directly from the upstream `xtts-webui` sample set
+- XTTS profile selectors in the main UI and tuning dialog can now play the stored reference sample, so you can hear the source voice before generating a preview
 
 Simple workflow:
 
@@ -161,6 +162,7 @@ What it does now:
 - copies reference audio into `workspace/voice_profiles/`
 - saves a profile manifest
 - shows validation warnings
+- lets you preview the first stored sample of an existing profile directly from Voice Lab
 - can be used by XTTS jobs once a dedicated XTTS runtime is installed
 
 What it does not do yet:

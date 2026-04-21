@@ -68,6 +68,7 @@ XTTS note:
 - the app can now auto-detect local `speakers/` folders for XTTS and import them into profiles
 - the XTTS migration path now also scans common old `xtts-webui` installation locations
 - if no old XTTS installation exists, the app can now install three starter XTTS sample profiles from the `xtts-webui` sample speaker folder
+- XTTS profiles can now be previewed directly in the UI via their stored reference sample before you run a synthesis test
 
 ## Project layout
 

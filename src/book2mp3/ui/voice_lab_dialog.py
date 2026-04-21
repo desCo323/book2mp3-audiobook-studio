@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -27,7 +30,7 @@ from book2mp3.xtts_speakers import (
     install_starter_xtts_profiles,
 )
 from book2mp3.utils.logging_utils import get_logger
-from book2mp3.voice_lab import create_voice_profile
+from book2mp3.voice_lab import create_voice_profile, load_voice_profile
 
 BETA_STYLE = "background-color: #fff1cc; border: 1px solid #d18b00; color: #6b4b00;"
 BETA_LABEL_STYLE = "color: #9a5c00; font-weight: bold;"
@@ -39,6 +42,9 @@ class VoiceLabDialog(QDialog):
         self.paths = paths
         self.logger = get_logger("voice_lab")
         self.sample_paths: list[Path] = []
+        self.player = QMediaPlayer(self)
+        self.audio_output = QAudioOutput(self)
+        self.player.setAudioOutput(self.audio_output)
 
         self.setWindowTitle("Voice Lab")
         self.resize(760, 560)
@@ -117,7 +123,17 @@ class VoiceLabDialog(QDialog):
         layout.addLayout(action_row)
 
         self.profile_list = QListWidget()
+        self.profile_list.itemSelectionChanged.connect(self.show_selected_profile)
         layout.addWidget(self.profile_list)
+
+        profile_action_row = QHBoxLayout()
+        preview_profile_button = QPushButton("Ausgewaehltes Sample hoeren")
+        preview_profile_button.clicked.connect(self.preview_selected_profile_sample)
+        profile_action_row.addWidget(preview_profile_button)
+        open_profile_button = QPushButton("Profilordner oeffnen")
+        open_profile_button.clicked.connect(self.open_selected_profile_folder)
+        profile_action_row.addWidget(open_profile_button)
+        layout.addLayout(profile_action_row)
 
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
@@ -271,3 +287,45 @@ class VoiceLabDialog(QDialog):
             "XTTS/Custom Voices sind im UI farblich als Beta markiert.\n"
             "Wenn noch keine Profile da sind, nutze 'XTTS-Sprecher automatisch suchen', 'Starter-XTTS-Sprecher laden' oder importiere einen WebUI speakers-Ordner."
         )
+        if self.profile_list.count():
+            self.profile_list.setCurrentRow(0)
+
+    def show_selected_profile(self) -> None:
+        item = self.profile_list.currentItem()
+        if not item:
+            return
+        profile = load_voice_profile(self.paths.voice_profiles, item.text())
+        payload = {
+            "profile_id": profile.profile_id,
+            "display_name": profile.display_name,
+            "target_language": profile.target_language,
+            "backend": profile.backend,
+            "sample_count": len(profile.samples),
+            "samples": profile.samples,
+            "validation_warnings": profile.validation_warnings,
+            "notes": profile.notes,
+        }
+        self.details.setPlainText(json.dumps(payload, indent=2, ensure_ascii=False))
+
+    def preview_selected_profile_sample(self) -> None:
+        item = self.profile_list.currentItem()
+        if not item:
+            QMessageBox.warning(self, "Kein Profil", "Bitte zuerst ein Voice-Profil auswaehlen.")
+            return
+        profile = load_voice_profile(self.paths.voice_profiles, item.text())
+        if not profile.samples:
+            QMessageBox.warning(self, "Keine Samples", "Dieses Profil hat keine Referenzsamples.")
+            return
+        sample_path = Path(profile.samples[0])
+        if not sample_path.exists():
+            QMessageBox.warning(self, "Sample fehlt", f"Referenzsample nicht gefunden: {sample_path}")
+            return
+        self.player.setSource(QUrl.fromLocalFile(str(sample_path)))
+        self.player.play()
+
+    def open_selected_profile_folder(self) -> None:
+        item = self.profile_list.currentItem()
+        if not item:
+            QMessageBox.warning(self, "Kein Profil", "Bitte zuerst ein Voice-Profil auswaehlen.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.paths.voice_profiles / item.text())))

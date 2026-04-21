@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -42,7 +44,7 @@ from book2mp3.voice_catalog import (
     voice_language_code,
 )
 from book2mp3.xtts_speakers import auto_import_xtts_speakers, install_starter_xtts_profiles
-from book2mp3.voice_lab import list_voice_profiles
+from book2mp3.voice_lab import list_voice_profiles, load_voice_profile
 
 BETA_STYLE = "background-color: #fff1cc; border: 1px solid #d18b00; color: #6b4b00;"
 BETA_LABEL_STYLE = "color: #9a5c00; font-weight: bold;"
@@ -57,6 +59,9 @@ class MainWindow(QMainWindow):
         self.current_job_id: str | None = None
         self.logger = get_logger("ui")
         self.installed_voice_ids: list[str] = []
+        self.player = QMediaPlayer(self)
+        self.audio_output = QAudioOutput(self)
+        self.player.setAudioOutput(self.audio_output)
 
         self.setWindowTitle("book2mp3")
         self.resize(1280, 760)
@@ -146,6 +151,7 @@ class MainWindow(QMainWindow):
         form.addRow("Backend-Status", self.backend_summary)
 
         self.voice_profile_combo = QComboBox()
+        self.voice_profile_combo.currentIndexChanged.connect(self.refresh_selected_voice_profile)
         form.addRow("Voice profile", self.voice_profile_combo)
         self.voice_profile_hint = QLabel("")
         self.voice_profile_hint.setWordWrap(True)
@@ -153,6 +159,17 @@ class MainWindow(QMainWindow):
         self.xtts_scan_hint = QLabel("")
         self.xtts_scan_hint.setWordWrap(True)
         form.addRow("XTTS-Suche", self.xtts_scan_hint)
+        self.voice_profile_details = QLabel("")
+        self.voice_profile_details.setWordWrap(True)
+        form.addRow("Profil-Info", self.voice_profile_details)
+        xtts_profile_row = QHBoxLayout()
+        xtts_preview_button = QPushButton("XTTS-Referenz hoeren")
+        xtts_preview_button.clicked.connect(self.preview_xtts_reference)
+        xtts_profile_row.addWidget(xtts_preview_button)
+        xtts_open_button = QPushButton("Profilordner oeffnen")
+        xtts_open_button.clicked.connect(self.open_xtts_profile_folder)
+        xtts_profile_row.addWidget(xtts_open_button)
+        form.addRow("", self._wrap(xtts_profile_row))
 
         self.preset_combo = QComboBox()
         for preset in QUALITY_PRESETS:
@@ -317,7 +334,27 @@ class MainWindow(QMainWindow):
             self.xtts_scan_hint.setText(
                 "Nutze 'XTTS-Sprecher' fuer Auto-Import alter WebUI-Ordner oder 'XTTS-Starter' fuer sofort nutzbare Beispielsprecher."
             )
+            self.voice_profile_details.setText("Noch kein XTTS-Profil ausgewaehlt.")
+        self.refresh_selected_voice_profile()
         self.update_backend_summary()
+
+    def refresh_selected_voice_profile(self) -> None:
+        profile_id = self.voice_profile_combo.currentData() or ""
+        if not profile_id:
+            self.voice_profile_details.setText("Noch kein XTTS-Profil ausgewaehlt.")
+            return
+        try:
+            profile = load_voice_profile(self.paths.voice_profiles, profile_id)
+        except FileNotFoundError:
+            self.voice_profile_details.setText("XTTS-Profil konnte nicht geladen werden.")
+            return
+        sample_count = len(profile.samples)
+        first_sample = Path(profile.samples[0]).name if profile.samples else "-"
+        warnings = "; ".join(profile.validation_warnings[:2]) if profile.validation_warnings else "keine"
+        self.voice_profile_details.setText(
+            f"{profile.display_name} | Sprache {profile.target_language} | Samples {sample_count} | "
+            f"erstes Sample {first_sample} | Warnungen {warnings}"
+        )
 
     def on_backend_changed(self) -> None:
         is_piper = self.backend_combo.currentText() == "piper"
@@ -554,6 +591,31 @@ class MainWindow(QMainWindow):
             return
         self.status_label.setText("XTTS-Starter waren bereits installiert.")
         self.xtts_scan_hint.setText("XTTS-Starterprofile sind bereits vorhanden.")
+
+    def preview_xtts_reference(self) -> None:
+        profile_id = self.voice_profile_combo.currentData() or ""
+        if not profile_id:
+            QMessageBox.warning(self, "Kein XTTS-Profil", "Bitte zuerst ein XTTS-Profil auswaehlen.")
+            return
+        profile = load_voice_profile(self.paths.voice_profiles, profile_id)
+        if not profile.samples:
+            QMessageBox.warning(self, "Keine Samples", "Dieses XTTS-Profil hat keine Referenzsamples.")
+            return
+        sample_path = Path(profile.samples[0])
+        if not sample_path.exists():
+            QMessageBox.warning(self, "Sample fehlt", f"Referenzsample nicht gefunden: {sample_path}")
+            return
+        self.player.setSource(QUrl.fromLocalFile(str(sample_path)))
+        self.player.play()
+        self.status_label.setText(f"Spiele XTTS-Referenzsample: {sample_path.name}")
+
+    def open_xtts_profile_folder(self) -> None:
+        profile_id = self.voice_profile_combo.currentData() or ""
+        if not profile_id:
+            QMessageBox.warning(self, "Kein XTTS-Profil", "Bitte zuerst ein XTTS-Profil auswaehlen.")
+            return
+        profile_dir = self.paths.voice_profiles / profile_id
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(profile_dir)))
 
     def open_find_best_setting(self) -> None:
         dialog = FindBestSettingDialog(self.paths, self.manager, self)

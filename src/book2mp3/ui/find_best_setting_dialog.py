@@ -191,7 +191,19 @@ class FindBestSettingDialog(QDialog):
         form.addRow("Piper-Sprache", self.voice_language_combo)
 
         self.voice_profile_combo = QComboBox()
+        self.voice_profile_combo.currentIndexChanged.connect(self.refresh_selected_voice_profile)
         form.addRow("XTTS-Profil", self.voice_profile_combo)
+        self.voice_profile_details = QLabel("")
+        self.voice_profile_details.setWordWrap(True)
+        form.addRow("Profil-Info", self.voice_profile_details)
+        xtts_profile_row = QHBoxLayout()
+        preview_reference_button = QPushButton("Referenzsample hoeren")
+        preview_reference_button.clicked.connect(self.preview_xtts_reference)
+        xtts_profile_row.addWidget(preview_reference_button)
+        open_profile_button = QPushButton("Profilordner oeffnen")
+        open_profile_button.clicked.connect(self.open_xtts_profile_folder)
+        xtts_profile_row.addWidget(open_profile_button)
+        form.addRow("", self._wrap(xtts_profile_row))
 
         self.assistant_combo = QComboBox()
         self.assistant_combo.addItem("Roman / Story", "novel")
@@ -293,6 +305,21 @@ class FindBestSettingDialog(QDialog):
             self.voice_profile_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
         else:
             self.voice_profile_combo.addItem("Keine XTTS-Profile gefunden", "")
+        self.refresh_selected_voice_profile()
+
+    def refresh_selected_voice_profile(self) -> None:
+        profile_id = self.voice_profile_combo.currentData() or ""
+        if not profile_id:
+            self.voice_profile_details.setText("Noch kein XTTS-Profil ausgewaehlt.")
+            return
+        profile = load_voice_profile(self.paths.voice_profiles, profile_id)
+        sample_count = len(profile.samples)
+        first_sample = Path(profile.samples[0]).name if profile.samples else "-"
+        warnings = "; ".join(profile.validation_warnings[:2]) if profile.validation_warnings else "keine"
+        self.voice_profile_details.setText(
+            f"{profile.display_name} | Sprache {profile.target_language} | Samples {sample_count} | "
+            f"erstes Sample {first_sample} | Warnungen {warnings}"
+        )
 
     def rebuild_voice_combo(self) -> None:
         selected_voice_id = self.voice_combo.currentData() or self.voice_combo.currentText().strip()
@@ -514,6 +541,32 @@ class FindBestSettingDialog(QDialog):
         self.player.play()
         self.status_label.setText(f"Spiele letzte Preview ab: {preview_file.name}")
 
+    def preview_xtts_reference(self) -> None:
+        profile_id = self.voice_profile_combo.currentData() or ""
+        if not profile_id:
+            QMessageBox.warning(self, "Kein XTTS-Profil", "Bitte zuerst ein XTTS-Profil waehlen.")
+            return
+        profile = load_voice_profile(self.paths.voice_profiles, profile_id)
+        if not profile.samples:
+            QMessageBox.warning(self, "Keine Samples", "Dieses XTTS-Profil hat keine Referenzsamples.")
+            return
+        sample_path = Path(profile.samples[0])
+        if not sample_path.exists():
+            QMessageBox.warning(self, "Sample fehlt", f"Referenzsample nicht gefunden: {sample_path}")
+            return
+        self.player.setSource(QUrl.fromLocalFile(str(sample_path)))
+        self.player.play()
+        self.status_label.setText(f"Spiele XTTS-Referenzsample ab: {sample_path.name}")
+
+    def open_xtts_profile_folder(self) -> None:
+        profile_id = self.voice_profile_combo.currentData() or ""
+        if not profile_id:
+            QMessageBox.warning(self, "Kein XTTS-Profil", "Bitte zuerst ein XTTS-Profil waehlen.")
+            return
+        from PySide6.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.paths.voice_profiles / profile_id)))
+
     def stop_playback(self) -> None:
         self.player.stop()
         self.status_label.setText("Wiedergabe gestoppt.")
@@ -585,3 +638,8 @@ class FindBestSettingDialog(QDialog):
         dialog = VoiceLabDialog(self.paths, self)
         dialog.exec()
         self.refresh_voice_profiles()
+
+    def _wrap(self, layout: QHBoxLayout) -> QWidget:
+        widget = QWidget()
+        widget.setLayout(layout)
+        return widget
