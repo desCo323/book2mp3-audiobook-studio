@@ -150,6 +150,9 @@ class MainWindow(QMainWindow):
         self.voice_profile_hint = QLabel("")
         self.voice_profile_hint.setWordWrap(True)
         form.addRow("XTTS-Profile", self.voice_profile_hint)
+        self.xtts_scan_hint = QLabel("")
+        self.xtts_scan_hint.setWordWrap(True)
+        form.addRow("XTTS-Suche", self.xtts_scan_hint)
 
         self.preset_combo = QComboBox()
         for preset in QUALITY_PRESETS:
@@ -301,10 +304,14 @@ class MainWindow(QMainWindow):
             self.voice_profile_hint.setText(
                 f"{len(profiles)} XTTS-Profile verfuegbar. Gute Resultate haengen von den Referenzsamples ab."
             )
+            self.xtts_scan_hint.setText("XTTS-Profile vorhanden. Du kannst direkt mit XTTS arbeiten.")
         else:
             self.voice_profile_combo.addItem("No voice profiles found", "")
             self.voice_profile_hint.setText(
                 "Keine XTTS-Profile vorhanden. Importiere einen xtts-webui speakers-Ordner oder erstelle ein Voice-Lab-Profil."
+            )
+            self.xtts_scan_hint.setText(
+                "Nutze 'XTTS-Sprecher', damit die App typische alte xtts-webui-Installationen automatisch durchsucht."
             )
         self.update_backend_summary()
 
@@ -512,10 +519,14 @@ class MainWindow(QMainWindow):
         self.refresh_voice_profiles()
         if manifests:
             self.status_label.setText(f"XTTS-Sprecher importiert: {len(manifests)} aus {source_root}")
+            self.xtts_scan_hint.setText(f"Gefunden und importiert aus: {source_root}")
             backend_index = self.backend_combo.findText("xtts")
             if backend_index >= 0:
                 self.backend_combo.setCurrentIndex(backend_index)
             return
+        self.xtts_scan_hint.setText(
+            "Kein befuellter XTTS speakers-Ordner gefunden. Oeffne Voice Lab fuer Details und manuelle Auswahl."
+        )
         self.open_voice_lab()
 
     def open_find_best_setting(self) -> None:

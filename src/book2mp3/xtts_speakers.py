@@ -135,3 +135,17 @@ def auto_import_xtts_speakers(paths: AppPaths, fallback_language: str) -> tuple[
         if manifests:
             return candidate, manifests
     return None, []
+
+
+def describe_candidate_speaker_roots(paths: AppPaths) -> list[dict[str, object]]:
+    summaries: list[dict[str, object]] = []
+    for candidate in find_candidate_speaker_roots(paths):
+        groups = _speaker_groups(candidate)
+        summaries.append(
+            {
+                "path": str(candidate),
+                "speaker_groups": len(groups),
+                "examples": [group_name for group_name, _files, _language in groups[:5]],
+            }
+        )
+    return summaries

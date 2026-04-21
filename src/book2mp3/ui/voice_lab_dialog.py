@@ -20,7 +20,11 @@ from PySide6.QtWidgets import (
 )
 
 from book2mp3.config import AppPaths
-from book2mp3.xtts_speakers import auto_import_xtts_speakers, import_xtts_webui_speakers
+from book2mp3.xtts_speakers import (
+    auto_import_xtts_speakers,
+    describe_candidate_speaker_roots,
+    import_xtts_webui_speakers,
+)
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_lab import create_voice_profile
 
@@ -76,6 +80,9 @@ class VoiceLabDialog(QDialog):
         add_samples_button = QPushButton("Samples hinzufuegen")
         add_samples_button.clicked.connect(self.add_samples)
         sample_row.addWidget(add_samples_button)
+        scan_button = QPushButton("Gefundene XTTS-Orte anzeigen")
+        scan_button.clicked.connect(self.show_candidate_locations)
+        sample_row.addWidget(scan_button)
         auto_import_button = QPushButton("XTTS-Sprecher automatisch suchen")
         auto_import_button.clicked.connect(self.auto_import_webui_speakers)
         sample_row.addWidget(auto_import_button)
@@ -170,6 +177,7 @@ class VoiceLabDialog(QDialog):
                 "Gesucht wird jetzt auch in Home, Documents, Downloads sowie typischen xtts-webui-Ordnern unter /mnt und /media. "
                 "Lege sonst einen XTTS-WebUI speakers-Ordner unter src/speakers, speakers/ oder xtts-webui/speakers ab.",
             )
+            self.show_candidate_locations()
             return
         self.details.setPlainText(
             json.dumps(
@@ -186,6 +194,16 @@ class VoiceLabDialog(QDialog):
             "XTTS-Sprecher importiert",
             f"{len(manifests)} XTTS-Sprecherprofile automatisch aus {source_root} importiert.",
         )
+
+    def show_candidate_locations(self) -> None:
+        summaries = describe_candidate_speaker_roots(self.paths)
+        if not summaries:
+            self.details.setPlainText(
+                "Keine XTTS-Kandidaten gefunden.\n"
+                "Gesucht wurde in src/speakers, speakers/, xtts-webui/speakers sowie typischen Altinstallationen in Home, Documents, Downloads, /mnt und /media."
+            )
+            return
+        self.details.setPlainText(json.dumps({"candidates": summaries}, indent=2, ensure_ascii=False))
 
     def save_profile(self) -> None:
         name = self.name_edit.text().strip()
