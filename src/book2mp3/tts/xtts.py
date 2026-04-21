@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+import os
 import platform
 import subprocess
 import sys
@@ -56,6 +57,23 @@ class XttsBackend:
             )
         return candidate
 
+    def subprocess_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        python_path = self.python_path()
+        if python_path.resolve() != Path(sys.executable).resolve():
+            for key in (
+                "PYTHONHOME",
+                "PYTHONPATH",
+                "PYTHONSTARTUP",
+                "PYTHONUSERBASE",
+                "PYTHONEXECUTABLE",
+                "VIRTUAL_ENV",
+                "__PYVENV_LAUNCHER__",
+            ):
+                env.pop(key, None)
+            env["PYTHONNOUSERSITE"] = "1"
+        return env
+
     def synthesize_to_wav(
         self,
         text: str,
@@ -73,11 +91,27 @@ class XttsBackend:
             "output_file": str(wav_path),
             "length_scale": length_scale,
         }
-        cmd = [str(self.python_path()), str(worker)]
+        python_path = self.python_path()
+        cmd = [str(python_path), str(worker)]
+        env = self.subprocess_env()
         if self.logger:
             self.logger.debug("Synthesizing chunk with XTTS command: %s", cmd)
             self.logger.debug("XTTS payload: %s", payload)
-        result = subprocess.run(cmd, input=json.dumps(payload), capture_output=True, text=True)
+            self.logger.debug(
+                "XTTS env override: %s",
+                {
+                    "PYTHONHOME": env.get("PYTHONHOME", ""),
+                    "PYTHONPATH": env.get("PYTHONPATH", ""),
+                    "PYTHONNOUSERSITE": env.get("PYTHONNOUSERSITE", ""),
+                },
+            )
+        result = subprocess.run(
+            cmd,
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
         if result.returncode != 0:
             if self.logger:
                 self.logger.error("XTTS worker stdout: %s", result.stdout)
