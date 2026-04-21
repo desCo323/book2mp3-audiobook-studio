@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import importlib.util
 import json
 import logging
@@ -7,13 +8,25 @@ import os
 import platform
 import subprocess
 import sys
+import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 from book2mp3.voice_lab import VoiceProfile
 
 
+@dataclass
+class _XttsServerConnection:
+    process: subprocess.Popen[str]
+    io_lock: threading.Lock
+    stderr_thread: threading.Thread
+
+
 class XttsBackend:
     name = "xtts"
+    _server_registry_lock = threading.Lock()
+    _server_connections: dict[str, _XttsServerConnection] = {}
+    _atexit_registered = False
 
     def __init__(self, runtime_root: Path, logger: logging.Logger | None = None) -> None:
         self.runtime_root = runtime_root
@@ -75,6 +88,148 @@ class XttsBackend:
         env.setdefault("COQUI_TOS_AGREED", "1")
         return env
 
+    def server_enabled(self) -> bool:
+        return os.environ.get("BOOK2MP3_DISABLE_XTTS_SERVER", "").strip() not in {"1", "true", "yes"}
+
+    def server_key(self) -> str:
+        return str(self.python_path().resolve())
+
+    @classmethod
+    def shutdown_all_servers(cls) -> None:
+        with cls._server_registry_lock:
+            connections = list(cls._server_connections.values())
+            cls._server_connections.clear()
+        for connection in connections:
+            try:
+                if connection.process.poll() is None and connection.process.stdin is not None:
+                    connection.process.stdin.write(json.dumps({"command": "shutdown"}) + "\n")
+                    connection.process.stdin.flush()
+                    connection.process.wait(timeout=5)
+            except Exception:
+                try:
+                    connection.process.terminate()
+                    connection.process.wait(timeout=5)
+                except Exception:
+                    connection.process.kill()
+
+    def _register_atexit(self) -> None:
+        if not XttsBackend._atexit_registered:
+            atexit.register(XttsBackend.shutdown_all_servers)
+            XttsBackend._atexit_registered = True
+
+    def _start_server_stderr_thread(self, process: subprocess.Popen[str]) -> threading.Thread:
+        logger = self.logger
+
+        def _reader() -> None:
+            if process.stderr is None:
+                return
+            for line in process.stderr:
+                message = line.rstrip()
+                if not message:
+                    continue
+                if logger:
+                    logger.debug("XTTS server stderr: %s", message)
+
+        thread = threading.Thread(target=_reader, name="xtts-server-stderr", daemon=True)
+        thread.start()
+        return thread
+
+    def server_connection(self) -> _XttsServerConnection:
+        self._register_atexit()
+        key = self.server_key()
+        with XttsBackend._server_registry_lock:
+            connection = XttsBackend._server_connections.get(key)
+            if connection and connection.process.poll() is None:
+                return connection
+
+            worker = Path(__file__).resolve().parents[3] / "scripts" / "xtts_worker.py"
+            cmd = [str(self.python_path()), str(worker), "--server"]
+            env = self.subprocess_env()
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                env=env,
+            )
+            connection = _XttsServerConnection(
+                process=process,
+                io_lock=threading.Lock(),
+                stderr_thread=self._start_server_stderr_thread(process),
+            )
+            XttsBackend._server_connections[key] = connection
+            if self.logger:
+                self.logger.info("Started persistent XTTS server: %s", cmd)
+            return connection
+
+    @classmethod
+    def _drop_server_connection(cls, key: str) -> None:
+        with cls._server_registry_lock:
+            connection = cls._server_connections.pop(key, None)
+        if not connection:
+            return
+        try:
+            if connection.process.poll() is None:
+                connection.process.terminate()
+                connection.process.wait(timeout=5)
+        except Exception:
+            try:
+                connection.process.kill()
+            except Exception:
+                pass
+
+    def _request_server(self, payload: dict[str, object]) -> dict[str, object]:
+        key = self.server_key()
+        connection = self.server_connection()
+        with connection.io_lock:
+            if connection.process.poll() is not None:
+                XttsBackend._drop_server_connection(key)
+                raise RuntimeError("XTTS server process terminated unexpectedly")
+            if connection.process.stdin is None or connection.process.stdout is None:
+                XttsBackend._drop_server_connection(key)
+                raise RuntimeError("XTTS server pipes are not available")
+            connection.process.stdin.write(json.dumps(payload) + "\n")
+            connection.process.stdin.flush()
+            line = connection.process.stdout.readline()
+        if not line:
+            XttsBackend._drop_server_connection(key)
+            raise RuntimeError("XTTS server returned no response")
+        try:
+            response = json.loads(line)
+        except json.JSONDecodeError as exc:
+            XttsBackend._drop_server_connection(key)
+            raise RuntimeError(f"XTTS server returned invalid JSON: {line.strip()}") from exc
+        if not response.get("ok"):
+            details = str(response.get("error", "Unknown XTTS server error"))
+            traceback_text = response.get("traceback")
+            if traceback_text:
+                details = f"{details}\n{traceback_text}"
+            raise RuntimeError(details)
+        return response
+
+    def _run_one_shot(self, payload: dict[str, object]) -> None:
+        worker = Path(__file__).resolve().parents[3] / "scripts" / "xtts_worker.py"
+        python_path = self.python_path()
+        cmd = [str(python_path), str(worker)]
+        env = self.subprocess_env()
+        result = subprocess.run(
+            cmd,
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        if result.returncode != 0:
+            if self.logger:
+                self.logger.error("XTTS worker stdout: %s", result.stdout)
+                self.logger.error("XTTS worker stderr: %s", result.stderr)
+            raise RuntimeError(f"XTTS synthesis failed with exit code {result.returncode}")
+        if self.logger:
+            self.logger.debug("XTTS worker stdout: %s", result.stdout.strip())
+            self.logger.debug("XTTS worker stderr: %s", result.stderr.strip())
+
     def synthesize_to_wav(
         self,
         text: str,
@@ -95,7 +250,6 @@ class XttsBackend:
             raise ValueError("texts and wav_paths must have the same length")
         for wav_path in wav_paths:
             wav_path.parent.mkdir(parents=True, exist_ok=True)
-        worker = Path(__file__).resolve().parents[3] / "scripts" / "xtts_worker.py"
         payload = {
             "texts": texts,
             "language": profile.target_language,
@@ -104,32 +258,16 @@ class XttsBackend:
             "output_files": [str(path) for path in wav_paths],
             "length_scale": length_scale,
         }
-        python_path = self.python_path()
-        cmd = [str(python_path), str(worker)]
-        env = self.subprocess_env()
         if self.logger:
-            self.logger.debug("Synthesizing %s chunk(s) with XTTS command: %s", len(texts), cmd)
+            self.logger.debug("Synthesizing %s chunk(s) with XTTS payload", len(texts))
             self.logger.debug("XTTS payload: %s", payload)
-            self.logger.debug(
-                "XTTS env override: %s",
-                {
-                    "PYTHONHOME": env.get("PYTHONHOME", ""),
-                    "PYTHONPATH": env.get("PYTHONPATH", ""),
-                    "PYTHONNOUSERSITE": env.get("PYTHONNOUSERSITE", ""),
-                },
-            )
-        result = subprocess.run(
-            cmd,
-            input=json.dumps(payload),
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        if result.returncode != 0:
+        try:
+            if self.server_enabled():
+                response = self._request_server(payload)
+                if self.logger:
+                    self.logger.debug("XTTS server response: %s", response)
+                return
+        except Exception:
             if self.logger:
-                self.logger.error("XTTS worker stdout: %s", result.stdout)
-                self.logger.error("XTTS worker stderr: %s", result.stderr)
-            raise RuntimeError(f"XTTS synthesis failed with exit code {result.returncode}")
-        if self.logger:
-            self.logger.debug("XTTS worker stdout: %s", result.stdout.strip())
-            self.logger.debug("XTTS worker stderr: %s", result.stderr.strip())
+                self.logger.exception("Persistent XTTS server request failed, falling back to one-shot worker")
+        self._run_one_shot(payload)
