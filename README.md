@@ -228,3 +228,11 @@ python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standa
 ```
 
 This setup now prefers CPU Torch wheels by default so the portable runtime does not accidentally pull the full CUDA stack.
+
+To make the local `src/` program folder itself self-contained on Linux, populate the embedded app Python directly:
+
+```bash
+python scripts/populate_bundle_python_linux.py src
+```
+
+After that, `src/start.sh` and `src/book2mp3/start.sh` start with `src/python/linux/` and no longer need a local system Python.

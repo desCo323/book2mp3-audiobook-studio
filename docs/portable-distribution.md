@@ -167,6 +167,14 @@ Or build the Linux release in one step with XTTS inside the app Python:
 
 ```bash
 python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --include-xtts-in-app-python --archive
+
+For the current local `src/` development/program folder, you can also populate the embedded app Python directly in place:
+
+```bash
+python scripts/populate_bundle_python_linux.py src
+```
+
+After that, `src/start.sh` and `src/book2mp3/start.sh` use `src/python/linux/` instead of falling back to a system Python.
 ```
 
 ## Sources

@@ -27,9 +27,19 @@ fi
 
 export BOOK2MP3_APP_ROOT="$APP_ROOT"
 if [ "$USE_BUNDLED_PYTHON" = "1" ]; then
+  PYTHON_EXTRA_PATHS="$APP_ROOT"
+  for candidate in \
+    "$APP_ROOT"/python/linux/lib/python*/dist-packages \
+    "$APP_ROOT"/python/linux/lib/python*/site-packages \
+    "$APP_ROOT"/python/linux/local/lib/python*/dist-packages
+  do
+    if [ -d "$candidate" ]; then
+      PYTHON_EXTRA_PATHS="${PYTHON_EXTRA_PATHS}:$candidate"
+    fi
+  done
   export PYTHONHOME="$APP_ROOT/python/linux"
   export PYTHONNOUSERSITE=1
-  export PYTHONPATH="$APP_ROOT:$APP_ROOT/python/linux/lib/python3.13/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+  export PYTHONPATH="${PYTHON_EXTRA_PATHS}${PYTHONPATH:+:$PYTHONPATH}"
 else
   export PYTHONPATH="$APP_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 fi

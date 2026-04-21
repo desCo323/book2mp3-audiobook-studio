@@ -10,6 +10,7 @@ build/
 dist/
 workspace/
 runtime/
+src/python/
 voices/
 *.spec
 *.log

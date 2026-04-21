@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import site
 import sys
@@ -26,6 +27,15 @@ def copy_tree(source: Path, target: Path) -> None:
     shutil.copytree(source, target, dirs_exist_ok=True)
 
 
+def replace_file(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp_target = target.with_name(f".{target.name}.tmp")
+    if temp_target.exists():
+        temp_target.unlink()
+    shutil.copy2(source, temp_target)
+    os.replace(temp_target, target)
+
+
 def main() -> int:
     args = parse_args()
     bundle_root = Path(args.bundle_root).resolve()
@@ -35,28 +45,30 @@ def main() -> int:
     py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
     stdlib_target = lib_dir / py_version
     site_target = stdlib_target / "site-packages"
+    dist_target = stdlib_target / "dist-packages"
 
     bin_dir.mkdir(parents=True, exist_ok=True)
-    site_target.mkdir(parents=True, exist_ok=True)
 
     python_exe = Path(sys.executable).resolve()
-    shutil.copy2(python_exe, bin_dir / "python3")
-    shutil.copy2(python_exe, bin_dir / py_version)
+    replace_file(python_exe, bin_dir / "python3")
+    replace_file(python_exe, bin_dir / py_version)
 
     stdlib_source = Path(sysconfig.get_path("stdlib")).resolve()
     copy_tree(stdlib_source, stdlib_target)
+    site_target.mkdir(parents=True, exist_ok=True)
+    dist_target.mkdir(parents=True, exist_ok=True)
 
     copied_sources: list[str] = []
 
     purelib = Path(sysconfig.get_path("purelib")).resolve()
     if purelib.exists():
-        copy_tree(purelib, site_target)
+        copy_tree(purelib, dist_target)
         copied_sources.append(str(purelib))
 
     user_site = Path(site.getusersitepackages()).resolve()
     if user_site.exists():
         for item in user_site.iterdir():
-            target = site_target / item.name
+            target = dist_target / item.name
             if item.is_dir():
                 shutil.copytree(item, target, dirs_exist_ok=True)
             else:
@@ -66,11 +78,16 @@ def main() -> int:
     system_dist = Path(args.system_dist_packages).resolve()
     if system_dist.exists():
         for item in system_dist.iterdir():
-            target = site_target / item.name
+            target = dist_target / item.name
             if item.is_dir():
                 shutil.copytree(item, target, dirs_exist_ok=True)
             else:
                 shutil.copy2(item, target)
+
+    (site_target / "book2mp3-portable-runtime.pth").write_text(
+        "../dist-packages\n",
+        encoding="utf-8",
+    )
 
     manifest = {
         "bundle_root": str(bundle_root),

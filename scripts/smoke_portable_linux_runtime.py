@@ -42,7 +42,12 @@ def main() -> int:
             env={
                 "PYTHONHOME": str(bundle / "src" / "python" / "linux"),
                 "PYTHONNOUSERSITE": "1",
-                "PYTHONPATH": f"{bundle / 'src'}:{bundle / 'src' / 'python' / 'linux' / 'lib' / 'python3.13' / 'site-packages'}",
+                "PYTHONPATH": (
+                    f"{bundle / 'src'}:"
+                    f"{bundle / 'src' / 'python' / 'linux' / 'lib' / 'python3.13' / 'dist-packages'}:"
+                    f"{bundle / 'src' / 'python' / 'linux' / 'lib' / 'python3.13' / 'site-packages'}:"
+                    f"{bundle / 'src' / 'python' / 'linux' / 'local' / 'lib' / 'python3.13' / 'dist-packages'}"
+                ),
             },
         )
         print(
