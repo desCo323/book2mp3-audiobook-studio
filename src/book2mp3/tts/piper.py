@@ -18,19 +18,29 @@ class PiperBackend:
         self.voices_root = voices_root
         self.logger = logger
 
+    def runtime_roots(self) -> list[Path]:
+        roots = [self.runtime_root]
+        parent_candidate = self.runtime_root.parent.parent / "runtime"
+        if parent_candidate != self.runtime_root and parent_candidate not in roots:
+            roots.append(parent_candidate)
+        return roots
+
     def binary_path(self) -> Path:
         system = platform.system().lower()
-        if system == "windows":
-            candidate = self.runtime_root / "piper" / "windows" / "piper.exe"
-        elif system == "linux":
-            candidate = self.runtime_root / "piper" / "linux" / "piper" / "piper"
-        else:
-            raise RuntimeError(f"Unsupported platform: {platform.system()}")
-        if not candidate.exists():
-            raise FileNotFoundError(
-                "Piper runtime not found. Run scripts/bootstrap_runtime.py first."
-            )
-        return candidate
+        candidates: list[Path] = []
+        for runtime_root in self.runtime_roots():
+            if system == "windows":
+                candidates.append(runtime_root / "piper" / "windows" / "piper.exe")
+            elif system == "linux":
+                candidates.append(runtime_root / "piper" / "linux" / "piper" / "piper")
+            else:
+                raise RuntimeError(f"Unsupported platform: {platform.system()}")
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        raise FileNotFoundError(
+            "Piper runtime not found. Run scripts/bootstrap_runtime.py first."
+        )
 
     def voice_path(self, voice_id: str) -> Path:
         candidate = self.voices_root / f"{voice_id}.onnx"
