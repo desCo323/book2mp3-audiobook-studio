@@ -9,6 +9,7 @@ from PySide6.QtCore import QThread, Qt, QUrl, Signal
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -195,6 +196,14 @@ class FindBestSettingDialog(QDialog):
         self.voice_language_combo = QComboBox()
         self.voice_language_combo.currentIndexChanged.connect(self.rebuild_voice_combo)
         form.addRow("Piper-Sprache", self.voice_language_combo)
+        voice_filter_row = QHBoxLayout()
+        self.voice_female_only_checkbox = QCheckBox("nur Frauenstimmen")
+        self.voice_female_only_checkbox.toggled.connect(self.rebuild_voice_combo)
+        voice_filter_row.addWidget(self.voice_female_only_checkbox)
+        self.voice_high_only_checkbox = QCheckBox("nur high")
+        self.voice_high_only_checkbox.toggled.connect(self.rebuild_voice_combo)
+        voice_filter_row.addWidget(self.voice_high_only_checkbox)
+        form.addRow("Piper-Filter", self._wrap(voice_filter_row))
 
         self.voice_profile_combo = QComboBox()
         self.voice_profile_combo.currentIndexChanged.connect(self.refresh_selected_voice_profile)
@@ -350,13 +359,20 @@ class FindBestSettingDialog(QDialog):
     def rebuild_voice_combo(self) -> None:
         selected_voice_id = self.voice_combo.currentData() or self.voice_combo.currentText().strip()
         language_code = self.voice_language_combo.currentData() or ""
-        visible_voices = filter_voice_ids(self.installed_voices, language_code)
+        visible_voices = filter_voice_ids(
+            self.installed_voices,
+            language_code,
+            female_only=self.voice_female_only_checkbox.isChecked(),
+            high_only=self.voice_high_only_checkbox.isChecked(),
+        )
         self.voice_combo.clear()
         for voice_id in visible_voices:
             self.voice_combo.addItem(format_voice_label(voice_id), voice_id)
         if visible_voices:
             selected_index = self.voice_combo.findData(selected_voice_id)
             self.voice_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
+        else:
+            self.voice_combo.addItem("Keine Stimme fuer diesen Filter gefunden", "")
 
     def on_backend_changed(self) -> None:
         is_piper = self.backend_combo.currentText() == "piper"

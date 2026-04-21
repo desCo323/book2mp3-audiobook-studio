@@ -117,8 +117,16 @@ def voice_name(voice_id: str) -> str:
     return parts[1] if len(parts) > 1 else voice_id
 
 
+def voice_note(voice_id: str) -> str:
+    return VOICE_NOTES.get(voice_id, "")
+
+
+def is_female_voice(voice_id: str) -> bool:
+    return voice_note(voice_id) == "female"
+
+
 def format_voice_label(voice_id: str) -> str:
-    note = VOICE_NOTES.get(voice_id, "")
+    note = voice_note(voice_id)
     if note:
         return f"{voice_language_label(voice_id)} | {voice_name(voice_id)} | {voice_quality(voice_id)} | {note}"
     return f"{voice_language_label(voice_id)} | {voice_name(voice_id)} | {voice_quality(voice_id)}"
@@ -145,7 +153,18 @@ def sort_voice_ids(voice_ids: list[str]) -> list[str]:
     return ordered + remaining
 
 
-def filter_voice_ids(voice_ids: list[str], language_code: str) -> list[str]:
-    if not language_code:
-        return sort_voice_ids(voice_ids)
-    return sort_voice_ids([voice_id for voice_id in voice_ids if voice_language_code(voice_id) == language_code])
+def filter_voice_ids(
+    voice_ids: list[str],
+    language_code: str,
+    *,
+    female_only: bool = False,
+    high_only: bool = False,
+) -> list[str]:
+    filtered = list(voice_ids)
+    if language_code:
+        filtered = [voice_id for voice_id in filtered if voice_language_code(voice_id) == language_code]
+    if female_only:
+        filtered = [voice_id for voice_id in filtered if is_female_voice(voice_id)]
+    if high_only:
+        filtered = [voice_id for voice_id in filtered if voice_quality(voice_id) == "high"]
+    return sort_voice_ids(filtered)

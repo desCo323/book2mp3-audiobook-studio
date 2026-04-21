@@ -149,6 +149,14 @@ class MainWindow(QMainWindow):
         self.voice_language_combo = QComboBox()
         self.voice_language_combo.currentIndexChanged.connect(self.rebuild_voice_combo)
         form.addRow("Sprache", self.voice_language_combo)
+        voice_filter_row = QHBoxLayout()
+        self.voice_female_only_checkbox = QCheckBox("nur Frauenstimmen")
+        self.voice_female_only_checkbox.toggled.connect(self.rebuild_voice_combo)
+        voice_filter_row.addWidget(self.voice_female_only_checkbox)
+        self.voice_high_only_checkbox = QCheckBox("nur high")
+        self.voice_high_only_checkbox.toggled.connect(self.rebuild_voice_combo)
+        voice_filter_row.addWidget(self.voice_high_only_checkbox)
+        form.addRow("Piper-Filter", self._wrap(voice_filter_row))
 
         self.backend_combo = QComboBox()
         self.backend_combo.addItems(["piper", "xtts"])
@@ -338,7 +346,12 @@ class MainWindow(QMainWindow):
     def rebuild_voice_combo(self) -> None:
         selected_voice_id = self.voice_combo.currentData() or self.voice_combo.currentText().strip()
         language_code = self.voice_language_combo.currentData() or ""
-        visible_voices = filter_voice_ids(self.installed_voice_ids, language_code)
+        visible_voices = filter_voice_ids(
+            self.installed_voice_ids,
+            language_code,
+            female_only=self.voice_female_only_checkbox.isChecked(),
+            high_only=self.voice_high_only_checkbox.isChecked(),
+        )
         self.voice_combo.clear()
         if visible_voices:
             for voice_id in visible_voices:
@@ -346,7 +359,7 @@ class MainWindow(QMainWindow):
             selected_index = self.voice_combo.findData(selected_voice_id)
             self.voice_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
         else:
-            self.voice_combo.addItem("No voices found", "")
+            self.voice_combo.addItem("Keine Stimme fuer diesen Filter gefunden", "")
 
     def refresh_voice_profiles(self) -> None:
         self.voice_profile_combo.clear()
