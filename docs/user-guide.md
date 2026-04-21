@@ -88,6 +88,7 @@ Voice selection:
 - if you want the most natural path, XTTS remains the better target than Piper, but Piper is still the easier offline default
 - the live tuning dialog can now switch between `piper` and `xtts`
 - XTTS uses imported speaker profiles instead of a fixed internal voice list
+- in the main job screen, selecting `xtts` now switches to the recommended `Premium Natuerlich` preset automatically
 
 Simple workflow:
 

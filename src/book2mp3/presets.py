@@ -46,6 +46,16 @@ QUALITY_PRESETS = [
         sentence_silence=0.30,
         length_scale=1.06,
     ),
+    QualityPreset(
+        preset_id="premium_natural",
+        label="Premium Natuerlich",
+        description="Empfohlener XTTS-Pfad fuer natuerlichere Hoerbuchausgabe mit Sprecherprofilen.",
+        max_chars=280,
+        output_mode="single_file",
+        keep_wav=False,
+        sentence_silence=0.24,
+        length_scale=1.0,
+    ),
 ]
 
 

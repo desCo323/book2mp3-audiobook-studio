@@ -140,6 +140,10 @@ class MainWindow(QMainWindow):
         self.backend_notice.setStyleSheet(BETA_LABEL_STYLE)
         form.addRow("XTTS-Hinweis", self.backend_notice)
 
+        self.backend_summary = QLabel("")
+        self.backend_summary.setWordWrap(True)
+        form.addRow("Backend-Status", self.backend_summary)
+
         self.voice_profile_combo = QComboBox()
         form.addRow("Voice profile", self.voice_profile_combo)
 
@@ -261,6 +265,7 @@ class MainWindow(QMainWindow):
         self.rebuild_voice_combo()
         self.refresh_voice_profiles()
         self.logger.info("Loaded %s installed voices", len(self.installed_voice_ids))
+        self.update_backend_summary()
         if not self.installed_voice_ids:
             self.status_label.setText(
                 f"No voices found. Checked voices in {self.paths.voices}. "
@@ -291,19 +296,43 @@ class MainWindow(QMainWindow):
                 )
         else:
             self.voice_profile_combo.addItem("No voice profiles found", "")
+        self.update_backend_summary()
 
     def on_backend_changed(self) -> None:
         is_piper = self.backend_combo.currentText() == "piper"
         self.voice_combo.setEnabled(is_piper)
+        self.voice_language_combo.setEnabled(is_piper)
         self.voice_profile_combo.setEnabled(not is_piper)
         if is_piper:
             self.backend_combo.setStyleSheet("")
             self.voice_profile_combo.setStyleSheet("")
             self.backend_notice.hide()
+            if self.preset_combo.currentData() == "premium_natural":
+                fallback_index = self.preset_combo.findData("natural")
+                if fallback_index >= 0:
+                    self.preset_combo.setCurrentIndex(fallback_index)
         else:
             self.backend_combo.setStyleSheet(BETA_STYLE)
             self.voice_profile_combo.setStyleSheet(BETA_STYLE)
             self.backend_notice.show()
+            if self.preset_combo.currentData() in {"fast_cpu", "balanced", "natural"}:
+                xtts_index = self.preset_combo.findData("premium_natural")
+                if xtts_index >= 0:
+                    self.preset_combo.setCurrentIndex(xtts_index)
+        self.update_backend_summary()
+
+    def update_backend_summary(self) -> None:
+        profile_count = max(0, self.voice_profile_combo.count() - (1 if self.voice_profile_combo.itemData(0) == "" else 0))
+        if self.backend_combo.currentText() == "xtts":
+            self.backend_summary.setText(
+                f"XTTS: {profile_count} Sprecherprofile verfuegbar. "
+                "Empfohlen: Preset 'Premium Natuerlich' und ein gutes WebUI-/Voice-Lab-Profil."
+            )
+        else:
+            self.backend_summary.setText(
+                f"Piper: {len(self.installed_voice_ids)} Offline-Stimmen verfuegbar. "
+                "Empfohlen fuer schnelle lokale Verarbeitung ohne XTTS-Runtime."
+            )
 
     def refresh_jobs(self) -> None:
         self.jobs_list.clear()
@@ -325,7 +354,8 @@ class MainWindow(QMainWindow):
         preview_lines = []
         for session in list_preview_sessions(self.paths):
             preview_lines.append(
-                f"Tuning {session.session_id} | voice={session.voice_id or '-'} | "
+                f"Tuning {session.session_id} | backend={session.backend} | "
+                f"voice={session.voice_id or session.voice_profile_id or '-'} | "
                 f"preview={session.last_preview_status} | setting={session.saved_setting_id or '-'} | "
                 f"source={Path(session.source_file).name}"
             )
@@ -339,9 +369,14 @@ class MainWindow(QMainWindow):
         self.max_chars_spin.setValue(preset.max_chars)
         self.output_mode_combo.setCurrentText(preset.output_mode)
         self.keep_wav_checkbox.setChecked(preset.keep_wav)
-        self.preset_description.setText(
-            f"{preset.description} Satzpause: {preset.sentence_silence:.2f}s, Länge: {preset.length_scale:.2f}."
-        )
+        if self.backend_combo.currentText() == "xtts":
+            self.preset_description.setText(
+                f"{preset.description} XTTS ignoriert Satzpause und nutzt vor allem Chunk-Laenge und Sprechtempo."
+            )
+        else:
+            self.preset_description.setText(
+                f"{preset.description} Satzpause: {preset.sentence_silence:.2f}s, Länge: {preset.length_scale:.2f}."
+            )
 
     def select_source_file(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(

@@ -133,6 +133,7 @@ The practical XTTS equivalent of a "voice list" is a speaker-sample library.
 - an `xtts-webui` style `speakers/` folder should be importable directly
 - each speaker folder should become a reusable XTTS voice profile in the app
 - the quick tuning dialog should be able to render direct XTTS previews from those imported profiles
+- the main conversion workflow should default to an XTTS-oriented quality preset when the backend is switched to XTTS
 
 ## Sources
 
