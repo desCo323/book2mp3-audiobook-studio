@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="680" viewBox="0 0 1600 680">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7f4ee"/>
+      <stop offset="100%" stop-color="#e7f1f0"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1f6d7a"/>
+      <stop offset="100%" stop-color="#0f3e47"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="680" fill="url(#bg)"/>
+  <circle cx="1290" cy="120" r="120" fill="#dceceb"/>
+  <circle cx="1460" cy="300" r="170" fill="#f2e5d4"/>
+  <circle cx="1220" cy="500" r="140" fill="#dbeafe"/>
+
+  <g font-family="Arial, sans-serif">
+    <text x="92" y="142" font-size="64" font-weight="700" fill="#132a33">book2mp3 Audiobook Studio</text>
+    <text x="94" y="200" font-size="28" fill="#35515b">Lokale Hörbuch-Produktion mit Aufträgen, Profilen, Benchmarking und sauberem MP3-Export.</text>
+
+    <rect x="92" y="250" width="248" height="58" rx="16" fill="url(#accent)"/>
+    <text x="216" y="288" text-anchor="middle" font-size="24" font-weight="700" fill="#ffffff">TXT / PDF / EPUB</text>
+
+    <rect x="356" y="250" width="212" height="58" rx="16" fill="#ffffff" stroke="#bdd0d5" stroke-width="2"/>
+    <text x="462" y="288" text-anchor="middle" font-size="24" font-weight="700" fill="#21424a">Piper + XTTS</text>
+
+    <rect x="584" y="250" width="236" height="58" rx="16" fill="#ffffff" stroke="#bdd0d5" stroke-width="2"/>
+    <text x="702" y="288" text-anchor="middle" font-size="24" font-weight="700" fill="#21424a">GUI / CLI / API</text>
+
+    <rect x="92" y="360" width="630" height="210" rx="28" fill="#fffdf9" stroke="#d6e0df" stroke-width="2"/>
+    <text x="132" y="420" font-size="30" font-weight="700" fill="#17313b">Warum dieses Projekt anders ist</text>
+    <text x="132" y="468" font-size="24" fill="#45616a">• wiederaufnahmefähige Aufträge statt fragiler Einmal-Läufe</text>
+    <text x="132" y="512" font-size="24" fill="#45616a">• Kapitelanalyse und Exportlogik direkt im Produktionsfluss</text>
+    <text x="132" y="556" font-size="24" fill="#45616a">• Benchmark-Studio für Stimmen, Geschwindigkeit und Chunk-Tuning</text>
+
+    <rect x="910" y="160" width="560" height="360" rx="30" fill="#fdfcf8" stroke="#d4dfde" stroke-width="2"/>
+    <rect x="950" y="210" width="160" height="92" rx="18" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+    <text x="1030" y="265" text-anchor="middle" font-size="26" font-weight="700" fill="#9a3412">Analyse</text>
+    <rect x="1120" y="210" width="160" height="92" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+    <text x="1200" y="265" text-anchor="middle" font-size="26" font-weight="700" fill="#1d4ed8">Profile</text>
+    <rect x="1290" y="210" width="140" height="92" rx="18" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+    <text x="1360" y="265" text-anchor="middle" font-size="26" font-weight="700" fill="#166534">TTS</text>
+    <rect x="980" y="360" width="200" height="96" rx="18" fill="#ffffff" stroke="#d4dfde" stroke-width="2"/>
+    <text x="1080" y="418" text-anchor="middle" font-size="26" font-weight="700" fill="#17313b">Queue</text>
+    <rect x="1200" y="360" width="200" height="96" rx="18" fill="#ffffff" stroke="#d4dfde" stroke-width="2"/>
+    <text x="1300" y="418" text-anchor="middle" font-size="26" font-weight="700" fill="#17313b">Export</text>
+    <path d="M1110 256 L1120 256" stroke="#94a3b8" stroke-width="6"/>
+    <path d="M1280 256 L1290 256" stroke="#94a3b8" stroke-width="6"/>
+    <path d="M1360 302 L1360 338 L1080 338 L1080 360" stroke="#94a3b8" stroke-width="6" fill="none"/>
+    <path d="M1180 408 L1200 408" stroke="#94a3b8" stroke-width="6"/>
+  </g>
+</svg>

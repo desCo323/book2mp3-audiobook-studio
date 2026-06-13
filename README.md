@@ -1,104 +1,75 @@
-# book2mp3
+# book2mp3 Audiobook Studio
 
-`book2mp3` is a desktop-first audiobook production tool for Windows and Linux. It imports `PDF`, `TXT` and `EPUB`, extracts clean text, splits it into stable chunks, synthesizes speech chunk by chunk, and writes resumable MP3 outputs.
+Lokale Hörbuch-Produktion aus `TXT`, `PDF` und `EPUB` mit wiederaufnahmefähigen Aufträgen, Profilen, Benchmarking und sauberem MP3-Export.
 
-The old `ebooksp` scripts showed why this needs to happen in small steps:
+![book2mp3 Hero](docs/assets/readme-hero.svg)
 
-- large monolithic TTS runs are fragile
-- partial output must survive crashes
-- each intermediate step must be inspectable and restartable
+`book2mp3` ist für echte Buchprojekte gebaut, nicht für einen fragilen Einmal-Klick.  
+Die Software trennt bewusst zwischen Quelle, Kapitelanalyse, Profilen, Testreihen, Queue und Export.
 
-This rewrite keeps those properties, but wraps them in a structured application with a modern GUI, persistent jobs, resumability, progress tracking, queueing and cleanup rules.
+## Was das Projekt besonders macht
 
-## Current status
+- wiederaufnahmefähige Aufträge statt monolithischer TTS-Läufe
+- Kapitel- und Chunk-Artefakte, die einzeln prüf- und neu startbar sind
+- Produktionsprofile mit Freigabestatus statt unkontrollierter Einzelsettings
+- Benchmark-Studio für Stimmen, Geschwindigkeit und Chunk-Tuning
+- gleicher Kern für GUI, CLI und lokale API
 
-This repository now contains the first production-oriented foundation:
+## Screenshots
 
-- PySide6 desktop GUI
-- persistent job directories with `state.json`
-- persistent queue with priorities across restarts
-- extensive debug logging with app-level and job-level log files
-- quality presets for fast, balanced and natural reading
-- persistent profile studio sessions with saved production profiles and release states
-- optional XTTS runtime path for custom voice profiles
-- import pipeline for `TXT`, `PDF` and `EPUB`
-- sentence-aware chunking
-- resumable per-chunk synthesis
-- local `Piper` backend integration
-- MP3 segment export and optional single-file concat
-- MP3 metadata tagging plus export `manifest.json` and `chapters.json`
-- local CLI for headless job creation and execution
-- local REST API for service-style automation
-- runtime bootstrap script for `Piper`
-- handover documentation for follow-up agents
+### Hauptfenster
 
-Voice cloning is now modeled as an optional XTTS runtime path. Linux now has an automated standalone Python 3.11 bootstrap for that dedicated XTTS runtime.
+![Hauptfenster](docs/assets/screenshot-main-window.png)
 
-## How Users Work With The App
+### Auftragszentrale
 
-This README is intended to stay current with the actual software state.
+![Auftragszentrale](docs/assets/screenshot-jobs.png)
 
-Typical workflow:
+### XTTS-Profile
 
-1. Run `python scripts/bootstrap_runtime.py`
-2. Start the app with `book2mp3`
-3. Build or refine a voice/profile setup in `Profilstudio` or `XTTS-Profilstudio`
-4. Mark the best result as a released production profile
-5. Choose a `TXT`, `PDF` or `EPUB` in `Auftrag`
-6. Select the released production profile
-7. Set priority if you want the project earlier in the queue
-8. Create the job
-9. Start the selected job or queue it for later
-10. Watch stage progress and export artifacts in `Aufträge`
-11. Check runtime and CUDA state in `Diagnose` when needed
+![XTTS-Profile](docs/assets/screenshot-xtts-profiles.png)
 
-Headless workflow:
+### Benchmark-Studio
 
-1. Create a job with `book2mp3-cli create ...`
-2. Inspect jobs with `book2mp3-cli list` or `book2mp3-cli inspect <job-id>`
-3. Run one job with `book2mp3-cli run <job-id>` or the next queued job with `book2mp3-cli run-next`
-4. Start the local API with `book2mp3-cli serve`
+![Benchmark-Studio](docs/assets/screenshot-benchmark-studio.png)
 
-Current user-facing features:
+## Betriebsmodi
 
-- persistent queue across restarts
-- priority-based scheduling
-- chunk-based resume
-- production profiles with `draft`, `tested`, `approved` and `archived`
-- job creation only from approved production profiles
-- larger multilingual starter voice pack, sorted by language in the UI, with priority on less mechanical `medium`/`high` Piper models
-- quality presets: `Schnell`, `Balanciert`, `Natuerlich`
-- separate `Profilstudio` for preview, benchmarking and profile refinement
-- separate `XTTS-Profilstudio` for speaker profile import and validation
-- diagnostics view for workspace, runtime, queue and performance logging
-- backend choice between `piper` and `xtts`
-- XTTS device mode option with CUDA-first preference when supported
-- XTTS CUDA probe in the UI, so users can see whether the runtime really uses CUDA
-- custom Piper model import for external `.onnx` + `.onnx.json` voices
-- detailed logs for debugging
-- output manifests with tagged final MP3 metadata
+![Betriebsmodi](docs/assets/modes-overview.svg)
 
-XTTS note:
+| Modus | Wofür er gedacht ist |
+| --- | --- |
+| GUI | Produktionsarbeit mit Aufträgen, Profilen, Queue, Kapitel- und Chunkkontrolle |
+| CLI | Skripte, Cronjobs, Batch-Läufe, Diagnosen und lokale Automatisierung |
+| API | lokale Integrationen über REST auf `127.0.0.1` |
 
-- XTTS quality usually comes from good speaker reference samples, not from a fixed built-in voice list
-- XTTS speed depends heavily on whether the dedicated XTTS runtime really has working CUDA; the UI now exposes an explicit runtime probe
-- the app can now import an `xtts-webui` style `speakers/` folder into reusable XTTS voice profiles
-- the live tuning dialog now supports both `piper` and `xtts` previews
-- the main job UI now recommends XTTS with `Premium Natuerlich` when speaker profiles exist
-- the app can now auto-detect local `speakers/` folders for XTTS and import them into profiles
-- the XTTS migration path now also scans common old `xtts-webui` installation locations
-- if no old XTTS installation exists, the app can now install starter XTTS sample profiles including English `xtts-webui` examples and German `Thorsten-Voice` examples
-- XTTS profiles can now be previewed directly in the UI via their stored reference sample before you run a synthesis test
-- for German female XTTS use, the app now also ships cross-language female starter profiles with `de` as target language, based on curated female reference samples
+## Verarbeitungspipeline
 
-## Project layout
+![Verarbeitungspipeline](docs/assets/processing-pipeline.svg)
 
-- `src/book2mp3/`: application code
-- `docs/`: architecture, roadmap, agent handover
-- `scripts/bootstrap_runtime.py`: downloads local runtime components
-- `ebooksp/`: legacy reference scripts kept for comparison
+## Typischer Arbeitsfluss
 
-## Quick start
+1. Quelle wählen
+2. Kapitelanalyse abwarten
+3. freigegebenes Produktionsprofil laden
+4. Ausgabeart festlegen
+5. Auftrag starten oder einreihen
+6. Fortschritt, Kapitel und Chunks in `Aufträge` überwachen
+7. Exportdateien und Metadaten prüfen
+
+## Kernfunktionen
+
+- Import von `TXT`, `PDF` und `EPUB`
+- automatische Kapitelanalyse mit klarer Rückmeldung
+- Ausgabe als Gesamtdatei, Kapiteldateien oder Zeitteile
+- lokale Piper-Stimmen und optionaler XTTS-Pfad
+- Produktionsprofile mit `draft`, `tested`, `approved`, `archived`
+- Benchmarking von Varianten, Geschwindigkeit und Chunk-Größen
+- Queue, Prioritäten und Wiederaufnahme
+- `manifest.json` und `chapters.json` für nachvollziehbare Exporte
+- lokaler GUI-, CLI- und API-Betrieb mit gemeinsamem Kern
+
+## Schnellstart
 
 For a finished end-user bundle, users should start the app directly with:
 
@@ -162,6 +133,13 @@ The bootstrap now installs a starter pack of standard female voices by default w
 - `en_GB-cori-medium`
 - `fr_FR-siwis-low`
 
+## Projektstruktur
+
+- `src/book2mp3/`: Anwendungscode
+- `docs/`: Startseite, Quickstarts, Architektur- und Release-Doku
+- `scripts/bootstrap_runtime.py`: lokale Runtime- und Stimmenbeschaffung
+- `ebooksp/`: ältere Referenzskripte
+
 ## Packaging direction
 
 The intended packaging target is folder-based desktop deployment, not a single giant executable. The portable release must include app-local Python:
@@ -173,14 +151,28 @@ The intended packaging target is folder-based desktop deployment, not a single g
 
 That fits the toolchain constraints better than a one-file build and keeps large TTS assets replaceable by the user.
 
+## Release- und Lizenzstatus
+
+Der Quellcode dieses Repos ist veröffentlichbar. Für ein öffentliches Release-Bundle müssen aber weiterhin Drittkomponenten sauber behandelt werden, besonders:
+
+- `EbookLib`
+- `XTTS-v2`
+- `FFmpeg`
+- gebündelte Piper-Stimmen
+
+Details:
+
+- [Open-Source and Release Check](docs/open-source-compliance.md)
+- [Third-Party Notices](THIRD_PARTY_NOTICES.md)
+
 ## Documentation
 
+- [GitHub Pages Landing Page](docs/index.md)
 - [Project Description](docs/project-description.md)
 - [Quickstart: Source Checkout](docs/quickstart-source.md)
 - [Quickstart: First Audiobook](docs/quickstart-first-audiobook.md)
 - [Quickstart: Portable Bundle](docs/quickstart-portable.md)
 - [Open-Source and Release Check](docs/open-source-compliance.md)
-- [GitHub Pages Landing Page](docs/index.md)
 - [User Guide](docs/user-guide.md)
 - [Architecture](docs/architecture.md)
 - [Requirements V1](docs/anforderungen-book2mp3-v1.md)
