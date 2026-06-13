@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="520" viewBox="0 0 1400 520">
+  <rect width="1400" height="520" fill="#f8fafc"/>
+  <text x="70" y="74" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0f172a">Drei Betriebsmodi</text>
+  <text x="70" y="112" font-family="Arial, sans-serif" font-size="18" fill="#475569">Die gleiche Engine kann interaktiv, automatisiert oder skriptgesteuert genutzt werden.</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="80" y="170" width="360" height="240" rx="24" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+    <text x="260" y="220" text-anchor="middle" font-size="28" font-weight="700" fill="#9a3412">GUI-Modus</text>
+    <text x="260" y="265" text-anchor="middle" font-size="19" fill="#7c2d12">für Autoren, Cutter und Einzelanwender</text>
+    <text x="260" y="315" text-anchor="middle" font-size="18" fill="#7c2d12">Aufträge, Kapitel, Vorschau, Profile</text>
+    <text x="260" y="350" text-anchor="middle" font-size="18" fill="#7c2d12">Benchmark-Studio und Diagnose</text>
+
+    <rect x="520" y="170" width="360" height="240" rx="24" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+    <text x="700" y="220" text-anchor="middle" font-size="28" font-weight="700" fill="#1d4ed8">CLI-Modus</text>
+    <text x="700" y="265" text-anchor="middle" font-size="19" fill="#1e3a8a">für Skripte, Cronjobs und Batch-Läufe</text>
+    <text x="700" y="315" text-anchor="middle" font-size="18" fill="#1e3a8a">create, list, run, retry, diagnostics</text>
+    <text x="700" y="350" text-anchor="middle" font-size="18" fill="#1e3a8a">lokal und headless</text>
+
+    <rect x="960" y="170" width="360" height="240" rx="24" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+    <text x="1140" y="220" text-anchor="middle" font-size="28" font-weight="700" fill="#166534">API-Modus</text>
+    <text x="1140" y="265" text-anchor="middle" font-size="19" fill="#14532d">für lokale Integrationen und Automatisierung</text>
+    <text x="1140" y="315" text-anchor="middle" font-size="18" fill="#14532d">Jobs, Profile, Quellenanalyse, Diagnose</text>
+    <text x="1140" y="350" text-anchor="middle" font-size="18" fill="#14532d">REST auf 127.0.0.1</text>
+  </g>
+</svg>
