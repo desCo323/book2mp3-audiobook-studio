@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
@@ -92,6 +93,8 @@ class MainWindow(QMainWindow):
         self.service = Book2Mp3Service(paths)
         self.worker: JobWorker | None = None
         self.current_job_id: str | None = None
+        self.cached_jobs: list[JobState] = []
+        self.cached_active_jobs: list[JobState] = []
         self.logger = get_logger("ui")
         self.installed_voice_ids: list[str] = []
         self.selected_source_files: list[Path] = []
@@ -162,7 +165,34 @@ class MainWindow(QMainWindow):
         self.queue_eta_header.setWordWrap(True)
         self.queue_eta_header.setProperty("role", "muted")
         left_layout.addWidget(self.queue_eta_header)
+        self.job_list_overview_label = QLabel(
+            "Noch keine aktiven Aufträge. Sobald eine Queue vorhanden ist, erscheinen hier Status, Restzeit und Prioritäten."
+        )
+        self.job_list_overview_label.setWordWrap(True)
+        self.job_list_overview_label.setProperty("role", "hint")
+        left_layout.addWidget(self.job_list_overview_label)
+        filters_row = QHBoxLayout()
+        self.job_search_edit = QLineEdit()
+        self.job_search_edit.setPlaceholderText("Auftrag, Profil oder Buch suchen")
+        self.job_search_edit.textChanged.connect(self.refresh_active_jobs_sidebar)
+        filters_row.addWidget(self.job_search_edit, 1)
+        self.job_status_filter_combo = QComboBox()
+        self.job_status_filter_combo.addItem("Alle", "all")
+        self.job_status_filter_combo.addItem("Läuft jetzt", "running")
+        self.job_status_filter_combo.addItem("Wartet", "waiting")
+        self.job_status_filter_combo.addItem("Aufmerksamkeit", "attention")
+        self.job_status_filter_combo.addItem("Blockiert", "blocked")
+        self.job_status_filter_combo.addItem("Fehler", "failed")
+        self.job_status_filter_combo.currentIndexChanged.connect(self.refresh_active_jobs_sidebar)
+        filters_row.addWidget(self.job_status_filter_combo)
+        left_layout.addLayout(filters_row)
+        self.job_list_filter_hint = QLabel("Liste zeigt alle aktiven Aufträge.")
+        self.job_list_filter_hint.setWordWrap(True)
+        self.job_list_filter_hint.setProperty("role", "muted")
+        left_layout.addWidget(self.job_list_filter_hint)
         self.jobs_list = QListWidget()
+        self.jobs_list.setMinimumWidth(340)
+        self.jobs_list.setAlternatingRowColors(True)
         self.jobs_list.itemSelectionChanged.connect(self.on_job_selected)
         left_layout.addWidget(self.jobs_list)
         queue_button_row = QHBoxLayout()
@@ -2323,47 +2353,192 @@ class MainWindow(QMainWindow):
             "pt": f"{len(queued_jobs)} tarefas ativas ou na fila | tempo restante total aprox. {total_text} | ETA confiável para {len(known_jobs)}/{len(queued_jobs)} tarefas",
         }.get(self.ui_language, f"{len(queued_jobs)} active or queued jobs | total remaining time approx. {total_text} | reliable ETA for {len(known_jobs)}/{len(queued_jobs)} jobs")
 
-    def refresh_jobs(self) -> None:
+    def _job_status_display(self, status: str) -> str:
+        labels = {
+            "de": {
+                "running": "Läuft",
+                "queued": "Wartet",
+                "prepared": "Bereit",
+                "blocked": "Blockiert",
+                "failed": "Fehler",
+                "stopped": "Pausiert",
+                "completed": "Fertig",
+                "draft": "Entwurf",
+            },
+            "en": {
+                "running": "Running",
+                "queued": "Queued",
+                "prepared": "Ready",
+                "blocked": "Blocked",
+                "failed": "Failed",
+                "stopped": "Paused",
+                "completed": "Done",
+                "draft": "Draft",
+            },
+            "es": {
+                "running": "En curso",
+                "queued": "En cola",
+                "prepared": "Listo",
+                "blocked": "Bloqueado",
+                "failed": "Error",
+                "stopped": "Pausado",
+                "completed": "Terminado",
+                "draft": "Borrador",
+            },
+            "pt": {
+                "running": "Em execução",
+                "queued": "Na fila",
+                "prepared": "Pronto",
+                "blocked": "Bloqueado",
+                "failed": "Falhou",
+                "stopped": "Pausado",
+                "completed": "Concluído",
+                "draft": "Rascunho",
+            },
+        }
+        return labels.get(self.ui_language, labels["en"]).get(status, status)
+
+    def _job_status_priority(self, status: str) -> int:
+        order = {
+            "running": 0,
+            "failed": 1,
+            "blocked": 2,
+            "stopped": 3,
+            "prepared": 4,
+            "queued": 5,
+            "draft": 6,
+            "completed": 7,
+        }
+        return order.get(status, 99)
+
+    def _job_matches_filter(self, job: JobState, filter_key: str, needle: str) -> bool:
+        if filter_key == "running" and job.status != "running":
+            return False
+        if filter_key == "waiting" and job.status not in {"queued", "prepared"}:
+            return False
+        if filter_key == "attention" and job.status not in {"failed", "blocked", "stopped"}:
+            return False
+        if filter_key == "blocked" and job.status != "blocked":
+            return False
+        if filter_key == "failed" and job.status != "failed":
+            return False
+        if not needle:
+            return True
+        haystack = " ".join(
+            [
+                job.title,
+                job.saved_profile_name or "",
+                job.backend,
+                job.voice_id or "",
+                job.voice_profile_id or "",
+                Path(job.source_file).name if job.source_file else "",
+            ]
+        ).lower()
+        return needle in haystack
+
+    def _job_list_item_text(self, job: JobState) -> str:
+        backend_text = f"{job.backend.upper()} · {job.device_mode.upper()} · P{job.priority:02d}"
+        profile_text = job.saved_profile_name or (job.voice_profile_id or job.voice_id or "-")
+        status_text = self._job_status_display(job.status)
+        eta_seconds = job.estimated_remaining_seconds or job.estimated_total_seconds
+        eta_text = self._eta_short_label(eta_seconds)
+        progress_text = f"{job.completed_chunks}/{job.total_chunks} Chunks" if job.total_chunks else "Noch keine Chunks"
+        if job.block_reason:
+            progress_text += f" · {job.block_reason}"
+        return (
+            f"{job.title}\n"
+            f"{status_text} · {progress_text} · {eta_text}\n"
+            f"{backend_text} · {profile_text}"
+        )
+
+    def refresh_active_jobs_sidebar(self) -> None:
         self.jobs_list.clear()
-        jobs = self.manager.list_jobs()
-        active_jobs = [job for job in jobs if job.status != "completed"]
-        self.logger.info("Refreshing jobs list with %s jobs", len(jobs))
-        queue_lines = []
-        for job in active_jobs:
-            eta_label = self._eta_short_label(job.estimated_remaining_seconds or job.estimated_total_seconds)
-            label = (
-                f"{job.title}\n"
-                f"P{job.priority:02d} | {job.status} | {job.completed_chunks}/{job.total_chunks} Chunks | {eta_label}"
+        active_jobs = list(self.cached_active_jobs)
+        filter_key = self.job_status_filter_combo.currentData() or "all"
+        search_term = self.job_search_edit.text().strip().lower()
+        visible_jobs = [
+            job
+            for job in sorted(
+                active_jobs,
+                key=lambda job: (
+                    self._job_status_priority(job.status),
+                    job.priority,
+                    job.title.lower(),
+                ),
             )
-            item = QListWidgetItem(label)
+            if self._job_matches_filter(job, str(filter_key), search_term)
+        ]
+        counts = Counter(job.status for job in active_jobs)
+        running_count = counts.get("running", 0)
+        waiting_count = counts.get("queued", 0) + counts.get("prepared", 0)
+        attention_count = counts.get("failed", 0) + counts.get("blocked", 0) + counts.get("stopped", 0)
+        completed_eta_jobs = [job for job in active_jobs if job.estimated_remaining_seconds > 0]
+        total_eta = sum(job.estimated_remaining_seconds for job in completed_eta_jobs)
+        eta_text = self._format_duration_hm(total_eta) if completed_eta_jobs else self._tr("queue.eta.learning")
+        self.job_list_overview_label.setText(
+            {
+                "de": f"Läuft {running_count} · Wartet {waiting_count} · Aufmerksamkeit {attention_count} · Sichtbar {len(visible_jobs)}/{len(active_jobs)} · Queue ca. {eta_text}",
+                "en": f"Running {running_count} · Waiting {waiting_count} · Needs attention {attention_count} · Visible {len(visible_jobs)}/{len(active_jobs)} · Queue approx. {eta_text}",
+                "es": f"En curso {running_count} · En espera {waiting_count} · Atención {attention_count} · Visible {len(visible_jobs)}/{len(active_jobs)} · Cola aprox. {eta_text}",
+                "pt": f"Em execução {running_count} · Em espera {waiting_count} · Atenção {attention_count} · Visível {len(visible_jobs)}/{len(active_jobs)} · Fila aprox. {eta_text}",
+            }.get(self.ui_language, f"Running {running_count} · Waiting {waiting_count} · Needs attention {attention_count} · Visible {len(visible_jobs)}/{len(active_jobs)} · Queue approx. {eta_text}")
+        )
+        self.job_list_filter_hint.setText(
+            {
+                "de": f"Filter: {self.job_status_filter_combo.currentText()} | Suche: {self.job_search_edit.text().strip() or 'keine'}",
+                "en": f"Filter: {self.job_status_filter_combo.currentText()} | Search: {self.job_search_edit.text().strip() or 'none'}",
+                "es": f"Filtro: {self.job_status_filter_combo.currentText()} | Búsqueda: {self.job_search_edit.text().strip() or 'ninguna'}",
+                "pt": f"Filtro: {self.job_status_filter_combo.currentText()} | Pesquisa: {self.job_search_edit.text().strip() or 'nenhuma'}",
+            }.get(self.ui_language, f"Filter: {self.job_status_filter_combo.currentText()} | Search: {self.job_search_edit.text().strip() or 'none'}")
+        )
+        for job in visible_jobs:
+            item = QListWidgetItem(self._job_list_item_text(job))
             item.setData(Qt.UserRole, job.job_id)
             item.setToolTip(
                 "\n".join(
                     [
-                        f"Status: {job.status}",
+                        f"Status: {self._job_status_display(job.status)}",
                         f"Profil: {job.saved_profile_name or '-'}",
                         f"Backend: {job.backend}",
                         f"Verarbeitung: {job.processing_mode} auf {job.device_mode}",
                         f"Schätzung gesamt: {self._format_duration_hm(job.estimated_total_seconds)}",
                         f"Restzeit: {self._format_duration_hm(job.estimated_remaining_seconds)}",
                         f"Datenbasis: {job.estimated_from_samples} Lauf/Läufe ({job.estimated_confidence})",
+                        f"Quelle: {Path(job.source_file).name if job.source_file else '-'}",
                     ]
                 )
             )
             self.jobs_list.addItem(item)
-            queue_lines.append(
-                f"P{job.priority:02d} | {job.status:9s} | {job.title} | preset={job.preset_id} | "
-                f"output={job.output_mode} | ziel={job.target_part_minutes}m | "
-                f"profil={job.saved_profile_name or '-'} | voice={job.voice_id or job.voice_profile_id} | "
-                f"mode={job.processing_mode} | eta={self._format_duration_hm(job.estimated_remaining_seconds)}"
-                + (f" | block={job.block_reason}" if job.block_reason else "")
-            )
         if self.current_job_id:
             for row in range(self.jobs_list.count()):
                 item = self.jobs_list.item(row)
                 if item.data(Qt.UserRole) == self.current_job_id:
                     self.jobs_list.setCurrentRow(row)
                     break
+
+    def refresh_jobs(self) -> None:
+        jobs = self.manager.list_jobs()
+        active_jobs = [job for job in jobs if job.status != "completed"]
+        self.cached_jobs = list(jobs)
+        self.cached_active_jobs = list(active_jobs)
+        self.logger.info("Refreshing jobs list with %s jobs", len(jobs))
+        queue_lines = []
+        for job in sorted(
+            active_jobs,
+            key=lambda job: (
+                self._job_status_priority(job.status),
+                job.priority,
+                job.title.lower(),
+            ),
+        ):
+            queue_lines.append(
+                f"P{job.priority:02d} | {self._job_status_display(job.status):11s} | {job.title} | preset={job.preset_id} | "
+                f"output={job.output_mode} | ziel={job.target_part_minutes}m | "
+                f"profil={job.saved_profile_name or '-'} | voice={job.voice_id or job.voice_profile_id} | "
+                f"mode={job.processing_mode} | eta={self._format_duration_hm(job.estimated_remaining_seconds)}"
+                + (f" | block={job.block_reason}" if job.block_reason else "")
+            )
+        self.refresh_active_jobs_sidebar()
         self.queue_details.setPlainText("\n".join(queue_lines) or "Keine Jobs in der Queue.")
         preview_lines = []
         for session in list_preview_sessions(self.paths):
