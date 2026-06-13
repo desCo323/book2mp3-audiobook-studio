@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from book2mp3.utils.perf_logging import perf_event, perf_scope
 from book2mp3.voice_lab import VoiceProfile
 
 
@@ -36,6 +37,17 @@ class XttsBackend:
 
     def set_device_mode(self, device_mode: str) -> None:
         self.device_mode = device_mode
+
+    def preferred_device_mode(self) -> str:
+        if not self.is_available():
+            return "auto"
+        try:
+            probe = self.runtime_probe()
+        except Exception:
+            return "auto"
+        if probe.get("ok") and probe.get("cuda_available"):
+            return "cuda"
+        return "auto"
 
     def dedicated_python_path(self) -> Path:
         system = platform.system().lower()
@@ -78,19 +90,32 @@ class XttsBackend:
     def runtime_probe(self) -> dict[str, object]:
         checker = Path(__file__).resolve().parents[3] / "scripts" / "check_xtts_cuda.py"
         env = self.subprocess_env()
-        result = subprocess.run(
-            [str(self.python_path()), str(checker)],
-            capture_output=True,
-            text=True,
-            env=env,
-        )
+        with perf_scope("xtts.runtime_probe", category="xtts", device_mode=self.device_mode):
+            result = subprocess.run(
+                [str(self.python_path()), str(checker)],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
         if result.returncode not in {0, 1}:
             raise RuntimeError(f"XTTS runtime probe failed: {result.stderr.strip() or result.stdout.strip()}")
-        return json.loads(result.stdout)
+        probe = json.loads(result.stdout)
+        perf_event(
+            "xtts.runtime_probe.result",
+            category="xtts",
+            device_mode=self.device_mode,
+            torch_version=probe.get("torch_version"),
+            cuda_available=probe.get("cuda_available"),
+            device_count=probe.get("device_count"),
+            allocation_ok=probe.get("allocation_ok"),
+            gpu_names=probe.get("gpu_names", []),
+        )
+        return probe
 
     def subprocess_env(self) -> dict[str, str]:
         env = os.environ.copy()
         python_path = self.python_path()
+        app_src_root = Path(__file__).resolve().parents[2]
         if python_path.resolve() != Path(sys.executable).resolve():
             for key in (
                 "PYTHONHOME",
@@ -103,6 +128,7 @@ class XttsBackend:
             ):
                 env.pop(key, None)
             env["PYTHONNOUSERSITE"] = "1"
+            env["PYTHONPATH"] = str(app_src_root)
         env.setdefault("COQUI_TOS_AGREED", "1")
         return env
 
@@ -248,6 +274,55 @@ class XttsBackend:
             self.logger.debug("XTTS worker stdout: %s", result.stdout.strip())
             self.logger.debug("XTTS worker stderr: %s", result.stderr.strip())
 
+    def warmup_profile(self, profile: VoiceProfile, *, speaker_sample_limit: int = 1) -> None:
+        if not self.server_enabled():
+            return
+        payload: dict[str, object] = {
+            "command": "warmup",
+            "model_name": profile.preferred_model,
+            "device_mode": self.device_mode,
+        }
+        speaker_samples = profile.samples[:speaker_sample_limit] if speaker_sample_limit > 0 else profile.samples
+        if speaker_samples:
+            payload["speaker_wav"] = speaker_samples
+            preview_profile = VoiceProfile(
+                profile_id=profile.profile_id,
+                display_name=profile.display_name,
+                target_language=profile.target_language,
+                backend=profile.backend,
+                notes=profile.notes,
+                samples=speaker_samples,
+                validation_warnings=profile.validation_warnings,
+                preferred_model=profile.preferred_model,
+            )
+            cache_dir = self.conditioning_cache_dir(preview_profile)
+            if cache_dir is not None:
+                payload["conditioning_cache_dir"] = str(cache_dir)
+        started = time.perf_counter()
+        try:
+            response = self._request_server(payload)
+        except Exception as exc:
+            if self.logger:
+                self.logger.info("XTTS warmup skipped after server issue: %s", exc)
+            return
+        if self.logger:
+            self.logger.info(
+                "XTTS warmup finished in %.2fs for profile=%s response=%s",
+                time.perf_counter() - started,
+                profile.profile_id,
+                response,
+            )
+
+    def conditioning_cache_dir(self, profile: VoiceProfile) -> Path | None:
+        sample_paths = [Path(sample) for sample in profile.samples]
+        if not sample_paths:
+            return None
+        try:
+            profile_dir = sample_paths[0].resolve().parent.parent
+        except OSError:
+            return None
+        return profile_dir / ".xtts_cache"
+
     def synthesize_to_wav(
         self,
         text: str,
@@ -286,6 +361,9 @@ class XttsBackend:
             "enable_text_splitting": enable_text_splitting,
             "device_mode": self.device_mode,
         }
+        cache_dir = self.conditioning_cache_dir(profile)
+        if cache_dir is not None:
+            payload["conditioning_cache_dir"] = str(cache_dir)
         if self.logger:
             self.logger.debug("Synthesizing %s chunk(s) with XTTS payload", len(texts))
             self.logger.debug("XTTS payload: %s", payload)

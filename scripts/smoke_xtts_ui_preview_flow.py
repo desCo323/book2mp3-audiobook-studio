@@ -69,6 +69,10 @@ def synthesize_dummy_wavs(
         create_dummy_wav(wav_path, seconds=2)
 
 
+def warmup_noop(self: XttsBackend, profile, *, speaker_sample_limit: int = 1) -> None:
+    del self, profile, speaker_sample_limit
+
+
 def main() -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     with tempfile.TemporaryDirectory(prefix="book2mp3-smoke-xtts-ui-") as tmp_dir:
@@ -93,8 +97,10 @@ def main() -> int:
 
         original = XttsBackend.synthesize_to_wav
         original_many = XttsBackend.synthesize_many_to_wavs
+        original_warmup = XttsBackend.warmup_profile
         XttsBackend.synthesize_to_wav = synthesize_dummy_wav
         XttsBackend.synthesize_many_to_wavs = synthesize_dummy_wavs
+        XttsBackend.warmup_profile = warmup_noop
         try:
             app = QApplication([])
             QMessageBox.information = staticmethod(lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
@@ -139,7 +145,7 @@ def main() -> int:
             updated_session = {item.session_id: item for item in list_preview_sessions(paths)}[dialog.current_session_id]
             preview_output = Path(updated_session.last_preview_output) if updated_session.last_preview_output else None
             if not preview_output or not preview_output.exists():
-                raise AssertionError(f"Expected XTTS preview MP3, got: {updated_session.last_preview_output}")
+                raise AssertionError(f"Expected XTTS preview output, got: {updated_session.last_preview_output}")
 
             summary = {
                 "backend": updated_session.backend,
@@ -154,6 +160,7 @@ def main() -> int:
         finally:
             XttsBackend.synthesize_to_wav = original
             XttsBackend.synthesize_many_to_wavs = original_many
+            XttsBackend.warmup_profile = original_warmup
     return 0
 
 

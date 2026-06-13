@@ -34,6 +34,11 @@ def parse_args() -> argparse.Namespace:
         help="Install XTTS directly into the portable app Python under python/linux",
     )
     parser.add_argument(
+        "--include-xtts-starter-profiles",
+        action="store_true",
+        help="Install curated starter XTTS profiles into the portable workspace",
+    )
+    parser.add_argument(
         "--skip-xtts-packages",
         action="store_true",
         help="When bootstrapping XTTS runtime, skip TTS pip installation",
@@ -54,16 +59,20 @@ def run(cmd: list[str]) -> None:
 def main() -> int:
     args = parse_args()
     output_dir = Path(args.output_dir).resolve()
+    source_linux_python = ROOT / "src" / "python" / "linux"
+    use_existing_linux_python = source_linux_python.exists()
     run(
         [
             "python3",
             str(ROOT / "scripts" / "build_portable_bundle.py"),
             str(output_dir),
             "--clean",
+            *(["--python-linux", str(source_linux_python)] if use_existing_linux_python else []),
             *(["--without-voices"] if args.without_voices else []),
         ]
     )
-    run(["python3", str(ROOT / "scripts" / "populate_bundle_python_linux.py"), str(program_root(output_dir))])
+    if not use_existing_linux_python:
+        run(["python3", str(ROOT / "scripts" / "populate_bundle_python_linux.py"), str(program_root(output_dir))])
     if args.include_xtts_in_app_python:
         run(
             [
@@ -84,6 +93,14 @@ def main() -> int:
                 "--torch-variant",
                 args.xtts_torch_variant,
                 *(["--skip-package-install"] if args.skip_xtts_packages else []),
+            ]
+        )
+    if args.include_xtts_starter_profiles:
+        run(
+            [
+                "python3",
+                str(ROOT / "scripts" / "install_xtts_starter_profiles.py"),
+                str(program_root(output_dir)),
             ]
         )
     run(["python3", str(ROOT / "scripts" / "check_portable_bundle.py"), str(output_dir)])

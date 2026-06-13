@@ -15,3 +15,5 @@ voices/
 *.spec
 *.log
 *.egg-info/
+src/.codex
+/test.epub

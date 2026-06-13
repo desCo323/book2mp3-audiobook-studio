@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -18,11 +20,13 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from book2mp3.config import AppPaths
+from book2mp3.ui.theme import apply_modern_window_style
 from book2mp3.xtts_speakers import (
     auto_import_xtts_speakers,
     describe_candidate_speaker_roots,
@@ -31,10 +35,6 @@ from book2mp3.xtts_speakers import (
 )
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_lab import create_voice_profile, load_voice_profile
-
-BETA_STYLE = "background-color: #fff1cc; border: 1px solid #d18b00; color: #6b4b00;"
-BETA_LABEL_STYLE = "color: #9a5c00; font-weight: bold;"
-
 
 class VoiceLabDialog(QDialog):
     def __init__(self, paths: AppPaths, parent: QWidget | None = None) -> None:
@@ -46,72 +46,86 @@ class VoiceLabDialog(QDialog):
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
 
-        self.setWindowTitle("Voice Lab")
-        self.resize(760, 560)
+        self.setWindowTitle("XTTS-Profilstudio")
+        self.resize(860, 640)
         self._build_ui()
+        apply_modern_window_style(self)
         self.refresh_existing_profiles()
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        outer_layout.addWidget(scroll)
+
+        page = QWidget()
+        scroll.setWidget(page)
+        layout = QVBoxLayout(page)
 
         intro = QLabel(
-            "Lege hier neue Sprecherprofile fuer kuenftiges Voice Cloning an. "
-            "Die erste Version speichert Referenzsamples, Metadaten und Validierungshinweise. "
-            "XTTS nutzt diese Profile spaeter direkt fuer Voice Cloning."
+            "Hier verwaltest du XTTS-Sprecherprofile getrennt vom eigentlichen Auftragsdialog. "
+            "Importiere vorhandene Sprecher, prüfe Referenzsamples und speichere saubere Profile für das Profilstudio."
         )
         intro.setWordWrap(True)
-        intro.setStyleSheet(BETA_STYLE)
+        intro.setProperty("role", "hint")
         layout.addWidget(intro)
 
         self.beta_notice = QLabel(
-            "Orange markiert: vorbereitet, aber noch nicht vollstaendig produktionsreif. "
-            "XTTS/Custom-Voice-Profile sind noch ein Beta-Pfad."
+            "XTTS-Profile brauchen gute Referenzsamples. Prüfe deshalb jede neue Stimme zuerst im Profilstudio, "
+            "bevor du daraus ein Produktionsprofil machst."
         )
         self.beta_notice.setWordWrap(True)
-        self.beta_notice.setStyleSheet(BETA_LABEL_STYLE)
+        self.beta_notice.setProperty("role", "warning")
         layout.addWidget(self.beta_notice)
 
+        sections = QVBoxLayout()
+        layout.addLayout(sections)
+
+        edit_group = QGroupBox("Profil anlegen oder importieren")
+        edit_layout = QVBoxLayout(edit_group)
         form = QFormLayout()
         self.name_edit = QLineEdit()
-        form.addRow("Name", self.name_edit)
+        form.addRow("Profilname", self.name_edit)
         self.language_combo = QComboBox()
         self.language_combo.addItems(["de", "en", "fr", "es", "it", "nl", "pl"])
         form.addRow("Zielsprache", self.language_combo)
         self.backend_combo = QComboBox()
-        self.backend_combo.addItems(["xtts_v2 (beta)", "custom_pipeline_planned (not available)"])
-        self.backend_combo.setStyleSheet(BETA_STYLE)
+        self.backend_combo.addItems(["xtts_v2"])
         form.addRow("Backend", self.backend_combo)
-        layout.addLayout(form)
+        edit_layout.addLayout(form)
 
-        sample_row = QHBoxLayout()
+        tool_grid = QGridLayout()
         add_samples_button = QPushButton("Samples hinzufuegen")
         add_samples_button.clicked.connect(self.add_samples)
-        sample_row.addWidget(add_samples_button)
+        tool_grid.addWidget(add_samples_button, 0, 0)
         scan_button = QPushButton("Gefundene XTTS-Orte anzeigen")
         scan_button.clicked.connect(self.show_candidate_locations)
-        sample_row.addWidget(scan_button)
+        tool_grid.addWidget(scan_button, 0, 1)
         auto_import_button = QPushButton("XTTS-Sprecher automatisch suchen")
         auto_import_button.clicked.connect(self.auto_import_webui_speakers)
-        sample_row.addWidget(auto_import_button)
+        tool_grid.addWidget(auto_import_button, 0, 2)
         starter_button = QPushButton("Starter-XTTS-Sprecher laden")
         starter_button.clicked.connect(self.install_starter_profiles)
-        sample_row.addWidget(starter_button)
+        tool_grid.addWidget(starter_button, 1, 0)
         import_webui_button = QPushButton("XTTS-WebUI-Sprecher importieren")
         import_webui_button.clicked.connect(self.import_webui_speakers)
-        sample_row.addWidget(import_webui_button)
+        tool_grid.addWidget(import_webui_button, 1, 1)
         clear_samples_button = QPushButton("Samples leeren")
         clear_samples_button.clicked.connect(self.clear_samples)
-        sample_row.addWidget(clear_samples_button)
-        layout.addLayout(sample_row)
+        tool_grid.addWidget(clear_samples_button, 1, 2)
+        edit_layout.addLayout(tool_grid)
 
         self.samples_list = QListWidget()
-        layout.addWidget(self.samples_list)
+        self.samples_list.setMinimumHeight(120)
+        edit_layout.addWidget(self.samples_list)
 
         self.notes_edit = QPlainTextEdit()
         self.notes_edit.setPlaceholderText(
             "Notizen, Zielstimme, Aufnahmeumgebung, Stil, Besonderheiten."
         )
-        layout.addWidget(self.notes_edit)
+        self.notes_edit.setMinimumHeight(120)
+        edit_layout.addWidget(self.notes_edit)
 
         action_row = QHBoxLayout()
         save_button = QPushButton("Profil speichern")
@@ -120,11 +134,14 @@ class VoiceLabDialog(QDialog):
         refresh_button = QPushButton("Profile neu laden")
         refresh_button.clicked.connect(self.refresh_existing_profiles)
         action_row.addWidget(refresh_button)
-        layout.addLayout(action_row)
+        edit_layout.addLayout(action_row)
 
+        list_group = QGroupBox("Vorhandene XTTS-Profile")
+        list_layout = QVBoxLayout(list_group)
         self.profile_list = QListWidget()
         self.profile_list.itemSelectionChanged.connect(self.show_selected_profile)
-        layout.addWidget(self.profile_list)
+        self.profile_list.setMinimumHeight(180)
+        list_layout.addWidget(self.profile_list)
 
         profile_action_row = QHBoxLayout()
         preview_profile_button = QPushButton("Ausgewaehltes Sample hoeren")
@@ -133,11 +150,16 @@ class VoiceLabDialog(QDialog):
         open_profile_button = QPushButton("Profilordner oeffnen")
         open_profile_button.clicked.connect(self.open_selected_profile_folder)
         profile_action_row.addWidget(open_profile_button)
-        layout.addLayout(profile_action_row)
+        list_layout.addLayout(profile_action_row)
 
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        layout.addWidget(self.details)
+        self.details.setMinimumHeight(260)
+        list_layout.addWidget(self.details)
+
+        sections.addWidget(edit_group)
+        sections.addWidget(list_group)
+        layout.addStretch(1)
 
     def add_samples(self) -> None:
         filenames, _ = QFileDialog.getOpenFileNames(
@@ -274,7 +296,7 @@ class VoiceLabDialog(QDialog):
         QMessageBox.information(
             self,
             "Profil gespeichert",
-            "Voice-Lab-Profil gespeichert. Der XTTS-Backend-Schritt kann darauf spaeter aufbauen.",
+            "XTTS-Profil gespeichert. Darauf kann jetzt im Profilstudio und in Produktionsprofilen aufgebaut werden.",
         )
 
     def refresh_existing_profiles(self) -> None:
@@ -283,8 +305,8 @@ class VoiceLabDialog(QDialog):
         for profile in profiles:
             self.profile_list.addItem(profile.parent.name)
         self.details.setPlainText(
-            "Vorhandene Voice-Lab-Profile werden unter workspace/voice_profiles gespeichert.\n"
-            "XTTS/Custom Voices sind im UI farblich als Beta markiert.\n"
+            "Vorhandene XTTS-Profile werden unter workspace/voice_profiles gespeichert.\n"
+            "Die Profile werden anschliessend im Profilstudio fuer Hörproben und Produktionsprofile verwendet.\n"
             "Wenn noch keine Profile da sind, nutze 'XTTS-Sprecher automatisch suchen', 'Starter-XTTS-Sprecher laden' oder importiere einen WebUI speakers-Ordner."
         )
         if self.profile_list.count():

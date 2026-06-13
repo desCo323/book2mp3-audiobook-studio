@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 import shutil
 import uuid
@@ -10,6 +11,10 @@ from pathlib import Path
 from book2mp3.config import AppPaths
 from book2mp3.models import utc_now
 from book2mp3.pipeline.extract import extract_text
+from book2mp3.utils.workspace_files import ensure_writable_directory, safe_write_json, safe_write_text
+
+
+LOGGER = logging.getLogger("book2mp3.preview_sessions")
 
 
 @dataclass
@@ -38,7 +43,10 @@ def _migrate_payload(payload: dict[str, object]) -> dict[str, object]:
     preview_excerpt = str(data.get("preview_excerpt", "") or "")
     preview_source_file = str(data.get("preview_source_file", "") or "")
     if not preview_excerpt and preview_source_file and Path(preview_source_file).exists():
-        preview_excerpt = Path(preview_source_file).read_text(encoding="utf-8")
+        try:
+            preview_excerpt = Path(preview_source_file).read_text(encoding="utf-8")
+        except OSError:
+            preview_excerpt = ""
 
     tests = data.get("tests", [])
     if not data.get("voice_id") and isinstance(tests, list) and tests:
@@ -93,12 +101,9 @@ def _load_session(paths: AppPaths, session_id: str) -> PreviewSession:
 
 def _save_session(paths: AppPaths, session: PreviewSession) -> None:
     session_dir = paths.preview_sessions / session.session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
+    ensure_writable_directory(session_dir, logger=LOGGER)
     session.updated_at = utc_now()
-    _session_path(paths, session.session_id).write_text(
-        json.dumps(asdict(session), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    safe_write_json(_session_path(paths, session.session_id), asdict(session), logger=LOGGER)
 
 
 def list_preview_sessions(paths: AppPaths) -> list[PreviewSession]:
@@ -147,19 +152,19 @@ def pick_random_excerpt(text: str, excerpt_chars: int = 1150, seed: int | None =
 def create_preview_session(paths: AppPaths, source_path: Path) -> PreviewSession:
     session_id = uuid.uuid4().hex[:12]
     session_dir = paths.preview_sessions / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
+    ensure_writable_directory(session_dir, logger=LOGGER)
 
     source_copy = session_dir / "input" / source_path.name
-    source_copy.parent.mkdir(parents=True, exist_ok=True)
+    ensure_writable_directory(source_copy.parent, logger=LOGGER)
     shutil.copy2(source_path, source_copy)
 
     extracted = extract_text(source_copy)
     extracted_file = session_dir / "extracted.txt"
-    extracted_file.write_text(extracted, encoding="utf-8")
+    safe_write_text(extracted_file, extracted, logger=LOGGER)
 
     offset, excerpt = pick_random_excerpt(extracted)
     preview_source = session_dir / "preview_source.txt"
-    preview_source.write_text(excerpt, encoding="utf-8")
+    safe_write_text(preview_source, excerpt, logger=LOGGER)
 
     session = PreviewSession(
         session_id=session_id,
@@ -180,7 +185,7 @@ def refresh_preview_excerpt(paths: AppPaths, session_id: str) -> PreviewSession:
     session = _load_session(paths, session_id)
     text = Path(session.extracted_file).read_text(encoding="utf-8")
     offset, excerpt = pick_random_excerpt(text)
-    Path(session.preview_source_file).write_text(excerpt, encoding="utf-8")
+    safe_write_text(Path(session.preview_source_file), excerpt, logger=LOGGER)
     session.preview_excerpt = excerpt
     session.excerpt_offset = offset
     session.last_preview_job_id = ""

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import os
 from pathlib import Path
 
 
@@ -16,6 +18,27 @@ def _prefer_local_or_parent(root: Path, relative: str) -> Path:
     if _has_contents(parent_candidate):
         return parent_candidate
     return primary
+
+
+def _timestamp_token() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+
+
+def _path_is_writable(path: Path) -> bool:
+    if path.is_dir():
+        return os.access(path, os.W_OK | os.X_OK)
+    return os.access(path, os.W_OK)
+
+
+def _quarantine_path(path: Path, reason: str) -> Path:
+    suffix_base = f"{path.name}.{reason}-{_timestamp_token()}"
+    candidate = path.with_name(suffix_base)
+    counter = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{suffix_base}-{counter}")
+        counter += 1
+    path.rename(candidate)
+    return candidate
 
 
 @dataclass(frozen=True)
@@ -47,15 +70,24 @@ class AppPaths:
             preview_sessions=workspace / "preview_sessions",
         )
 
-    def ensure(self) -> None:
-        for path in (
-            self.workspace,
-            self.jobs,
-            self.runtime,
-            self.voices,
-            self.logs,
-            self.voice_profiles,
-            self.voice_settings,
-            self.preview_sessions,
-        ):
+    def ensure(self) -> list[Path]:
+        repaired: list[Path] = []
+        self.workspace.mkdir(parents=True, exist_ok=True)
+        for path in (self.runtime, self.voices):
             path.mkdir(parents=True, exist_ok=True)
+
+        for path in (self.jobs, self.logs, self.voice_profiles, self.voice_settings, self.preview_sessions):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists():
+                if not path.is_dir():
+                    repaired.append(_quarantine_path(path, "invalid"))
+                elif not _path_is_writable(path):
+                    repaired.append(_quarantine_path(path, "readonly"))
+            path.mkdir(parents=True, exist_ok=True)
+
+        if self.app_settings_file.exists():
+            if self.app_settings_file.is_dir():
+                repaired.append(_quarantine_path(self.app_settings_file, "invalid"))
+            elif not _path_is_writable(self.app_settings_file):
+                repaired.append(_quarantine_path(self.app_settings_file, "readonly"))
+        return repaired

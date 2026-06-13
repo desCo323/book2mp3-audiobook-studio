@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540">
+  <rect width="1200" height="540" fill="#f8fafc"/>
+  <text x="70" y="72" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#0f172a">Quickstart aus dem Quellcode</text>
+  <g font-family="Arial, sans-serif" font-size="20" fill="#334155">
+    <circle cx="110" cy="150" r="28" fill="#0f766e"/><text x="110" y="157" text-anchor="middle" fill="#fff" font-weight="700">1</text>
+    <text x="160" y="157">Repo klonen</text>
+    <circle cx="110" cy="235" r="28" fill="#0284c7"/><text x="110" y="242" text-anchor="middle" fill="#fff" font-weight="700">2</text>
+    <text x="160" y="242">venv anlegen und `pip install -e .`</text>
+    <circle cx="110" cy="320" r="28" fill="#d97706"/><text x="110" y="327" text-anchor="middle" fill="#fff" font-weight="700">3</text>
+    <text x="160" y="327">`python scripts/bootstrap_runtime.py`</text>
+    <circle cx="110" cy="405" r="28" fill="#7c3aed"/><text x="110" y="412" text-anchor="middle" fill="#fff" font-weight="700">4</text>
+    <text x="160" y="412">`book2mp3` oder `./start.sh` starten</text>
+  </g>
+  <rect x="720" y="120" width="390" height="250" rx="20" ry="20" fill="#111827"/>
+  <text x="760" y="180" font-family="Courier New, monospace" font-size="22" fill="#d1fae5">python3 -m venv .venv</text>
+  <text x="760" y="220" font-family="Courier New, monospace" font-size="22" fill="#d1fae5">source .venv/bin/activate</text>
+  <text x="760" y="260" font-family="Courier New, monospace" font-size="22" fill="#d1fae5">pip install -e .</text>
+  <text x="760" y="300" font-family="Courier New, monospace" font-size="22" fill="#d1fae5">python scripts/bootstrap_runtime.py</text>
+  <text x="760" y="340" font-family="Courier New, monospace" font-size="22" fill="#d1fae5">book2mp3</text>
+</svg>

@@ -22,18 +22,28 @@ That structure exists for good reasons:
 
 The new application keeps the staged model, but formalizes it into persistent jobs.
 
+The next architecture step is no longer GUI-only. The desktop app, CLI and local API
+must all use the same core job logic.
+
 ## Current architecture
 
 ### UI
 
 - `PySide6`
-- single desktop window
-- job creation form
-- live status view
-- start / stop / resume controls
-- log output pane
-- quality presets
-- first Voice Lab dialog for future custom voices
+- single desktop window with clear workflow tabs
+- `Auftrag` for source + approved production profile only
+- `Profile` for profile library, runtime stock and studio entrypoints
+- `Betrieb` for queue, stage status, artifacts, logs and diagnostics
+- separate `Profilstudio` for preview, benchmark and profile release
+- separate `XTTS-Profilstudio` for speaker profile import and validation
+
+### Shared core and headless access
+
+- `JobManager` remains the file-based execution core
+- `Book2Mp3Service` exposes that core for non-GUI callers
+- `book2mp3-cli` provides local headless operation
+- a local REST API exposes the same operations for automation or service mode
+- all three entrypoints must operate on the same workspace layout and state files
 
 ### Job model
 
@@ -72,7 +82,8 @@ This keeps hardware use predictable and avoids CPU or GPU contention from parall
 4. Synthesize one chunk at a time to WAV
 5. Convert WAV to MP3
 6. Optionally concatenate MP3 segments into one output file
-7. Update `state.json` after every meaningful step
+7. Tag final MP3 outputs and write `manifest.json` plus `chapters.json`
+8. Update `state.json` after every meaningful step
 
 ### Debug logging
 
@@ -109,14 +120,14 @@ This keeps the UX simple while still giving the user meaningful control over rhy
 The app is designed around a backend interface:
 
 - `PiperBackend`: implemented now
-- `XTTSBackend`: planned next
+- `XTTSBackend`: implemented as optional premium path with dedicated runtime and CUDA probe
 
 That separation matters because the user requirement has two distinct needs:
 
 - fast, offline, robust synthesis on CPU and weaker machines
 - optional premium voices and voice cloning
 
-`Piper` is the right default engine for the first category. `XTTS` fits the second, but requires heavier runtime and more careful packaging.
+`Piper` is the right default engine for the first category. `XTTS` fits the second, but requires heavier runtime, better speaker samples and more careful packaging.
 
 ## Resume model
 
@@ -150,10 +161,10 @@ The following current sources informed the initial direction:
 - Piper documents local offline synthesis from an executable plus `.onnx` and `.onnx.json` voice files, including JSON input and multi-speaker support.
 - Coqui TTS documents `xtts_v2` for multilingual voice cloning and CPU/GPU execution, which fits as a second backend rather than the default one.
 
-## Immediate next engineering steps
+## Immediate hardening priorities
 
-1. finish the voice library UI and runtime downloader UX
-2. add XTTS backend with optional speaker sample management
-3. add chapter-aware output grouping
-4. add cleanup policies and retention presets
-5. add packaged builds for Linux and Windows
+1. finish the release-grade `Aufträge` detail view with stronger stage, artifact and error presentation
+2. complete CLI/API parity for profile administration and diagnostics
+3. harden benchmark, chunk-tuning and XTTS performance workflows
+4. validate portable Linux and Windows bundles end-to-end
+5. keep architecture docs aligned with the actual GUI/API behavior

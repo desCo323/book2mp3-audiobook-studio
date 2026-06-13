@@ -1,137 +1,134 @@
 # Third-Party Notices
 
-This file documents the major third-party components currently used by `book2mp3`.
+This file documents the major third-party components used by `book2mp3`.
 
-It is a practical notice file, not legal advice. If you distribute `book2mp3`, you should verify the exact licenses and obligations for the final shipped versions and binaries.
+It is a practical notice file, not legal advice.
 
-## Core application dependencies
+For the current publication assessment, also read:
 
-### PySide6 6.11.0
+- [docs/open-source-compliance.md](docs/open-source-compliance.md)
+
+## Project license
+
+The `book2mp3` source code written in this repository is licensed under the root [LICENSE](LICENSE) file.
+
+That license does **not** replace or override the licenses of bundled or downloaded third-party components.
+
+## Core dependencies
+
+### PySide6 / Qt for Python
 
 - Purpose: desktop GUI
 - Source: https://pypi.org/project/PySide6/
-- License metadata observed locally: `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only`
+- Official licensing summary: LGPLv3, GPL variants, or commercial licensing
+- Additional obligations reference: https://www.qt.io/development/open-source-lgpl-obligations
 
-### shiboken6 6.11.0
+### Beautiful Soup 4
 
-- Purpose: binding helper used by PySide6
-- Source: https://pypi.org/project/shiboken6/
-- License metadata observed locally: `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only`
+- Purpose: HTML / EPUB parsing support
+- Source: https://www.crummy.com/software/BeautifulSoup/
+- License: MIT
 
-### beautifulsoup4 4.13.4
+### pypdf
 
-- Purpose: EPUB/HTML text extraction
-- Source: https://pypi.org/project/beautifulsoup4/
-- License metadata observed locally: `MIT License`
+- Purpose: PDF parsing and metadata handling
+- Source: https://pypdf.readthedocs.io/en/stable/meta/faq.html
+- License: BSD-3-Clause
 
-### pypdf 6.10.2
+### requests
 
-- Purpose: PDF text extraction
-- Source: https://github.com/py-pdf/pypdf
-- Local package metadata shows: `license_expression = BSD-3-Clause`
+- Purpose: network downloads for runtime and voice bootstrap
+- Source: https://pypi.org/project/requests/
+- License: Apache-2.0
 
-### requests 2.32.3
+### imageio-ffmpeg
 
-- Purpose: runtime and voice downloads
-- Source: https://requests.readthedocs.io/
-- License metadata observed locally: `Apache-2.0`
-
-### imageio-ffmpeg 0.6.0
-
-- Purpose: Python wrapper used to locate and execute FFmpeg
+- Purpose: Python wrapper and FFmpeg binary lookup
 - Source: https://github.com/imageio/imageio-ffmpeg
-- Upstream wrapper license: `BSD-2-Clause`
+- Wrapper license: BSD-2-Clause
 
-## Runtime and binary components
+### Python runtime
 
-### XTTS starter speaker samples
+- Purpose: app-local runtime in portable bundles
+- Source: https://docs.python.org/3/license.html
+- License: PSF-2.0
 
-- Purpose: optional starter XTTS voice-profile samples so the XTTS path is not empty on first use
-- Source repository: https://github.com/daswer123/xtts-webui
-- Sample folder used by the app: https://github.com/daswer123/xtts-webui/tree/main/speakers
-- Repository license shown upstream: `MIT`
+## TTS runtimes and models
 
-Additional German starter source:
+### Piper engine
 
-- Dataset: https://huggingface.co/datasets/Thorsten-Voice/TV-44kHz-Full
-- Dataset page states: `License: CC0`
-- Dataset page describes the `TV-2022.10-Neutral` subset as a single German male speaker with clear, high-quality speech
-
-Important note:
-
-- The app currently pulls the sample WAV files `calm_female.wav`, `female.wav` and `male.wav` from that upstream repository when the user installs XTTS starter speakers.
-- The app now also pulls a few German starter WAV files at install time from the Thorsten-Voice dataset through the Hugging Face datasets API.
-- Some German female starter profiles are currently built from curated public female reference samples while targeting German generation in XTTS. Those still reuse the `xtts-webui` sample WAV files listed above.
-- If you redistribute those starter samples, you should preserve attribution to the upstream repository and re-check the upstream licensing state at release time.
-
-### Piper runtime
-
-- Purpose: local text-to-speech synthesis
+- Purpose: local standard TTS backend
 - Source: https://github.com/rhasspy/piper
-- Upstream repository license: `MIT`
-
-Important upstream note:
-
-- Piper voice models are not all covered by one simple blanket assumption.
-- Piper upstream explicitly states that each voice `MODEL_CARD` contains important licensing information.
-
-For that reason, `book2mp3` now downloads `MODEL_CARD` together with each installed voice.
+- License: MIT
 
 ### Piper voices
 
 - Source: https://huggingface.co/rhasspy/piper-voices
-- Important note from Piper upstream: each voice may have its own licensing terms in `MODEL_CARD`
+- Repository page shows: MIT
+- Important upstream rule: individual voices carry additional provenance and dataset licensing information in their `MODEL_CARD` files
 
-The application currently installs starter voices into `voices/...`. Their individual `MODEL_CARD` files should be preserved and distributed with the voice files.
+`book2mp3` downloads `MODEL_CARD` together with each voice. If you distribute bundled voices, preserve those files.
 
-### FFmpeg binary used through imageio-ffmpeg
+Observed locally in the default voice store:
 
-- The Python wrapper `imageio-ffmpeg` is BSD-2-Clause.
-- The currently observed bundled Linux FFmpeg binary comes from John Van Sickle static builds.
-- John Van Sickle's site states that those static builds are licensed under `GNU GPL version 3`.
+- some voices use CC0 datasets
+- some voices use CC-BY 4.0 datasets
+- some voices use public-domain sources
+- at least one bundled voice references CC-BY-SA 4.0 in its `MODEL_CARD`
 
-This matters for redistribution. If `book2mp3` ships that FFmpeg binary in releases, the release process must preserve the corresponding FFmpeg license notices and source-offer obligations required by that distribution path.
+That means a release bundle should not claim a single blanket voice license.
 
-Source:
+### Coqui TTS toolkit
 
-- https://johnvansickle.com/ffmpeg/
+- Purpose: XTTS runtime code
+- Source: https://github.com/coqui-ai/TTS
+- License: MPL-2.0
 
-## Portable Python runtime
+### XTTS-v2 model
 
-The planned portable distribution includes app-local Python.
+- Purpose: multilingual cloning model used by the optional XTTS path
+- Source: https://huggingface.co/coqui/XTTS-v2
+- Model license: Coqui Public Model License 1.0.0
 
-For Windows bundles, the intended source is the official Python embeddable package published on Python.org release pages.
+Important note:
 
-Relevant references:
+- the official XTTS-v2 model license states non-commercial restrictions
+- therefore an `as-is` commercial XTTS bundle is not currently a clean release path
 
-- https://www.python.org/downloads/windows/
-- https://docs.python.org/3.10/using/windows.html
+### XTTS starter profiles and samples
 
-## Important compliance risk
+- `book2mp3` can install starter profile samples from:
+  - https://github.com/daswer123/xtts-webui
+  - https://huggingface.co/datasets/Thorsten-Voice/TV-44kHz-Full
+- `xtts-webui` repository license: MIT
+- Thorsten-Voice dataset license: CC0
 
-### EbookLib 0.20
+The app currently pulls sample WAV files from these public upstream sources when the user installs starter XTTS profiles. Those sources should be documented in distributed bundles.
+
+## EPUB dependency risk
+
+### EbookLib
 
 - Purpose: EPUB parsing
 - Source: https://github.com/aerkalov/ebooklib
-- Local package metadata observed: `GNU Affero General Public License`
+- Upstream project states: AGPL
 
-This is not a minor detail. `AGPL` is a strong copyleft license and may impose obligations that are incompatible with how you may want to distribute a desktop product.
+This is a real compliance issue for distribution strategy. If `book2mp3` continues to ship with EbookLib in the application environment, the release plan should treat AGPL as an explicit legal and product decision rather than an incidental dependency.
 
-Inference from the observed metadata:
+## FFmpeg note
 
-- If `book2mp3` is distributed with EbookLib as part of the application, this dependency needs a deliberate legal and architectural decision.
-- A safer future path may be to replace `ebooklib` with a permissively licensed EPUB parser.
+The Python wrapper is permissively licensed, but the actual FFmpeg binary shipped in a bundle may come from a different source and license.
 
-## Files that should remain with distributed bundles
+Current project documentation references Linux static builds from:
+
+- https://johnvansickle.com/ffmpeg/
+
+If those binaries are redistributed, keep the corresponding FFmpeg license notices and source-availability obligations for that exact binary source.
+
+## What should remain in release bundles
 
 - this `THIRD_PARTY_NOTICES.md`
-- all upstream license files shipped by bundled runtimes
-- `MODEL_CARD` files for bundled voices
-
-## Sources used for this notice file
-
-- Local package metadata from the installed Python environment
-- Piper upstream repository and voice documentation
-- imageio-ffmpeg upstream repository
-- John Van Sickle FFmpeg static build site
-- Python.org Windows distribution pages and docs
+- upstream runtime license files where available
+- relevant model licenses
+- all `MODEL_CARD` files for bundled Piper voices
+- the root `LICENSE`

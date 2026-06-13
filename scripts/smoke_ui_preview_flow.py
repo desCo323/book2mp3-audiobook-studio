@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -18,13 +17,21 @@ from book2mp3.ui.main_window import MainWindow
 ROOT = Path("/home/codex/repo/book2mp3")
 
 
+def ensure_fixture_link(app_root: Path, name: str) -> None:
+    target = ROOT / name
+    link = app_root / name
+    if link.exists():
+        return
+    link.symlink_to(target, target_is_directory=True)
+
+
 def main() -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     with tempfile.TemporaryDirectory(prefix="book2mp3-smoke-ui-") as tmp_dir:
         app_root = Path(tmp_dir) / "src"
         app_root.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(ROOT / "runtime", app_root / "runtime", dirs_exist_ok=True)
-        shutil.copytree(ROOT / "voices", app_root / "voices", dirs_exist_ok=True)
+        ensure_fixture_link(app_root, "runtime")
+        ensure_fixture_link(app_root, "voices")
         paths = AppPaths.from_project_root(app_root)
         paths.ensure()
 
@@ -40,10 +47,21 @@ def main() -> int:
             raise AssertionError(f"Expected installed voices, got: {voice_items}")
 
         dialog = FindBestSettingDialog(paths, window.manager, window)
-        dialog.current_source = ROOT / "test.epub"
+        source = app_root / "profile_studio_source.txt"
+        source.write_text(
+            (
+                "Kapitel 1\nDie alte Uhr am Markt schlug zweimal zu viel.\n\n"
+                "Kapitel 2\nAm Morgen hing ein Zettel an der Tür des Uhrmachers.\n\n"
+                "Kapitel 3\nAls die Sonne unterging, lief die Uhr wieder richtig."
+            ),
+            encoding="utf-8",
+        )
+        dialog.current_source = source
         dialog.create_session()
         if not dialog.current_session_id:
             raise AssertionError("Preview session was not created")
+        if not dialog.output_mode_chapter_radio.isEnabled():
+            raise AssertionError("Profile studio should enable chapter output for a source with detected chapter headings")
 
         dialog.assistant_combo.setCurrentIndex(0)
         dialog.apply_assistant_profile()

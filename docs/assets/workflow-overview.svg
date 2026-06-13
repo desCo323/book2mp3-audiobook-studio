@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420">
+  <rect width="1200" height="420" fill="#f6f3ee"/>
+  <text x="70" y="72" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#1f2937">book2mp3 Workflow</text>
+  <text x="70" y="110" font-family="Arial, sans-serif" font-size="18" fill="#475569">Von der Quelldatei bis zum exportierten Hoerbuch in kontrollierten Schritten.</text>
+
+  <g font-family="Arial, sans-serif">
+    <rect x="70" y="170" rx="18" ry="18" width="150" height="120" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="145" y="222" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">Quelle</text>
+    <text x="145" y="252" text-anchor="middle" font-size="17" fill="#475569">TXT / PDF / EPUB</text>
+
+    <rect x="275" y="170" rx="18" ry="18" width="170" height="120" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+    <text x="360" y="222" text-anchor="middle" font-size="22" font-weight="700" fill="#9a3412">Analyse</text>
+    <text x="360" y="252" text-anchor="middle" font-size="17" fill="#7c2d12">Kapitel & Struktur</text>
+
+    <rect x="500" y="170" rx="18" ry="18" width="170" height="120" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+    <text x="585" y="222" text-anchor="middle" font-size="22" font-weight="700" fill="#1d4ed8">Profil</text>
+    <text x="585" y="252" text-anchor="middle" font-size="17" fill="#1e3a8a">approved Produktion</text>
+
+    <rect x="725" y="170" rx="18" ry="18" width="170" height="120" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+    <text x="810" y="222" text-anchor="middle" font-size="22" font-weight="700" fill="#166534">Synthese</text>
+    <text x="810" y="252" text-anchor="middle" font-size="17" fill="#14532d">Chunks & Retry</text>
+
+    <rect x="950" y="170" rx="18" ry="18" width="180" height="120" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+    <text x="1040" y="222" text-anchor="middle" font-size="22" font-weight="700" fill="#6d28d9">Export</text>
+    <text x="1040" y="252" text-anchor="middle" font-size="17" fill="#5b21b6">Kapitel / Zeit / Gesamt</text>
+
+    <path d="M220 230 L275 230" stroke="#94a3b8" stroke-width="6" fill="none"/>
+    <path d="M445 230 L500 230" stroke="#94a3b8" stroke-width="6" fill="none"/>
+    <path d="M670 230 L725 230" stroke="#94a3b8" stroke-width="6" fill="none"/>
+    <path d="M895 230 L950 230" stroke="#94a3b8" stroke-width="6" fill="none"/>
+  </g>
+</svg>

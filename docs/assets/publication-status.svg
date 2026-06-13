@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520">
+  <rect width="1200" height="520" fill="#fffdf8"/>
+  <text x="70" y="72" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#111827">Veroeffentlichungsstatus</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="80" y="140" width="310" height="220" rx="20" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+    <text x="235" y="195" text-anchor="middle" font-size="24" font-weight="700" fill="#166534">GitHub-Quellrepo</text>
+    <text x="235" y="240" text-anchor="middle" font-size="20" fill="#14532d">Ja</text>
+    <text x="235" y="280" text-anchor="middle" font-size="16" fill="#14532d">mit LICENSE und Notices</text>
+
+    <rect x="445" y="140" width="310" height="220" rx="20" fill="#fffbeb" stroke="#fcd34d" stroke-width="2"/>
+    <text x="600" y="195" text-anchor="middle" font-size="24" font-weight="700" fill="#92400e">Open-Source Bundle</text>
+    <text x="600" y="240" text-anchor="middle" font-size="20" fill="#78350f">Nur mit Auflagen</text>
+    <text x="600" y="280" text-anchor="middle" font-size="16" fill="#78350f">Stimmen, FFmpeg, XTTS beachten</text>
+
+    <rect x="810" y="140" width="310" height="220" rx="20" fill="#fef2f2" stroke="#fca5a5" stroke-width="2"/>
+    <text x="965" y="195" text-anchor="middle" font-size="24" font-weight="700" fill="#b91c1c">Kommerzielles Bundle</text>
+    <text x="965" y="240" text-anchor="middle" font-size="20" fill="#991b1b">Noch nicht sauber</text>
+    <text x="965" y="280" text-anchor="middle" font-size="16" fill="#991b1b">XTTS NC + EbookLib AGPL</text>
+  </g>
+</svg>

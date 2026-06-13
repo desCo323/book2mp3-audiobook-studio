@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from book2mp3.config import AppPaths
 from book2mp3.ui.main_window import MainWindow
 from book2mp3.voice_lab import create_voice_profile
+from book2mp3.voice_settings import PROFILE_STATUS_APPROVED, save_voice_setting
 
 
 ROOT = Path("/home/codex/repo/book2mp3")
@@ -69,17 +70,26 @@ def main() -> int:
         window = MainWindow(paths)
         window.source_edit.setText(str(ROOT / "test.epub"))
         window.refresh_voice_profiles()
-        backend_index = window.backend_combo.findText("xtts")
-        if backend_index < 0:
-            raise AssertionError("XTTS backend option not found")
-        window.backend_combo.setCurrentIndex(backend_index)
-        profile_index = window.voice_profile_combo.findData(profile_id)
-        if profile_index < 0:
-            raise AssertionError(f"Expected XTTS profile {profile_id} in combo")
-        window.voice_profile_combo.setCurrentIndex(profile_index)
-
-        if window.preset_combo.currentData() != "premium_natural":
-            raise AssertionError(f"Expected XTTS preset premium_natural, got {window.preset_combo.currentData()}")
+        approved_profile = save_voice_setting(
+            paths.voice_settings,
+            display_name="XTTS Main Approved",
+            backend="xtts",
+            voice_id="",
+            voice_profile_id=profile_id,
+            preset_hint="premium_natural",
+            max_chars=260,
+            output_mode="single_file",
+            target_part_minutes=15,
+            sentence_silence=0.22,
+            length_scale=1.0,
+            status=PROFILE_STATUS_APPROVED,
+            notes="Automatisch freigegeben für XTTS Main Window Smoke",
+        )
+        window.refresh_saved_profiles()
+        approved_index = window.saved_profile_combo.findData(approved_profile.setting_id)
+        if approved_index < 0:
+            raise AssertionError(f"Approved XTTS profile not selectable in job dialog: {approved_profile.setting_id}")
+        window.saved_profile_combo.setCurrentIndex(approved_index)
 
         window.create_job()
         if not window.current_job_id:
@@ -88,11 +98,13 @@ def main() -> int:
         summary = {
             "job_id": state.job_id,
             "backend": state.backend,
+            "saved_profile_id": state.saved_profile_id,
             "voice_profile_id": state.voice_profile_id,
             "preset_id": state.preset_id,
             "output_mode": state.output_mode,
         }
         assert state.backend == "xtts"
+        assert state.saved_profile_id == approved_profile.setting_id
         assert state.voice_profile_id == profile_id
         assert state.preset_id == "premium_natural"
         print(json.dumps(summary, indent=2))

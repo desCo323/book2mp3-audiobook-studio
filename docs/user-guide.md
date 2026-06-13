@@ -14,6 +14,7 @@ It does not process a whole book in one fragile step. Instead it:
 4. synthesizes chunk by chunk
 5. exports MP3 segments or one combined MP3
 6. saves progress after every chunk
+7. writes final export metadata plus `manifest.json` and `chapters.json`
 
 That means jobs can be stopped and resumed safely.
 
@@ -140,6 +141,20 @@ The queue is persistent.
 - after a restart, interrupted running jobs go back to the queue
 - completed chunks are not regenerated on resume
 
+## CLI And Local API
+
+The same workspace can now also be used without the GUI.
+
+Examples:
+
+```bash
+book2mp3-cli list
+book2mp3-cli voices
+book2mp3-cli create /path/to/book.txt --voice-id de_DE-thorsten-high --preset natural --language de
+book2mp3-cli run-next
+book2mp3-cli serve --host 127.0.0.1 --port 8765
+```
+
 ## Stop And Resume
 
 Use `Stop` to request a clean stop.
@@ -189,6 +204,8 @@ Each job also stores:
 - extracted text
 - chunk files
 - generated MP3 files
+- `output/manifest.json`
+- `output/chapters.json`
 
 If something fails, these are the first places to inspect.
 

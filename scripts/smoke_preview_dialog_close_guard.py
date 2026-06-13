@@ -4,6 +4,7 @@ import os
 import shutil
 import tempfile
 import time
+import wave
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -29,10 +30,19 @@ def ensure_runtime_fixture(app_root: Path) -> None:
         voices_link.symlink_to(voices_target, target_is_directory=True)
 
 
+def create_dummy_wav(path: Path, seconds: int = 2) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(16000)
+        wav_file.writeframes(b"\x00\x00" * 16000 * seconds)
+
+
 class SlowPreviewWorker(LivePreviewWorker):
     def run(self) -> None:
         time.sleep(2.0)
-        self.preview_finished.emit(self.session_id, "")
+        self.preview_finished.emit(self.session_id, "", 2000.0)
 
 
 def main() -> int:
@@ -44,7 +54,8 @@ def main() -> int:
         paths = AppPaths.from_project_root(app_root)
         paths.ensure()
 
-        sample = ROOT / "workspace" / "tmp_first_chunk.wav"
+        sample = app_root / "xtts_close_guard.wav"
+        create_dummy_wav(sample)
         create_voice_profile(
             paths.voice_profiles,
             display_name="XTTS Close Guard",
@@ -77,6 +88,7 @@ def main() -> int:
             200,
             0.2,
             1.0,
+            "auto",
         )
         dialog.preview_worker.preview_finished.connect(dialog.on_preview_finished)
         dialog.preview_worker.preview_failed.connect(dialog.on_preview_failed)

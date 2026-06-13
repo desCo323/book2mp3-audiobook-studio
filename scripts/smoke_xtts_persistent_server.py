@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import tempfile
 import time
 import wave
@@ -30,6 +29,14 @@ def ensure_runtime_fixture(app_root: Path) -> None:
     runtime_link.symlink_to(runtime_target, target_is_directory=True)
 
 
+def ensure_voices_fixture(app_root: Path) -> None:
+    voices_target = ROOT / "voices"
+    voices_link = app_root / "voices"
+    if voices_link.exists():
+        return
+    voices_link.symlink_to(voices_target, target_is_directory=True)
+
+
 def create_dummy_wav(path: Path, seconds: int = 4) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(path), "wb") as wav_file:
@@ -45,7 +52,7 @@ def main() -> int:
         app_root = Path(tmp_dir) / "src"
         app_root.mkdir(parents=True, exist_ok=True)
         ensure_runtime_fixture(app_root)
-        shutil.copytree(ROOT / "voices", app_root / "voices", dirs_exist_ok=True)
+        ensure_voices_fixture(app_root)
         paths = AppPaths.from_project_root(app_root)
         paths.ensure()
 

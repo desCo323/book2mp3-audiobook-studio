@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 book2mp3 = "book2mp3.main:main"
+book2mp3-cli = "book2mp3.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

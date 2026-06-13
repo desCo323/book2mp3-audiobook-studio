@@ -23,10 +23,24 @@ PIPER_RELEASES = {
 VOICE_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve"
 DEFAULT_VOICES = DEFAULT_VOICE_PACK
 HIGH_FEMALE_VOICE_PACK = [
+    "de_DE-eva_k-x_low",
+    "de_DE-kerstin-low",
+    "de_DE-ramona-low",
+    "en_US-amy-medium",
     "en_US-lessac-high",
+    "en_US-lessac-medium",
     "en_US-ljspeech-high",
+    "en_US-hfc_female-medium",
+    "en_US-kristin-medium",
+    "en_GB-alba-medium",
     "en_GB-cori-high",
+    "en_GB-jenny_dioco-medium",
+    "en_GB-southern_english_female-low",
     "es_AR-daniela-high",
+    "fr_FR-siwis-medium",
+    "fr_FR-siwis-low",
+    "it_IT-paola-medium",
+    "sv_SE-lisa-medium",
 ]
 
 
@@ -106,7 +120,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--install-female-high-pack",
         action="store_true",
-        help="Install curated official female high-quality Piper voices",
+        help="Install a broader curated pack of official female Piper voices",
     )
     parser.add_argument(
         "--no-default-voices",

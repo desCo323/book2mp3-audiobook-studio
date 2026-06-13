@@ -19,13 +19,16 @@ This repository now contains the first production-oriented foundation:
 - persistent queue with priorities across restarts
 - extensive debug logging with app-level and job-level log files
 - quality presets for fast, balanced and natural reading
-- persistent Voice-Tuning sessions with random book excerpts and saved voice settings
+- persistent profile studio sessions with saved production profiles and release states
 - optional XTTS runtime path for custom voice profiles
 - import pipeline for `TXT`, `PDF` and `EPUB`
 - sentence-aware chunking
 - resumable per-chunk synthesis
 - local `Piper` backend integration
 - MP3 segment export and optional single-file concat
+- MP3 metadata tagging plus export `manifest.json` and `chapters.json`
+- local CLI for headless job creation and execution
+- local REST API for service-style automation
 - runtime bootstrap script for `Piper`
 - handover documentation for follow-up agents
 
@@ -39,28 +42,41 @@ Typical workflow:
 
 1. Run `python scripts/bootstrap_runtime.py`
 2. Start the app with `book2mp3`
-3. Choose a `TXT`, `PDF` or `EPUB`
-4. Select a voice
-5. Select a quality preset
-6. Set priority if you want the project earlier in the queue
-7. Create the job
-8. Add more jobs if needed
-9. Let the queue run, stop it, or resume later
+3. Build or refine a voice/profile setup in `Profilstudio` or `XTTS-Profilstudio`
+4. Mark the best result as a released production profile
+5. Choose a `TXT`, `PDF` or `EPUB` in `Auftrag`
+6. Select the released production profile
+7. Set priority if you want the project earlier in the queue
+8. Create the job
+9. Start the selected job or queue it for later
+10. Watch stage progress and export artifacts in `Aufträge`
+11. Check runtime and CUDA state in `Diagnose` when needed
+
+Headless workflow:
+
+1. Create a job with `book2mp3-cli create ...`
+2. Inspect jobs with `book2mp3-cli list` or `book2mp3-cli inspect <job-id>`
+3. Run one job with `book2mp3-cli run <job-id>` or the next queued job with `book2mp3-cli run-next`
+4. Start the local API with `book2mp3-cli serve`
 
 Current user-facing features:
 
 - persistent queue across restarts
 - priority-based scheduling
 - chunk-based resume
+- production profiles with `draft`, `tested`, `approved` and `archived`
+- job creation only from approved production profiles
 - larger multilingual starter voice pack, sorted by language in the UI, with priority on less mechanical `medium`/`high` Piper models
 - quality presets: `Schnell`, `Balanciert`, `Natuerlich`
-- `Find Best Setting` as a simple live preview mode: choose a book, hear a random excerpt, tweak 3 controls, press play
-- first Voice Lab dialog for collecting custom voice references
+- separate `Profilstudio` for preview, benchmarking and profile refinement
+- separate `XTTS-Profilstudio` for speaker profile import and validation
+- diagnostics view for workspace, runtime, queue and performance logging
 - backend choice between `piper` and `xtts`
-- XTTS device mode option: `Auto`, `CPU erzwingen`, `CUDA bevorzugen`
+- XTTS device mode option with CUDA-first preference when supported
 - XTTS CUDA probe in the UI, so users can see whether the runtime really uses CUDA
 - custom Piper model import for external `.onnx` + `.onnx.json` voices
 - detailed logs for debugging
+- output manifests with tagged final MP3 metadata
 
 XTTS note:
 
@@ -122,6 +138,19 @@ python scripts\bootstrap_runtime.py
 book2mp3
 ```
 
+For headless local automation:
+
+```bash
+book2mp3-cli list
+book2mp3-cli voices
+book2mp3-cli profiles
+book2mp3-cli profile-status mein_profil approved
+book2mp3-cli diagnostics
+book2mp3-cli create /path/to/book.txt --profile-id mein_profil --language de
+book2mp3-cli run-next
+book2mp3-cli serve --host 127.0.0.1 --port 8765
+```
+
 The bootstrap now installs a starter pack of standard female voices by default when available:
 
 - `de_DE-eva_k-x_low`
@@ -146,8 +175,15 @@ That fits the toolchain constraints better than a one-file build and keeps large
 
 ## Documentation
 
+- [Project Description](docs/project-description.md)
+- [Quickstart: Source Checkout](docs/quickstart-source.md)
+- [Quickstart: First Audiobook](docs/quickstart-first-audiobook.md)
+- [Quickstart: Portable Bundle](docs/quickstart-portable.md)
+- [Open-Source and Release Check](docs/open-source-compliance.md)
+- [GitHub Pages Landing Page](docs/index.md)
 - [User Guide](docs/user-guide.md)
 - [Architecture](docs/architecture.md)
+- [Requirements V1](docs/anforderungen-book2mp3-v1.md)
 - [Portable Distribution](docs/portable-distribution.md)
 - [Roadmap](docs/roadmap.md)
 - [Voice Strategy](docs/voice-strategy.md)
@@ -179,6 +215,8 @@ python scripts/smoke_portable_linux_runtime.py
 python scripts/smoke_linux_release_build.py
 python scripts/smoke_xtts_job_model.py
 python scripts/smoke_xtts_linux_runtime_bootstrap.py
+python scripts/smoke_cli_flow.py
+python scripts/smoke_local_api.py
 ```
 
 Current validated smoke coverage:

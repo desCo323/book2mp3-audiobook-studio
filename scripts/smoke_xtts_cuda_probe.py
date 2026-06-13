@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from book2mp3.config import AppPaths
 from book2mp3.tts.xtts import XttsBackend
 
 
@@ -10,7 +11,7 @@ ROOT = Path("/home/codex/repo/book2mp3")
 
 
 def main() -> int:
-    backend = XttsBackend(ROOT / "src" / "runtime", device_mode="auto")
+    backend = XttsBackend(AppPaths.from_project_root(ROOT).runtime, device_mode="auto")
     if not backend.is_available():
         raise AssertionError(f"XTTS runtime unavailable: {backend.availability_reason()}")
     probe = backend.runtime_probe()

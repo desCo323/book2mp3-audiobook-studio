@@ -24,12 +24,14 @@ The repository was initialized from a loose folder, not from an existing local g
 - can stop and resume a job
 - can optionally concatenate segments into one MP3
 - writes detailed diagnostics to `workspace/logs/app.log` and per-job `job.log`
-- exposes quality presets and a first Voice Lab dialog
+- exposes quality presets plus a dedicated XTTS profile studio
 - includes a defined portable bundle layout with app-local Python requirement
-- marks unfinished XTTS/custom-voice UI paths in orange beta styling
 - can bootstrap a dedicated Linux XTTS runtime with standalone Python 3.11
 - can now probe XTTS CUDA capability from the UI and choose `Auto`, `CPU`, or `CUDA`
 - can import external custom Piper `.onnx` + `.onnx.json` models into the app
+- has a released-profile workflow where only approved production profiles can create jobs
+- exposes profile and diagnostics operations via CLI and local API
+- shows queue, stage, artifact and runtime diagnostics directly in the desktop UI
 
 ## Verified local runtime state
 
@@ -62,10 +64,10 @@ This is a large improvement over the prior CPU-only state, but first-request lat
 
 ## High-value next tasks
 
-1. Add a voice management screen that discovers installed voices and offers guided download.
+1. Finish the release-grade `Aufträge` detail view and remove remaining UI ambiguity.
 2. Push the Windows self-contained bundle path from prepared scripts to a fully validated build.
-3. Extend GUI automation beyond the current smoke scripts.
-4. If XTTS still feels too slow in practice, profile first-request latency separately from warm-worker latency before changing synthesis logic again.
+3. Extend GUI automation around diagnostics, profile management and stage presentation.
+4. Continue XTTS performance work only with measured cold/warm benchmarks, not by intuition.
 
 ## Files to read first
 
@@ -82,3 +84,4 @@ This is a large improvement over the prior CPU-only state, but first-request lat
 - XTTS runtime packaging exists and CUDA can be validated locally, but first-request latency is still high enough that users may still perceive XTTS as slow
 - plain `pip install TTS` on Linux tries to pull very large CUDA dependencies; the runtime bootstrap now supports `--torch-variant auto|cpu|cuda` and validates the result with a CUDA probe
 - GUI interaction testing is still lighter than the non-GUI smoke coverage
+- README and architecture docs now track the released-profile workflow, but bundle and Windows docs still need the final release pass

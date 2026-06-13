@@ -60,35 +60,24 @@ def host_has_nvidia_gpu() -> bool:
 
 
 def install_torch_variant(python_bin: Path, variant: str) -> list[str]:
+    uninstall_cmd = [str(python_bin), "-m", "pip", "uninstall", "-y", "torch", "torchaudio", "torchvision"]
+    subprocess.run(uninstall_cmd, check=False, capture_output=True, text=True)
+    common = [
+        str(python_bin),
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--force-reinstall",
+        "--no-cache-dir",
+    ]
     if variant == "cpu":
-        run(
-            [
-                str(python_bin),
-                "-m",
-                "pip",
-                "install",
-                "--index-url",
-                "https://download.pytorch.org/whl/cpu",
-                "torch<2.6",
-                "torchaudio<2.6",
-            ]
-        )
+        run([*common, "--index-url", "https://download.pytorch.org/whl/cpu", "torch<2.6", "torchaudio<2.6"])
         return ["torch[cpu]<2.6", "torchaudio[cpu]<2.6"]
     if variant == "cuda":
-        run(
-            [
-                str(python_bin),
-                "-m",
-                "pip",
-                "install",
-                "--index-url",
-                "https://download.pytorch.org/whl/cu124",
-                "torch<2.6",
-                "torchaudio<2.6",
-            ]
-        )
+        run([*common, "--index-url", "https://download.pytorch.org/whl/cu124", "torch<2.6", "torchaudio<2.6"])
         return ["torch[cu124]<2.6", "torchaudio[cu124]<2.6"]
-    run([str(python_bin), "-m", "pip", "install", "torch<2.6", "torchaudio<2.6"])
+    run([*common, "torch<2.6", "torchaudio<2.6"])
     return ["torch<2.6", "torchaudio<2.6"]
 
 
