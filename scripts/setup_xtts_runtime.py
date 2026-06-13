@@ -46,6 +46,23 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
+def ensure_venv_support(python_bin: str) -> None:
+    probe = subprocess.run(
+        [python_bin, "-c", "import venv"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode == 0:
+        return
+    raise SystemExit(
+        "Der gewählte Python-Interpreter unterstützt kein `venv`. "
+        "Für Linux nutze `--bootstrap-linux-standalone`. "
+        "Für Windows-Portables ist der XTTS-Zusatzpfad vorbereitet, aber nur mit einer Runtime sinnvoll, "
+        "die virtuelle Umgebungen anlegen kann."
+    )
+
+
 def host_has_nvidia_gpu() -> bool:
     try:
         result = subprocess.run(
@@ -117,6 +134,7 @@ def main() -> int:
         python_bin = bootstrap_linux_standalone(runtime_root, args.standalone_tag)
         portable_manifest_path = runtime_root / "linux-standalone-python-manifest.json"
     elif args.python:
+        ensure_venv_support(args.python)
         run([args.python, "-m", "venv", str(runtime_root)])
         python_bin = runtime_root / (
             "Scripts/python.exe" if Path(args.python).suffix.lower() == ".exe" else "bin/python3"

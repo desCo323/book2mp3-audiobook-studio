@@ -52,6 +52,7 @@ def copy_project_files(output_dir: Path, without_voices: bool, without_runtime: 
         (PROJECT_ROOT / "src" / "start.sh", app_dir / "start.sh", "src/start.sh"),
         (PROJECT_ROOT / "src" / "start.bat", app_dir / "start.bat", "src/start.bat"),
         (PROJECT_ROOT / "src" / "book2mp3", app_dir / "book2mp3", "src/book2mp3"),
+        (PROJECT_ROOT / "scripts", app_dir / "scripts", "src/scripts"),
         (PROJECT_ROOT / "docs", app_dir / "docs", "src/docs"),
         (PROJECT_ROOT / "runtime", app_dir / "runtime", "src/runtime"),
         (PROJECT_ROOT / "voices", app_dir / "voices", "src/voices"),

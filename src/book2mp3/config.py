@@ -49,6 +49,8 @@ class AppPaths:
     runtime: Path
     voices: Path
     logs: Path
+    statistics: Path
+    runtime_stats_file: Path
     app_settings_file: Path
     voice_profiles: Path
     voice_settings: Path
@@ -64,6 +66,8 @@ class AppPaths:
             runtime=_prefer_local_or_parent(root, "runtime"),
             voices=_prefer_local_or_parent(root, "voices"),
             logs=workspace / "logs",
+            statistics=workspace / "statistics",
+            runtime_stats_file=workspace / "statistics" / "runtime_stats.json",
             app_settings_file=workspace / "app_settings.json",
             voice_profiles=workspace / "voice_profiles",
             voice_settings=workspace / "voice_settings",
@@ -76,7 +80,7 @@ class AppPaths:
         for path in (self.runtime, self.voices):
             path.mkdir(parents=True, exist_ok=True)
 
-        for path in (self.jobs, self.logs, self.voice_profiles, self.voice_settings, self.preview_sessions):
+        for path in (self.jobs, self.logs, self.statistics, self.voice_profiles, self.voice_settings, self.preview_sessions):
             path.parent.mkdir(parents=True, exist_ok=True)
             if path.exists():
                 if not path.is_dir():
@@ -90,4 +94,9 @@ class AppPaths:
                 repaired.append(_quarantine_path(self.app_settings_file, "invalid"))
             elif not _path_is_writable(self.app_settings_file):
                 repaired.append(_quarantine_path(self.app_settings_file, "readonly"))
+        if self.runtime_stats_file.exists():
+            if self.runtime_stats_file.is_dir():
+                repaired.append(_quarantine_path(self.runtime_stats_file, "invalid"))
+            elif not _path_is_writable(self.runtime_stats_file):
+                repaired.append(_quarantine_path(self.runtime_stats_file, "readonly"))
         return repaired

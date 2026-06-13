@@ -9,6 +9,7 @@ from pathlib import Path
 
 @dataclass
 class AppSettings:
+    ui_language: str = "auto"
     debug_logging: bool = True
     default_preset_id: str = "balanced"
     default_output_mode: str = "timed_parts"
@@ -17,6 +18,7 @@ class AppSettings:
     default_max_chars: int = 220
     default_priority: int = 50
     xtts_device_mode: str = "auto"
+    xtts_processing_mode: str = "auto"
 
 
 def load_app_settings(path: Path) -> AppSettings:
@@ -52,7 +54,7 @@ def save_app_settings(path: Path, settings: AppSettings) -> AppSettings:
 
 def reset_workspace_state(workspace: Path) -> None:
     app_settings_path = workspace / "app_settings.json"
-    for name in ("jobs", "voice_settings", "preview_sessions", "voice_profiles"):
+    for name in ("jobs", "voice_settings", "preview_sessions", "voice_profiles", "statistics"):
         target = workspace / name
         if target.exists():
             shutil.rmtree(target)
@@ -65,7 +67,7 @@ def reset_workspace_state(workspace: Path) -> None:
         elif entry.is_dir():
             shutil.rmtree(entry)
     for entry in workspace.iterdir():
-        if entry == app_settings_path or entry.name in {"jobs", "voice_settings", "preview_sessions", "voice_profiles", "logs"}:
+        if entry == app_settings_path or entry.name in {"jobs", "voice_settings", "preview_sessions", "voice_profiles", "logs", "statistics"}:
             continue
         if entry.is_file():
             entry.unlink()

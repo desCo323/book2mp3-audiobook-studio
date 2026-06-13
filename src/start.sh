@@ -47,4 +47,26 @@ if [ -d "$APP_ROOT/python/linux/lib" ]; then
   export LD_LIBRARY_PATH="$APP_ROOT/python/linux/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 
+if [ "${1:-}" = "--install-xtts" ]; then
+  XTTS_SETUP_SCRIPT=""
+  for candidate in "$APP_ROOT/scripts/setup_xtts_runtime.py" "$APP_ROOT/../scripts/setup_xtts_runtime.py"
+  do
+    if [ -f "$candidate" ]; then
+      XTTS_SETUP_SCRIPT="$candidate"
+      break
+    fi
+  done
+  if [ -z "$XTTS_SETUP_SCRIPT" ]; then
+    echo "XTTS-Setup-Skript nicht gefunden."
+    exit 1
+  fi
+  XTTS_RUNTIME_ROOT="$APP_ROOT/runtime/xtts/linux"
+  if [ ! -d "$APP_ROOT/runtime" ] && [ -d "$APP_ROOT/../runtime" ]; then
+    XTTS_RUNTIME_ROOT="$APP_ROOT/../runtime/xtts/linux"
+  fi
+  echo "Starte optionalen XTTS-Setup unter:"
+  echo "  $XTTS_RUNTIME_ROOT"
+  exec "$PYTHON_BIN" "$XTTS_SETUP_SCRIPT" "$XTTS_RUNTIME_ROOT" --bootstrap-linux-standalone --torch-variant auto
+fi
+
 exec "$PYTHON_BIN" -m book2mp3.main "$@"

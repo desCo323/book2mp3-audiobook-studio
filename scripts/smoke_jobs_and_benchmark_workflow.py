@@ -78,7 +78,7 @@ def main() -> int:
         if profile_index < 0:
             raise AssertionError("Approved smoke profile missing from create-job combo")
         window.saved_profile_combo.setCurrentIndex(profile_index)
-        window.source_edit.setText(str(source))
+        window.set_selected_source_files([source])
         window.create_job()
         state = window.manager.prepare_job(window.manager.load_state(window.current_job_id))
         window.show_job(state)

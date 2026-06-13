@@ -37,9 +37,16 @@ HIGH_FEMALE_VOICE_PACK = [
     "en_GB-jenny_dioco-medium",
     "en_GB-southern_english_female-low",
     "es_AR-daniela-high",
+    "es_ES-davefx-medium",
+    "es_MX-claude-high",
     "fr_FR-siwis-medium",
     "fr_FR-siwis-low",
     "it_IT-paola-medium",
+    "pt_BR-faber-medium",
+    "pt_BR-cadu-medium",
+    "pt_BR-jeff-medium",
+    "pt_BR-edresson-low",
+    "pt_PT-tugao-medium",
     "sv_SE-lisa-medium",
 ]
 

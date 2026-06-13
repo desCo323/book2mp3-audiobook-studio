@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import wave
+import struct
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -15,6 +17,16 @@ from book2mp3.voice_lab import create_voice_profile
 
 
 ROOT = Path("/home/codex/repo/book2mp3")
+
+
+def _write_test_wav(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(22050)
+        frames = [int(0.15 * 32767 * (1 if (i // 80) % 2 == 0 else -1)) for i in range(22050 // 2)]
+        handle.writeframes(b"".join(struct.pack("<h", frame) for frame in frames))
 
 
 def main() -> int:
@@ -33,7 +45,7 @@ def main() -> int:
         source = app_root / "sample.txt"
         source.write_text("Das ist ein kurzer Text fuer den XTTS-Fehlerpfad.", encoding="utf-8")
         sample = app_root / "speaker.wav"
-        sample.write_bytes(ROOT.joinpath("workspace/tmp_first_chunk.wav").read_bytes())
+        _write_test_wav(sample)
         create_voice_profile(
             paths.voice_profiles,
             display_name="Missing Runtime Smoke",

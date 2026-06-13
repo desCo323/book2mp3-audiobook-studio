@@ -65,6 +65,20 @@ QLineEdit, QComboBox, QSpinBox {
 QPlainTextEdit, QListWidget {
     padding: 8px;
 }
+QListWidget::item {
+    padding: 8px 10px;
+    margin: 2px 0;
+    border-radius: 8px;
+}
+QListWidget::item:selected {
+    background: #d7e9ee;
+    color: #17313b;
+}
+QComboBox QAbstractItemView {
+    background: #fffdf9;
+    selection-background-color: #d7e9ee;
+    selection-color: #17313b;
+}
 QPushButton {
     background: #1e6a78;
     color: white;
@@ -92,6 +106,9 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background: #fbfaf6;
     color: #17313b;
+}
+QTabBar::tab:hover {
+    background: #eef3ef;
 }
 QProgressBar {
     border: 1px solid #cad6d8;
@@ -138,6 +155,12 @@ QScrollBar::handle:horizontal {
 QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {
     background: transparent;
     border: none;
+}
+QToolTip {
+    background: #17313b;
+    color: #f7f8f7;
+    border: 1px solid #17313b;
+    padding: 6px 8px;
 }
 """
 

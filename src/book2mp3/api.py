@@ -31,6 +31,12 @@ class Book2Mp3ApiHandler(BaseHTTPRequestHandler):
             if path == "/jobs":
                 self._send_json(HTTPStatus.OK, {"jobs": self.server.service.list_jobs()})
                 return
+            if path == "/metadata/search":
+                self._send_json(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "Use POST /metadata/search"})
+                return
+            if path == "/metadata/suggest":
+                self._send_json(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "Use POST /metadata/suggest"})
+                return
             if path == "/voices":
                 self._send_json(HTTPStatus.OK, self.server.service.list_voices())
                 return
@@ -61,10 +67,32 @@ class Book2Mp3ApiHandler(BaseHTTPRequestHandler):
             if path == "/jobs":
                 self._send_json(HTTPStatus.CREATED, self.server.service.create_job(**payload))
                 return
+            if path == "/jobs/bulk":
+                self._send_json(HTTPStatus.CREATED, {"jobs": self.server.service.create_jobs(**payload)})
+                return
             if path == "/source/analyze":
                 self._send_json(
                     HTTPStatus.OK,
                     self.server.service.analyze_source(str(payload.get("source_path", "") or "")),
+                )
+                return
+            if path == "/metadata/suggest":
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.server.service.metadata_suggestions(str(payload.get("source_path", "") or "")),
+                )
+                return
+            if path == "/metadata/search":
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "results": self.server.service.search_book_metadata(
+                            query=str(payload.get("query", "") or ""),
+                            title=str(payload.get("title", "") or ""),
+                            author=str(payload.get("author", "") or ""),
+                            limit=int(payload.get("limit", 5) or 5),
+                        )
+                    },
                 )
                 return
             profile_status_id = self._profile_id_from_status_path(path)

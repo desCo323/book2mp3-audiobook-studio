@@ -87,7 +87,8 @@ class AudiobookMetadata:
     def from_dict(cls, payload: dict[str, Any] | None, *, fallback: "AudiobookMetadata") -> "AudiobookMetadata":
         data = fallback.to_dict()
         if payload:
-            data.update({key: value for key, value in payload.items() if value is not None})
+            allowed_keys = set(data)
+            data.update({key: value for key, value in payload.items() if key in allowed_keys and value is not None})
         return cls(**data)
 
 
@@ -123,6 +124,20 @@ class JobState:
     chapters_file: str
     chapters: list[ChapterRecord]
     chunks: list[ChunkRecord]
+    device_mode: str = "cpu"
+    processing_mode: str = "serial"
+    processing_mode_reason: str = ""
+    source_characters: int = 0
+    estimated_total_seconds: float = 0.0
+    estimated_remaining_seconds: float = 0.0
+    estimated_confidence: str = "none"
+    estimated_from_samples: int = 0
+    actual_total_seconds: float = 0.0
+    processing_started_at: str = ""
+    processing_completed_at: str = ""
+    auto_recovery_attempts: int = 0
+    last_failure_category: str = ""
+    failure_report_file: str = ""
     logs: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -146,6 +161,20 @@ class JobState:
         payload.setdefault("voice_profile_id", "")
         payload.setdefault("final_output_files", [])
         payload.setdefault("block_reason", "")
+        payload.setdefault("device_mode", "cpu")
+        payload.setdefault("processing_mode", "serial")
+        payload.setdefault("processing_mode_reason", "")
+        payload.setdefault("source_characters", 0)
+        payload.setdefault("estimated_total_seconds", 0.0)
+        payload.setdefault("estimated_remaining_seconds", 0.0)
+        payload.setdefault("estimated_confidence", "none")
+        payload.setdefault("estimated_from_samples", 0)
+        payload.setdefault("actual_total_seconds", 0.0)
+        payload.setdefault("processing_started_at", "")
+        payload.setdefault("processing_completed_at", "")
+        payload.setdefault("auto_recovery_attempts", 0)
+        payload.setdefault("last_failure_category", "")
+        payload.setdefault("failure_report_file", "")
         fallback_metadata = default_audiobook_metadata(
             title=str(payload.get("title", "Audiobook")),
             backend=str(payload.get("backend", "piper")),
@@ -205,6 +234,8 @@ class JobState:
 
         synthesis_status = "pending"
         synthesis_detail = f"{self.completed_chunks}/{self.total_chunks} Chunks fertig"
+        if self.estimated_remaining_seconds > 0:
+            synthesis_detail += f" | Restzeit ca. {self.estimated_remaining_seconds/60:.1f} min"
         if self.failed_chunks:
             synthesis_status = "failed"
             synthesis_detail = f"{len(self.failed_chunks)} Chunk(s) fehlgeschlagen"

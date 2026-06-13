@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from book2mp3.app_settings import AppSettings, save_app_settings
 from book2mp3.config import AppPaths
 from book2mp3.service import Book2Mp3Service
 from book2mp3.ui.find_best_setting_dialog import FindBestSettingDialog
@@ -38,6 +39,7 @@ def main() -> int:
         ensure_fixture_link(app_root, "voices")
         paths = AppPaths.from_project_root(app_root)
         paths.ensure()
+        save_app_settings(paths.app_settings_file, AppSettings(ui_language="de"))
 
         app = QApplication([])
         QMessageBox.information = staticmethod(lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
@@ -91,7 +93,7 @@ def main() -> int:
 
         source = app_root / "approved_profile_source.txt"
         source.write_text(("Dies ist ein Freigabe-Test. " * 40).strip(), encoding="utf-8")
-        window.source_edit.setText(str(source))
+        window.set_selected_source_files([source])
         if window.job_output_chapter_radio.isEnabled():
             raise AssertionError("Chapter output should stay disabled for a flat text without detected chapter headings")
         window.saved_profile_combo.setCurrentIndex(window.saved_profile_combo.findData(saved_id))

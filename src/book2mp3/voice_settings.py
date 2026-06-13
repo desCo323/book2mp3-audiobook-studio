@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 import os
 from pathlib import Path
 
+from book2mp3.i18n import resolve_ui_language
 from book2mp3.models import utc_now
 
 PROFILE_STATUS_DRAFT = "draft"
@@ -26,13 +27,36 @@ def normalize_profile_status(status: str | None) -> str:
     return PROFILE_STATUS_DRAFT
 
 
-def profile_status_label(status: str) -> str:
-    return {
-        PROFILE_STATUS_DRAFT: "Entwurf",
-        PROFILE_STATUS_TESTED: "Getestet",
-        PROFILE_STATUS_APPROVED: "Freigegeben",
-        PROFILE_STATUS_ARCHIVED: "Archiviert",
-    }.get(normalize_profile_status(status), "Entwurf")
+def profile_status_label(status: str, *, ui_language: str = "en") -> str:
+    normalized = normalize_profile_status(status)
+    labels = {
+        "de": {
+            PROFILE_STATUS_DRAFT: "Entwurf",
+            PROFILE_STATUS_TESTED: "Getestet",
+            PROFILE_STATUS_APPROVED: "Freigegeben",
+            PROFILE_STATUS_ARCHIVED: "Archiviert",
+        },
+        "en": {
+            PROFILE_STATUS_DRAFT: "Draft",
+            PROFILE_STATUS_TESTED: "Tested",
+            PROFILE_STATUS_APPROVED: "Approved",
+            PROFILE_STATUS_ARCHIVED: "Archived",
+        },
+        "es": {
+            PROFILE_STATUS_DRAFT: "Borrador",
+            PROFILE_STATUS_TESTED: "Probado",
+            PROFILE_STATUS_APPROVED: "Aprobado",
+            PROFILE_STATUS_ARCHIVED: "Archivado",
+        },
+        "pt": {
+            PROFILE_STATUS_DRAFT: "Rascunho",
+            PROFILE_STATUS_TESTED: "Testado",
+            PROFILE_STATUS_APPROVED: "Aprovado",
+            PROFILE_STATUS_ARCHIVED: "Arquivado",
+        },
+    }
+    bundle = labels.get(resolve_ui_language(ui_language), labels["en"])
+    return bundle.get(normalized, bundle[PROFILE_STATUS_DRAFT])
 
 
 @dataclass

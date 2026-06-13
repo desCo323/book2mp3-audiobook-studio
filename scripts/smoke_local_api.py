@@ -69,6 +69,16 @@ def main() -> int:
             source.write_text(("Dies ist ein API-Test. " * 60).strip(), encoding="utf-8")
             analyzed = api_json("POST", f"{base_url}/source/analyze", {"source_path": str(source)})
             assert analyzed["analysis_status"] in {"supported", "unsupported"}
+            metadata_source = app_root / "Gabriel García Márquez - Cien años de soledad.txt"
+            metadata_source.write_text("Metadata API smoke.", encoding="utf-8")
+            metadata_suggest = api_json("POST", f"{base_url}/metadata/suggest", {"source_path": str(metadata_source)})
+            assert metadata_suggest["guessed"]["author"] == "Gabriel García Márquez"
+            metadata_search = api_json(
+                "POST",
+                f"{base_url}/metadata/search",
+                {"title": "Cien años de soledad", "author": "Gabriel García Márquez", "limit": 1},
+            )
+            assert "results" in metadata_search
             created = api_json(
                 "POST",
                 f"{base_url}/jobs",
@@ -127,6 +137,21 @@ def main() -> int:
             assert profiled_job["saved_profile_id"] == profile.setting_id
             profiled_finished = api_json("POST", f"{base_url}/jobs/{profiled_job_id}/run", {})
             assert profiled_finished["saved_profile_id"] == profile.setting_id
+            assert profiled_finished["estimated_total_seconds"] >= 0
+
+            bulk_a = app_root / "api_bulk_a.txt"
+            bulk_a.write_text(("Kapitel 1\n" + ("Bulk A. " * 20)).strip(), encoding="utf-8")
+            bulk_b = app_root / "api_bulk_b.txt"
+            bulk_b.write_text(("Dies ist ein zweiter API-Bulk-Test. " * 25).strip(), encoding="utf-8")
+            bulk_created = api_json(
+                "POST",
+                f"{base_url}/jobs/bulk",
+                {
+                    "source_paths": [str(bulk_a), str(bulk_b)],
+                    "profile_id": profile.setting_id,
+                },
+            )
+            assert len(bulk_created["jobs"]) == 2
 
             listed = api_json("GET", f"{base_url}/jobs")
             assert listed["jobs"]
@@ -137,8 +162,11 @@ def main() -> int:
                         "job_id": job_id,
                         "status": finished["status"],
                         "source_analysis_status": analyzed["analysis_status"],
+                        "metadata_guess_author": metadata_suggest["guessed"]["author"],
+                        "metadata_search_results": len(metadata_search["results"]),
                         "profiled_job_id": profiled_job_id,
                         "profile_id": profile.setting_id,
+                        "bulk_jobs_created": len(bulk_created["jobs"]),
                         "diagnostics_profile_approved": diagnostics["profiles"]["status_counts"]["approved"],
                         "manifest_file": str(manifest_path),
                         "chapters_file": str(chapters_path),

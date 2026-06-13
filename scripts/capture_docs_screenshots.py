@@ -155,7 +155,7 @@ def main() -> int:
 
     window = MainWindow(paths)
     window.refresh_jobs()
-    window.source_edit.setText(str(paths.workspace / "demo_story.txt"))
+    window.set_selected_source_files([paths.workspace / "demo_story.txt"])
     QApplication.processEvents()
     if window.jobs_list.count() > 1:
         window.jobs_list.setCurrentRow(1)

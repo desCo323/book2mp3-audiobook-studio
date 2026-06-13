@@ -15,6 +15,7 @@ from pathlib import Path
 
 from book2mp3.utils.perf_logging import perf_event, perf_scope
 from book2mp3.voice_lab import VoiceProfile
+from book2mp3.xtts_setup import xtts_launcher_hint, xtts_license_hint, xtts_setup_command_text, xtts_setup_supported
 
 
 @dataclass
@@ -29,6 +30,9 @@ class XttsBackend:
     _server_registry_lock = threading.Lock()
     _server_connections: dict[str, _XttsServerConnection] = {}
     _atexit_registered = False
+    _dependency_cache: dict[str, tuple[float, bool, str]] = {}
+    _repair_lock = threading.Lock()
+    _repair_cache: dict[str, tuple[float, bool, str]] = {}
 
     def __init__(self, runtime_root: Path, logger: logging.Logger | None = None, device_mode: str = "auto") -> None:
         self.runtime_root = runtime_root
@@ -52,30 +56,206 @@ class XttsBackend:
     def dedicated_python_path(self) -> Path:
         system = platform.system().lower()
         if system == "windows":
-            candidate = self.runtime_root / "xtts" / "windows" / "python" / "python.exe"
+            candidates = [
+                self.runtime_root / "xtts" / "windows" / "python" / "python.exe",
+                self.runtime_root / "xtts" / "windows" / "python" / "Scripts" / "python.exe",
+            ]
         elif system == "linux":
-            candidate = self.runtime_root / "xtts" / "linux" / "bin" / "python3"
+            candidates = [self.runtime_root / "xtts" / "linux" / "bin" / "python3"]
         else:
             raise RuntimeError(f"Unsupported platform: {platform.system()}")
-        return candidate
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
 
     def current_python_supports_xtts(self) -> bool:
-        return importlib.util.find_spec("TTS") is not None
+        return importlib.util.find_spec("TTS") is not None and importlib.util.find_spec("numpy") is not None
+
+    def runtime_dependencies_ok(self) -> tuple[bool, str]:
+        candidate = self.dedicated_python_path()
+        if candidate.exists():
+            python_path = candidate
+        elif self.current_python_supports_xtts():
+            python_path = Path(sys.executable)
+        else:
+            return False, "XTTS runtime fehlt."
+        cache_key = str(python_path.resolve())
+        cached = XttsBackend._dependency_cache.get(cache_key)
+        now = time.time()
+        if cached and now - cached[0] < 15:
+            return cached[1], cached[2]
+        env = os.environ.copy()
+        if python_path.resolve() != Path(sys.executable).resolve():
+            for key in (
+                "PYTHONHOME",
+                "PYTHONPATH",
+                "PYTHONSTARTUP",
+                "PYTHONUSERBASE",
+                "PYTHONEXECUTABLE",
+                "VIRTUAL_ENV",
+                "__PYVENV_LAUNCHER__",
+            ):
+                env.pop(key, None)
+            env["PYTHONNOUSERSITE"] = "1"
+        result = subprocess.run(
+            [
+                str(python_path),
+                "-c",
+                "import numpy; import TTS; print('ok')",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=20,
+        )
+        ok = result.returncode == 0
+        detail = "ok" if ok else (result.stderr.strip() or result.stdout.strip() or "XTTS runtime dependencies missing")
+        XttsBackend._dependency_cache[cache_key] = (now, ok, detail)
+        return ok, detail
 
     def is_available(self) -> bool:
-        return self.dedicated_python_path().exists() or self.current_python_supports_xtts()
+        ok, _ = self.runtime_dependencies_ok()
+        return ok
 
     def availability_reason(self) -> str:
         candidate = self.dedicated_python_path()
         if candidate.exists():
-            return f"XTTS runtime gefunden: {candidate}"
+            ok, detail = self.runtime_dependencies_ok()
+            if ok:
+                return f"XTTS runtime gefunden: {candidate}"
+            return (
+                "XTTS runtime gefunden, aber unvollständig. "
+                f"Details: {detail}. Für XTTS nutze den vorbereiteten Setup-Pfad über `{xtts_launcher_hint()}`."
+            )
         if self.current_python_supports_xtts():
             return f"XTTS nutzt aktuelles Python: {sys.executable}"
+        setup_command = ""
+        try:
+            setup_paths = self._setup_paths()
+            if xtts_setup_supported(setup_paths):
+                setup_command = xtts_setup_command_text(setup_paths, python_executable=sys.executable)
+        except Exception:
+            setup_command = ""
+        launcher_hint = xtts_launcher_hint()
+        command_hint = f"Alternativ direkt: {setup_command}" if setup_command else ""
         return (
-            "XTTS runtime fehlt. Installiere sie mit "
-            "`python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standalone` "
-            "oder nutze vorerst Piper."
+            "XTTS runtime fehlt. Piper funktioniert sofort. "
+            f"Für XTTS nutze den vorbereiteten Setup-Pfad über `{launcher_hint}`. "
+            f"{command_hint} {xtts_license_hint()}"
         )
+
+    def attempt_runtime_self_heal(self, detail: str = "") -> tuple[bool, str]:
+        candidate = self.dedicated_python_path()
+        if not candidate.exists():
+            return False, "Keine dedizierte XTTS-Runtime vorhanden."
+        cache_key = str(candidate.resolve())
+        now = time.time()
+        with XttsBackend._repair_lock:
+            cached = XttsBackend._repair_cache.get(cache_key)
+            if cached and now - cached[0] < 180:
+                return cached[1], cached[2]
+            if self.logger:
+                self.logger.warning("Attempting XTTS runtime self-heal for %s", cache_key)
+            env = self.subprocess_env()
+            normalized_detail = detail or ""
+            runtime_root = candidate.parent.parent if candidate.parent.name == "bin" else candidate.parent
+            if (
+                platform.system().lower() == "linux"
+                and any(
+                    marker in normalized_detail
+                    for marker in (
+                        "No module named 'numpy'",
+                        "No module named 'TTS'",
+                        "No module named 'torch'",
+                        "No module named 'torchaudio'",
+                        'No module named "numpy"',
+                        'No module named "TTS"',
+                        'No module named "torch"',
+                        'No module named "torchaudio"',
+                    )
+                )
+            ):
+                setup_script = Path(__file__).resolve().parents[3] / "scripts" / "setup_xtts_runtime.py"
+                rebuild = subprocess.run(
+                    [
+                        sys.executable,
+                        str(setup_script),
+                        str(runtime_root),
+                        "--bootstrap-linux-standalone",
+                        "--torch-variant",
+                        "auto",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5400,
+                )
+                if rebuild.returncode != 0:
+                    message = rebuild.stderr.strip() or rebuild.stdout.strip() or "XTTS-Runtime konnte nicht vollständig neu aufgebaut werden"
+                    XttsBackend._repair_cache[cache_key] = (now, False, message)
+                    return False, message
+                XttsBackend.shutdown_all_servers()
+                XttsBackend._dependency_cache.pop(cache_key, None)
+                ok, check_detail = self.runtime_dependencies_ok()
+                message = "XTTS-Runtime vollständig neu aufgebaut." if ok else check_detail
+                XttsBackend._repair_cache[cache_key] = (now, ok, message)
+                return ok, message
+            pip_probe = subprocess.run(
+                [str(candidate), "-m", "pip", "--version"],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=30,
+            )
+            if pip_probe.returncode != 0:
+                ensure_pip = subprocess.run(
+                    [str(candidate), "-m", "ensurepip", "--upgrade"],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=120,
+                )
+                if ensure_pip.returncode != 0:
+                    message = ensure_pip.stderr.strip() or ensure_pip.stdout.strip() or "pip konnte nicht vorbereitet werden"
+                    XttsBackend._repair_cache[cache_key] = (now, False, message)
+                    return False, message
+            install_targets = ["numpy"]
+            if "No module named 'TTS'" in normalized_detail or 'No module named "TTS"' in normalized_detail:
+                install_targets.extend(["TTS", "transformers<4.50"])
+            install_cmd = [
+                str(candidate),
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                *install_targets,
+            ]
+            install = subprocess.run(
+                install_cmd,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=900,
+            )
+            if install.returncode != 0:
+                message = install.stderr.strip() or install.stdout.strip() or "XTTS-Runtime konnte nicht automatisch repariert werden"
+                XttsBackend._repair_cache[cache_key] = (now, False, message)
+                return False, message
+            XttsBackend.shutdown_all_servers()
+            XttsBackend._dependency_cache.pop(cache_key, None)
+            ok, check_detail = self.runtime_dependencies_ok()
+            message = (
+                "XTTS-Runtime automatisch repariert."
+                if ok
+                else f"Automatische XTTS-Reparatur lief durch, aber die Runtime bleibt unvollständig: {check_detail}"
+            )
+            XttsBackend._repair_cache[cache_key] = (now, ok, message)
+            return ok, message
+
+    def _setup_paths(self):
+        from book2mp3.config import AppPaths
+
+        return AppPaths.from_project_root(self.runtime_root.parent if self.runtime_root.name == "runtime" else self.runtime_root)
 
     def python_path(self) -> Path:
         candidate = self.dedicated_python_path()

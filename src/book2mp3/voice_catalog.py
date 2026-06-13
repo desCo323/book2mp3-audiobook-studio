@@ -2,26 +2,93 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from book2mp3.i18n import resolve_ui_language
 
 LANGUAGE_LABELS = {
-    "de_DE": "Deutsch",
-    "es_AR": "Espanol (AR)",
-    "en_GB": "English (UK)",
-    "en_US": "English (US)",
-    "fr_FR": "Francais",
-    "es_ES": "Espanol (ES)",
-    "es_MX": "Espanol (MX)",
-    "it_IT": "Italiano",
-    "nl_NL": "Nederlands",
-    "nl_BE": "Nederlands (BE)",
-    "pt_BR": "Portugues (BR)",
-    "fi_FI": "Suomi",
-    "cs_CZ": "Cestina",
-    "da_DK": "Dansk",
-    "sv_SE": "Svenska",
-    "pl_PL": "Polski",
-    "tr_TR": "Turkce",
-    "ro_RO": "Romana",
+    "de": {
+        "de_DE": "Deutsch",
+        "es_AR": "Spanisch (AR)",
+        "en_GB": "Englisch (UK)",
+        "en_US": "Englisch (US)",
+        "fr_FR": "Französisch",
+        "es_ES": "Spanisch (ES)",
+        "es_MX": "Spanisch (MX)",
+        "it_IT": "Italienisch",
+        "nl_NL": "Niederländisch",
+        "nl_BE": "Niederländisch (BE)",
+        "pt_BR": "Portugiesisch (BR)",
+        "pt_PT": "Portugiesisch (PT)",
+        "fi_FI": "Finnisch",
+        "cs_CZ": "Tschechisch",
+        "da_DK": "Dänisch",
+        "sv_SE": "Schwedisch",
+        "pl_PL": "Polnisch",
+        "tr_TR": "Türkisch",
+        "ro_RO": "Rumänisch",
+    },
+    "en": {
+        "de_DE": "German",
+        "es_AR": "Spanish (AR)",
+        "en_GB": "English (UK)",
+        "en_US": "English (US)",
+        "fr_FR": "French",
+        "es_ES": "Spanish (ES)",
+        "es_MX": "Spanish (MX)",
+        "it_IT": "Italian",
+        "nl_NL": "Dutch",
+        "nl_BE": "Dutch (BE)",
+        "pt_BR": "Portuguese (BR)",
+        "pt_PT": "Portuguese (PT)",
+        "fi_FI": "Finnish",
+        "cs_CZ": "Czech",
+        "da_DK": "Danish",
+        "sv_SE": "Swedish",
+        "pl_PL": "Polish",
+        "tr_TR": "Turkish",
+        "ro_RO": "Romanian",
+    },
+    "es": {
+        "de_DE": "Alemán",
+        "es_AR": "Español (AR)",
+        "en_GB": "Inglés (UK)",
+        "en_US": "Inglés (US)",
+        "fr_FR": "Francés",
+        "es_ES": "Español (ES)",
+        "es_MX": "Español (MX)",
+        "it_IT": "Italiano",
+        "nl_NL": "Neerlandés",
+        "nl_BE": "Neerlandés (BE)",
+        "pt_BR": "Portugués (BR)",
+        "pt_PT": "Portugués (PT)",
+        "fi_FI": "Finés",
+        "cs_CZ": "Checo",
+        "da_DK": "Danés",
+        "sv_SE": "Sueco",
+        "pl_PL": "Polaco",
+        "tr_TR": "Turco",
+        "ro_RO": "Rumano",
+    },
+    "pt": {
+        "de_DE": "Alemão",
+        "es_AR": "Espanhol (AR)",
+        "en_GB": "Inglês (UK)",
+        "en_US": "Inglês (US)",
+        "fr_FR": "Francês",
+        "es_ES": "Espanhol (ES)",
+        "es_MX": "Espanhol (MX)",
+        "it_IT": "Italiano",
+        "nl_NL": "Holandês",
+        "nl_BE": "Holandês (BE)",
+        "pt_BR": "Português (BR)",
+        "pt_PT": "Português (PT)",
+        "fi_FI": "Finlandês",
+        "cs_CZ": "Tcheco",
+        "da_DK": "Dinamarquês",
+        "sv_SE": "Sueco",
+        "pl_PL": "Polonês",
+        "tr_TR": "Turco",
+        "ro_RO": "Romeno",
+    },
 }
 
 VOICE_NOTES = {
@@ -78,12 +145,16 @@ PREFERRED_VOICE_ORDER = [
     "fr_FR-mls-medium",
     "es_ES-sharvard-medium",
     "es_MX-claude-high",
+    "es_ES-davefx-medium",
     "it_IT-paola-medium",
     "it_IT-riccardo-x_low",
     "nl_NL-mls-medium",
     "nl_NL-pim-medium",
     "pt_BR-faber-medium",
     "pt_BR-cadu-medium",
+    "pt_BR-jeff-medium",
+    "pt_BR-edresson-low",
+    "pt_PT-tugao-medium",
     "fi_FI-harri-medium",
     "cs_CZ-jirka-medium",
     "da_DK-talesyntese-medium",
@@ -120,12 +191,16 @@ DEFAULT_VOICE_PACK = [
     "fr_FR-mls-medium",
     "es_ES-sharvard-medium",
     "es_MX-claude-high",
+    "es_ES-davefx-medium",
     "it_IT-paola-medium",
     "it_IT-riccardo-x_low",
     "nl_NL-mls-medium",
     "nl_NL-pim-medium",
     "pt_BR-faber-medium",
     "pt_BR-cadu-medium",
+    "pt_BR-jeff-medium",
+    "pt_BR-edresson-low",
+    "pt_PT-tugao-medium",
     "fi_FI-harri-medium",
     "cs_CZ-jirka-medium",
     "da_DK-talesyntese-medium",
@@ -140,8 +215,10 @@ def voice_language_code(voice_id: str) -> str:
     return voice_id.split("-", 1)[0]
 
 
-def voice_language_label(voice_id: str) -> str:
-    return LANGUAGE_LABELS.get(voice_language_code(voice_id), voice_language_code(voice_id))
+def voice_language_label(voice_id: str, *, ui_language: str = "en") -> str:
+    code = voice_language_code(voice_id)
+    bundle = LANGUAGE_LABELS.get(resolve_ui_language(ui_language), LANGUAGE_LABELS["en"])
+    return bundle.get(code, code)
 
 
 def voice_quality(voice_id: str) -> str:
@@ -161,16 +238,21 @@ def is_female_voice(voice_id: str) -> bool:
     return voice_note(voice_id) == "female"
 
 
-def format_voice_label(voice_id: str) -> str:
+def format_voice_label(voice_id: str, *, ui_language: str = "en") -> str:
     note = voice_note(voice_id)
     if note:
-        return f"{voice_language_label(voice_id)} | {voice_name(voice_id)} | {voice_quality(voice_id)} | {note}"
-    return f"{voice_language_label(voice_id)} | {voice_name(voice_id)} | {voice_quality(voice_id)}"
+        return f"{voice_language_label(voice_id, ui_language=ui_language)} | {voice_name(voice_id)} | {voice_quality(voice_id)} | {note}"
+    return f"{voice_language_label(voice_id, ui_language=ui_language)} | {voice_name(voice_id)} | {voice_quality(voice_id)}"
 
-
-def language_choices(voice_ids: list[str]) -> list[tuple[str, str]]:
+def language_choices(voice_ids: list[str], *, ui_language: str = "en") -> list[tuple[str, str]]:
     languages = sorted({voice_language_code(voice_id) for voice_id in voice_ids})
-    return [("", "Alle Sprachen")] + [(code, voice_language_label(code)) for code in languages]
+    all_label = {
+        "de": "Alle Sprachen",
+        "en": "All languages",
+        "es": "Todos los idiomas",
+        "pt": "Todos os idiomas",
+    }.get(resolve_ui_language(ui_language), "All languages")
+    return [("", all_label)] + [(code, voice_language_label(code, ui_language=ui_language)) for code in languages]
 
 
 def sort_voice_ids(voice_ids: list[str]) -> list[str]:
@@ -206,16 +288,39 @@ def filter_voice_ids(
     return sort_voice_ids(filtered)
 
 
-def voice_filter_empty_message(language_code: str, *, female_only: bool = False, high_only: bool = False) -> str:
+def voice_filter_empty_message(language_code: str, *, ui_language: str = "en", female_only: bool = False, high_only: bool = False) -> str:
+    lang = resolve_ui_language(ui_language)
     if language_code == "de_DE" and female_only and high_only:
-        return (
-            "Keine deutsche weibliche Piper-Stimme in high verfuegbar. "
-            "Nimm XTTS fuer natuerliche deutsche Frauenstimmen oder entferne den high-Filter."
-        )
+        if lang == "de":
+            return (
+                "Keine deutsche weibliche Piper-Stimme in high verfügbar. "
+                "Nimm XTTS für natürlichere deutsche Frauenstimmen oder entferne den high-Filter."
+            )
+        if lang == "es":
+            return "No hay una voz Piper femenina alemana en high. Usa XTTS para voces femeninas alemanas más naturales o quita el filtro high."
+        if lang == "pt":
+            return "Não existe uma voz Piper feminina alemã em high. Use XTTS para vozes femininas alemãs mais naturais ou remova o filtro high."
+        return "No German female Piper voice is available in high quality. Use XTTS for more natural German female voices or remove the high filter."
     if female_only and high_only:
-        return "Keine weibliche high-Piper-Stimme fuer diesen Filter gefunden"
+        return {
+            "de": "Keine weibliche high-Piper-Stimme für diesen Filter gefunden",
+            "es": "No se encontró una voz Piper femenina high para este filtro",
+            "pt": "Nenhuma voz Piper feminina high foi encontrada para este filtro",
+        }.get(lang, "No female high-quality Piper voice was found for this filter")
     if female_only:
-        return "Keine Frauenstimme fuer diesen Filter gefunden"
+        return {
+            "de": "Keine Frauenstimme für diesen Filter gefunden",
+            "es": "No se encontró una voz femenina para este filtro",
+            "pt": "Nenhuma voz feminina foi encontrada para este filtro",
+        }.get(lang, "No female voice was found for this filter")
     if high_only:
-        return "Keine high-Piper-Stimme fuer diesen Filter gefunden"
-    return "Keine Stimme fuer diesen Filter gefunden"
+        return {
+            "de": "Keine high-Piper-Stimme für diesen Filter gefunden",
+            "es": "No se encontró una voz Piper high para este filtro",
+            "pt": "Nenhuma voz Piper high foi encontrada para este filtro",
+        }.get(lang, "No high-quality Piper voice was found for this filter")
+    return {
+        "de": "Keine Stimme für diesen Filter gefunden",
+        "es": "No se encontró ninguna voz para este filtro",
+        "pt": "Nenhuma voz foi encontrada para este filtro",
+    }.get(lang, "No voice was found for this filter")

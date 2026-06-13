@@ -69,6 +69,50 @@ STARTER_XTTS_SPEAKERS = (
         ],
     },
     {
+        "display_name": "XTTS Espanol Femenino",
+        "language": "es",
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "es_female.wav",
+                "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/female.wav",
+            }
+        ],
+    },
+    {
+        "display_name": "XTTS Portugues Feminino",
+        "language": "pt",
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "pt_female.wav",
+                "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/calm_female.wav",
+            }
+        ],
+    },
+    {
+        "display_name": "XTTS Espanol Masculino",
+        "language": "es",
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "es_male.wav",
+                "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/male.wav",
+            }
+        ],
+    },
+    {
+        "display_name": "XTTS Portugues Masculino",
+        "language": "pt",
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "pt_male.wav",
+                "url": "https://raw.githubusercontent.com/daswer123/xtts-webui/main/speakers/male.wav",
+            }
+        ],
+    },
+    {
         "display_name": "XTTS Thorsten Neutral",
         "language": "de",
         "samples": [

@@ -78,6 +78,13 @@ def main() -> int:
         source.write_text(("Dies ist ein CLI-Test. " * 100).strip(), encoding="utf-8")
         analyzed = run_cli(app_root, "source-analyze", str(source))
         assert analyzed["analysis_status"] in {"supported", "unsupported"}
+        metadata_source = app_root / "Jane Austen - Pride and Prejudice.txt"
+        metadata_source.write_text("Metadata smoke.", encoding="utf-8")
+        metadata_suggest = run_cli(app_root, "metadata-suggest", str(metadata_source))
+        assert metadata_suggest["guessed"]["title"] == "Pride and Prejudice"
+        assert metadata_suggest["guessed"]["author"] == "Jane Austen"
+        metadata_search = run_cli(app_root, "metadata-search", "--title", "Pride and Prejudice", "--author", "Jane Austen", "--limit", "1")
+        assert "results" in metadata_search
 
         shown = run_cli(app_root, "profile-show", profile.setting_id)
         assert shown["status"] == "tested"
@@ -113,6 +120,21 @@ def main() -> int:
         inspected = run_cli(app_root, "inspect", job_id)
         assert inspected["audiobook_metadata"]["title"] == "CLI Smoke Buch"
         assert inspected["saved_profile_id"] == profile.setting_id
+        assert inspected["estimated_total_seconds"] >= 0
+
+        bulk_a = app_root / "cli_bulk_a.txt"
+        bulk_a.write_text(("Kapitel 1\n" + ("Bulk A. " * 20)).strip(), encoding="utf-8")
+        bulk_b = app_root / "cli_bulk_b.txt"
+        bulk_b.write_text(("Dies ist ein zweiter Bulk-Test. " * 30).strip(), encoding="utf-8")
+        bulk_created = run_cli(
+            app_root,
+            "create-bulk",
+            str(bulk_a),
+            str(bulk_b),
+            "--profile-id",
+            profile.setting_id,
+        )
+        assert len(bulk_created["jobs"]) == 2
 
         finished = run_cli(app_root, "run", job_id)
         manifest_path = Path(finished["manifest_file"])
@@ -130,6 +152,9 @@ def main() -> int:
                     "status": finished["status"],
                     "profile_id": profile.setting_id,
                     "source_analysis_status": analyzed["analysis_status"],
+                    "metadata_guess_title": metadata_suggest["guessed"]["title"],
+                    "metadata_search_results": len(metadata_search["results"]),
+                    "bulk_jobs_created": len(bulk_created["jobs"]),
                     "diagnostics_piper_count": diagnostics["voices"]["piper_voice_count"],
                     "manifest_file": str(manifest_path),
                     "chapters_file": str(chapters_path),

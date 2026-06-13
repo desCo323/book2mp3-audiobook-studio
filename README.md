@@ -71,21 +71,40 @@ Die Software trennt bewusst zwischen Quelle, Kapitelanalyse, Profilen, Testreihe
 
 ## Schnellstart
 
-For a finished end-user bundle, users should start the app directly with:
+Für ein fertiges Endnutzer-Bundle gilt:
+
+- `Piper` ist sofort nutzbar
+- `XTTS` bleibt optional
+- Python muss nicht separat installiert werden
+
+Start unter Linux:
 
 ```bash
 ./start.sh
 ```
 
-or on Windows:
+Start unter Windows:
 
 ```bat
 start.bat
 ```
 
-Those launchers are intended for the self-contained bundle that includes Python inside the app folder.
+Optionale XTTS-Einrichtung im Bundle:
 
-For source checkout development, the current setup is still:
+```bash
+./start.sh --install-xtts
+```
+
+oder unter Windows:
+
+```bat
+start.bat --install-xtts
+```
+
+Die App bietet denselben XTTS-Setup auch direkt im Bereich `XTTS-Profile` und in `Diagnose` an.  
+Wichtig: Der bequeme Downloadpfad verbessert nur die Benutzbarkeit. Die XTTS-Modelllizenz wird dadurch nicht automatisch für öffentliche oder kommerzielle Nutzung freigegeben.
+
+Für Quellcode-Entwicklung bleibt der Repo-Checkout-Pfad:
 
 ```bash
 python3 -m venv .venv
@@ -159,6 +178,12 @@ Der Quellcode dieses Repos ist veröffentlichbar. Für ein öffentliches Release
 - `XTTS-v2`
 - `FFmpeg`
 - gebündelte Piper-Stimmen
+
+Portable Builds:
+
+- Linux- und Windows-Portables werden bei Push auf `main` als rolling Pre-Release gebaut
+- Standardpfad ist `Piper-ready`
+- XTTS bleibt im Release bewusst optional und separat gekennzeichnet
 
 Details:
 

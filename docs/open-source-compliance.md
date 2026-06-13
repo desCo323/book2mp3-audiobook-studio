@@ -69,6 +69,11 @@ Der aktuelle Stand ist **nicht sauber genug** fuer eine einfache `as-is`-Freigab
 3. FFmpeg-Binaries koennen GPL-Pflichten ausloesen.
 4. die Piper-Stimmen muessen mit ihren jeweiligen `MODEL_CARD`-Hinweisen verteilt werden.
 
+Wichtig:
+
+- ein automatischer XTTS-Download beim Start oder ueber einen App-Dialog verbessert nur die Einrichtung
+- dadurch wird die XTTS-Modelllizenz **nicht** automatisch fuer kommerzielle oder allgemein unkritische Nutzung geloest
+
 ## Empfohlene Schritte fuer eine saubere Release-Linie
 
 1. `EbookLib` durch einen permissiv lizenzierten EPUB-Parser ersetzen oder AGPL bewusst akzeptieren.

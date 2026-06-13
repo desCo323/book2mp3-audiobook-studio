@@ -119,7 +119,7 @@ def main() -> int:
             notes="Automatisch freigegeben für den echten Story-Smoke",
         )
         window.refresh_saved_profiles()
-        window.source_edit.setText(str(source))
+        window.set_selected_source_files([source])
         if not window.job_output_chapter_radio.isEnabled():
             raise AssertionError("Chapter output should be enabled for the chaptered smoke story")
         approved_index = window.saved_profile_combo.findData(approved_profile.setting_id)

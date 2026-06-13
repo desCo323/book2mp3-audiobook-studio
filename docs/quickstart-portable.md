@@ -36,6 +36,25 @@ Nach dem Start:
 3. vorhandene Produktionsprofile oder Stimmen pruefen
 4. Testauftrag mit kurzer `TXT` ausfuehren
 
+## XTTS optional einrichten
+
+Piper ist im Portable-Bundle der sofort nutzbare Standardpfad.  
+XTTS bleibt optional.
+
+Unter Linux:
+
+```bash
+./start.sh --install-xtts
+```
+
+Unter Windows:
+
+```bat
+start.bat --install-xtts
+```
+
+Alternativ kannst du den Setup direkt in der App über `XTTS-Profile` oder `Diagnose` starten.
+
 ## Typische Fehler
 
 - fehlende Schreibrechte im `workspace`
@@ -43,3 +62,8 @@ Nach dem Start:
 - leere Stimmen-/Profilordner
 
 Die App zeigt diese Faelle heute als Diagnose- oder `blocked`-Zustand, statt beim Start hart abzubrechen.
+
+Wichtig:
+
+- XTTS ist ein optionaler Zusatzpfad.
+- Der automatische Download verbessert die Bedienung, loest aber nicht automatisch die Modelllizenz fuer oeffentliche oder kommerzielle Nutzung.

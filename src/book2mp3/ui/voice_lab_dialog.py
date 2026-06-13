@@ -26,7 +26,10 @@ from PySide6.QtWidgets import (
 )
 
 from book2mp3.config import AppPaths
+from book2mp3.i18n import apply_text, resolve_ui_language, translate_widget_tree
+from book2mp3.tts.xtts import XttsBackend
 from book2mp3.ui.theme import apply_modern_window_style
+from book2mp3.ui.xtts_setup_dialog import XttsSetupDialog
 from book2mp3.xtts_speakers import (
     auto_import_xtts_speakers,
     describe_candidate_speaker_roots,
@@ -35,21 +38,26 @@ from book2mp3.xtts_speakers import (
 )
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_lab import create_voice_profile, load_voice_profile
+from book2mp3.xtts_setup import xtts_launcher_hint, xtts_license_hint
 
 class VoiceLabDialog(QDialog):
-    def __init__(self, paths: AppPaths, parent: QWidget | None = None) -> None:
+    def __init__(self, paths: AppPaths, parent: QWidget | None = None, *, ui_language: str | None = None) -> None:
         super().__init__(parent)
         self.paths = paths
         self.logger = get_logger("voice_lab")
+        self.ui_language = resolve_ui_language(ui_language)
+        self.xtts_backend = XttsBackend(paths.runtime, logger=self.logger)
         self.sample_paths: list[Path] = []
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
 
-        self.setWindowTitle("XTTS-Profilstudio")
-        self.resize(860, 640)
+        self.setWindowTitle(apply_text("XTTS-Profilstudio", self.ui_language))
+        self.resize(980, 700)
+        self.setMinimumSize(900, 660)
         self._build_ui()
         apply_modern_window_style(self)
+        translate_widget_tree(self, self.ui_language)
         self.refresh_existing_profiles()
 
     def _build_ui(self) -> None:
@@ -71,6 +79,11 @@ class VoiceLabDialog(QDialog):
         intro.setProperty("role", "hint")
         layout.addWidget(intro)
 
+        self.runtime_intro = QLabel("")
+        self.runtime_intro.setWordWrap(True)
+        self.runtime_intro.setProperty("role", "hint")
+        layout.addWidget(self.runtime_intro)
+
         self.beta_notice = QLabel(
             "XTTS-Profile brauchen gute Referenzsamples. Prüfe deshalb jede neue Stimme zuerst im Profilstudio, "
             "bevor du daraus ein Produktionsprofil machst."
@@ -88,7 +101,7 @@ class VoiceLabDialog(QDialog):
         self.name_edit = QLineEdit()
         form.addRow("Profilname", self.name_edit)
         self.language_combo = QComboBox()
-        self.language_combo.addItems(["de", "en", "fr", "es", "it", "nl", "pl"])
+        self.language_combo.addItems(["de", "en", "es", "pt", "fr", "it", "nl", "pl"])
         form.addRow("Zielsprache", self.language_combo)
         self.backend_combo = QComboBox()
         self.backend_combo.addItems(["xtts_v2"])
@@ -96,35 +109,38 @@ class VoiceLabDialog(QDialog):
         edit_layout.addLayout(form)
 
         tool_grid = QGridLayout()
+        runtime_button = QPushButton("XTTS jetzt einrichten")
+        runtime_button.clicked.connect(self.open_xtts_setup_dialog)
+        tool_grid.addWidget(runtime_button, 0, 0)
         add_samples_button = QPushButton("Samples hinzufuegen")
         add_samples_button.clicked.connect(self.add_samples)
-        tool_grid.addWidget(add_samples_button, 0, 0)
+        tool_grid.addWidget(add_samples_button, 0, 1)
         scan_button = QPushButton("Gefundene XTTS-Orte anzeigen")
         scan_button.clicked.connect(self.show_candidate_locations)
-        tool_grid.addWidget(scan_button, 0, 1)
+        tool_grid.addWidget(scan_button, 0, 2)
         auto_import_button = QPushButton("XTTS-Sprecher automatisch suchen")
         auto_import_button.clicked.connect(self.auto_import_webui_speakers)
-        tool_grid.addWidget(auto_import_button, 0, 2)
+        tool_grid.addWidget(auto_import_button, 1, 0)
         starter_button = QPushButton("Starter-XTTS-Sprecher laden")
         starter_button.clicked.connect(self.install_starter_profiles)
-        tool_grid.addWidget(starter_button, 1, 0)
+        tool_grid.addWidget(starter_button, 1, 1)
         import_webui_button = QPushButton("XTTS-WebUI-Sprecher importieren")
         import_webui_button.clicked.connect(self.import_webui_speakers)
-        tool_grid.addWidget(import_webui_button, 1, 1)
+        tool_grid.addWidget(import_webui_button, 1, 2)
         clear_samples_button = QPushButton("Samples leeren")
         clear_samples_button.clicked.connect(self.clear_samples)
-        tool_grid.addWidget(clear_samples_button, 1, 2)
+        tool_grid.addWidget(clear_samples_button, 2, 0)
         edit_layout.addLayout(tool_grid)
 
         self.samples_list = QListWidget()
-        self.samples_list.setMinimumHeight(120)
+        self.samples_list.setMinimumHeight(100)
         edit_layout.addWidget(self.samples_list)
 
         self.notes_edit = QPlainTextEdit()
         self.notes_edit.setPlaceholderText(
             "Notizen, Zielstimme, Aufnahmeumgebung, Stil, Besonderheiten."
         )
-        self.notes_edit.setMinimumHeight(120)
+        self.notes_edit.setMinimumHeight(90)
         edit_layout.addWidget(self.notes_edit)
 
         action_row = QHBoxLayout()
@@ -140,7 +156,7 @@ class VoiceLabDialog(QDialog):
         list_layout = QVBoxLayout(list_group)
         self.profile_list = QListWidget()
         self.profile_list.itemSelectionChanged.connect(self.show_selected_profile)
-        self.profile_list.setMinimumHeight(180)
+        self.profile_list.setMinimumHeight(150)
         list_layout.addWidget(self.profile_list)
 
         profile_action_row = QHBoxLayout()
@@ -154,7 +170,7 @@ class VoiceLabDialog(QDialog):
 
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        self.details.setMinimumHeight(260)
+        self.details.setMinimumHeight(180)
         list_layout.addWidget(self.details)
 
         sections.addWidget(edit_group)
@@ -192,6 +208,7 @@ class VoiceLabDialog(QDialog):
             fallback_language=self.language_combo.currentText(),
         )
         self.refresh_existing_profiles()
+        self.refresh_runtime_hint()
         self.details.setPlainText(
             json.dumps(
                 {"imported_profiles": [manifest.parent.name for manifest in manifests], "source_folder": folder},
@@ -311,6 +328,7 @@ class VoiceLabDialog(QDialog):
         )
         if self.profile_list.count():
             self.profile_list.setCurrentRow(0)
+        self.refresh_runtime_hint()
 
     def show_selected_profile(self) -> None:
         item = self.profile_list.currentItem()
@@ -351,3 +369,20 @@ class VoiceLabDialog(QDialog):
             QMessageBox.warning(self, "Kein Profil", "Bitte zuerst ein Voice-Profil auswaehlen.")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.paths.voice_profiles / item.text())))
+
+    def open_xtts_setup_dialog(self) -> None:
+        dialog = XttsSetupDialog(self.paths, self, ui_language=self.ui_language)
+        dialog.exec()
+        self.refresh_runtime_hint()
+        self.refresh_existing_profiles()
+
+    def refresh_runtime_hint(self) -> None:
+        if self.xtts_backend.is_available():
+            self.runtime_intro.setText(
+                "XTTS-Runtime ist bereit. Prüfe jetzt Referenzsamples, importiere Sprecher und teste danach im Benchmark-Studio."
+            )
+            return
+        self.runtime_intro.setText(
+            f"Piper funktioniert sofort. XTTS ist optional und wird getrennt eingerichtet. "
+            f"Schnellstart: {xtts_launcher_hint()}. {xtts_license_hint()}"
+        )

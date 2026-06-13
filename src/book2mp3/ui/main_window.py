@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
@@ -34,7 +35,16 @@ from PySide6.QtWidgets import (
 )
 
 from book2mp3.app_settings import AppSettings, load_app_settings, reset_workspace_state, save_app_settings
+from book2mp3.book_metadata import guess_metadata_from_filename
 from book2mp3.config import AppPaths
+from book2mp3.i18n import (
+    apply_text,
+    preferred_content_language_code,
+    resolve_ui_language,
+    tr,
+    translate_widget_tree,
+    ui_language_choices,
+)
 from book2mp3.models import JobState
 from book2mp3.pipeline.extract import DocumentStructure
 from book2mp3.pipeline.jobs import JobManager
@@ -48,6 +58,7 @@ from book2mp3.ui.find_best_setting_dialog import FindBestSettingDialog
 from book2mp3.ui.theme import apply_modern_window_style
 from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
 from book2mp3.ui.worker import JobWorker
+from book2mp3.ui.xtts_setup_dialog import XttsSetupDialog
 from book2mp3.utils.logging_utils import configure_logging, get_logger
 from book2mp3.voice_catalog import (
     filter_voice_ids,
@@ -68,6 +79,7 @@ from book2mp3.voice_settings import (
     profile_status_label,
     update_voice_setting_status,
 )
+from book2mp3.xtts_setup import xtts_launcher_hint, xtts_license_hint
 
 
 class MainWindow(QMainWindow):
@@ -75,12 +87,16 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.paths = paths
         self.app_settings = load_app_settings(paths.app_settings_file)
+        self.ui_language = resolve_ui_language(self.app_settings.ui_language)
         self.manager = JobManager(paths)
         self.service = Book2Mp3Service(paths)
         self.worker: JobWorker | None = None
         self.current_job_id: str | None = None
         self.logger = get_logger("ui")
         self.installed_voice_ids: list[str] = []
+        self.selected_source_files: list[Path] = []
+        self.pause_requested_job_id: str | None = None
+        self.source_structures: dict[str, DocumentStructure] = {}
         self.source_structure = DocumentStructure(
             source_type="",
             chapter_count=0,
@@ -102,10 +118,12 @@ class MainWindow(QMainWindow):
         if app is not None:
             app.aboutToQuit.connect(self.handle_about_to_quit)
 
-        self.setWindowTitle("book2mp3 Hörbuch-Studio")
-        self.resize(1380, 860)
+        self.setWindowTitle(apply_text("book2mp3 Hörbuch-Studio", self.ui_language))
+        self.resize(1320, 760)
+        self.setMinimumSize(1240, 720)
         self._build_ui()
         apply_modern_window_style(self)
+        translate_widget_tree(self, self.ui_language)
         self.refresh_voice_list()
         self.refresh_saved_profiles()
         self.manager.recover_interrupted_jobs()
@@ -113,6 +131,12 @@ class MainWindow(QMainWindow):
         self.refresh_diagnostics_summary()
         self.apply_cuda_first_preference()
         self.update_idle_status_from_queue()
+
+    def _text(self, text: str) -> str:
+        return apply_text(text, self.ui_language)
+
+    def _tr(self, key: str, **kwargs) -> str:
+        return tr(self.ui_language, key, **kwargs)
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -134,6 +158,10 @@ class MainWindow(QMainWindow):
         sidebar_hint.setWordWrap(True)
         sidebar_hint.setProperty("role", "hint")
         left_layout.addWidget(sidebar_hint)
+        self.queue_eta_header = QLabel("Noch keine Laufzeitdaten. Nach dem ersten erfolgreichen Buch erscheint hier eine erste Queue-Prognose.")
+        self.queue_eta_header.setWordWrap(True)
+        self.queue_eta_header.setProperty("role", "muted")
+        left_layout.addWidget(self.queue_eta_header)
         self.jobs_list = QListWidget()
         self.jobs_list.itemSelectionChanged.connect(self.on_job_selected)
         left_layout.addWidget(self.jobs_list)
@@ -147,7 +175,7 @@ class MainWindow(QMainWindow):
         move_down_button = QPushButton("Runter")
         move_down_button.clicked.connect(lambda: self.move_selected_job("down"))
         queue_button_row.addWidget(move_down_button)
-        delete_button = QPushButton("Loeschen")
+        delete_button = QPushButton("Auftrag löschen")
         delete_button.clicked.connect(self.delete_selected_job)
         queue_button_row.addWidget(delete_button)
         left_layout.addLayout(queue_button_row)
@@ -178,17 +206,28 @@ class MainWindow(QMainWindow):
         source_group = QGroupBox("Buchquelle")
         source_form = QFormLayout(source_group)
         self.source_edit = QLineEdit()
-        self.source_edit.textChanged.connect(self.on_source_path_changed)
-        browse_button = QPushButton("Buch wählen")
-        browse_button.clicked.connect(self.select_source_file)
+        self.source_edit.setReadOnly(True)
+        self.source_edit.setPlaceholderText("Noch keine Quelldateien ausgewählt.")
+        browse_button = QPushButton("Dateien wählen")
+        browse_button.clicked.connect(self.select_source_files)
+        clear_sources_button = QPushButton("Leeren")
+        clear_sources_button.clicked.connect(self.clear_selected_source_files)
         source_row = QHBoxLayout()
         source_row.addWidget(self.source_edit)
         source_row.addWidget(browse_button)
+        source_row.addWidget(clear_sources_button)
         source_form.addRow("Datei", self._wrap(source_row))
+        self.source_count_label = QLabel("0 Quellen ausgewählt.")
+        self.source_count_label.setWordWrap(True)
+        self.source_count_label.setProperty("role", "muted")
+        source_form.addRow("Auswahl", self.source_count_label)
         self.source_analysis_label = QLabel("Noch keine Quelle gewählt.")
         self.source_analysis_label.setWordWrap(True)
         self.source_analysis_label.setProperty("role", "muted")
         source_form.addRow("Kapitelerkennung", self.source_analysis_label)
+        self.source_list = QListWidget()
+        self.source_list.setMinimumHeight(150)
+        source_form.addRow("Importübersicht", self.source_list)
         create_layout.addWidget(source_group)
 
         profile_group = QGroupBox("Produktionsprofil")
@@ -209,6 +248,42 @@ class MainWindow(QMainWindow):
         self.saved_profile_summary.setProperty("role", "muted")
         profile_form.addRow("Profil-Info", self.saved_profile_summary)
         create_layout.addWidget(profile_group)
+
+        metadata_group = QGroupBox("Metadaten & Tags")
+        metadata_form = QFormLayout(metadata_group)
+        self.meta_title_edit = QLineEdit()
+        metadata_form.addRow("Titel", self.meta_title_edit)
+        self.meta_author_edit = QLineEdit()
+        metadata_form.addRow("Autor", self.meta_author_edit)
+        self.meta_narrator_edit = QLineEdit()
+        metadata_form.addRow("Sprecher", self.meta_narrator_edit)
+        self.meta_genre_edit = QLineEdit("Audiobook")
+        metadata_form.addRow("Genre", self.meta_genre_edit)
+        self.meta_language_tag_edit = QLineEdit()
+        metadata_form.addRow("Sprachtag", self.meta_language_tag_edit)
+        self.meta_comment_edit = QPlainTextEdit()
+        self.meta_comment_edit.setPlaceholderText("Freier Kommentar oder Quelle für die finalen MP3-Tags.")
+        self.meta_comment_edit.setMinimumHeight(76)
+        metadata_form.addRow("Kommentar", self.meta_comment_edit)
+        metadata_actions = QHBoxLayout()
+        self.metadata_guess_button = QPushButton("Aus Dateinamen vorschlagen")
+        self.metadata_guess_button.clicked.connect(self.populate_metadata_from_filename)
+        metadata_actions.addWidget(self.metadata_guess_button)
+        self.metadata_search_button = QPushButton("Open Library suchen")
+        self.metadata_search_button.clicked.connect(self.search_metadata_online)
+        metadata_actions.addWidget(self.metadata_search_button)
+        self.metadata_apply_button = QPushButton("Besten Treffer übernehmen")
+        self.metadata_apply_button.clicked.connect(self.apply_best_metadata_result)
+        metadata_actions.addWidget(self.metadata_apply_button)
+        metadata_form.addRow("", self._wrap(metadata_actions))
+        self.metadata_status_label = QLabel("Noch keine Metadaten geladen.")
+        self.metadata_status_label.setWordWrap(True)
+        self.metadata_status_label.setProperty("role", "muted")
+        metadata_form.addRow("Status", self.metadata_status_label)
+        self.metadata_results_list = QListWidget()
+        self.metadata_results_list.setMinimumHeight(120)
+        metadata_form.addRow("Treffer", self.metadata_results_list)
+        create_layout.addWidget(metadata_group)
 
         create_options_group = QGroupBox("Auftragsoptionen")
         create_options_form = QFormLayout(create_options_group)
@@ -261,7 +336,7 @@ class MainWindow(QMainWindow):
         create_buttons_intro.setProperty("role", "muted")
         create_buttons_layout.addWidget(create_buttons_intro)
         create_buttons_row = QHBoxLayout()
-        create_button = QPushButton("Auftrag aus Profil erzeugen")
+        create_button = QPushButton("Aufträge aus Profil erzeugen")
         create_button.clicked.connect(self.create_job)
         create_buttons_row.addWidget(create_button)
         self.start_button = QPushButton("Ausgewählten Auftrag starten")
@@ -394,10 +469,17 @@ class MainWindow(QMainWindow):
 
         xtts_runtime_group = QGroupBox("XTTS-Runtime und Import")
         xtts_runtime_form = QFormLayout(xtts_runtime_group)
+        self.xtts_setup_summary_label = QLabel("")
+        self.xtts_setup_summary_label.setWordWrap(True)
+        self.xtts_setup_summary_label.setProperty("role", "hint")
+        xtts_runtime_form.addRow("Schnellstart", self.xtts_setup_summary_label)
         xtts_runtime_actions = QHBoxLayout()
         profile_runtime_refresh = QPushButton("Bestand neu laden")
         profile_runtime_refresh.clicked.connect(self.refresh_voice_list)
         xtts_runtime_actions.addWidget(profile_runtime_refresh)
+        self.xtts_setup_button = QPushButton("XTTS jetzt einrichten")
+        self.xtts_setup_button.clicked.connect(self.open_xtts_setup_dialog)
+        xtts_runtime_actions.addWidget(self.xtts_setup_button)
         profile_runtime_probe = QPushButton("CUDA / XTTS prüfen")
         profile_runtime_probe.clicked.connect(self.show_xtts_runtime_probe)
         xtts_runtime_actions.addWidget(profile_runtime_probe)
@@ -559,6 +641,21 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Bereit. Noch kein Auftrag läuft.")
         self.status_label.setWordWrap(True)
         state_layout.addWidget(self.status_label)
+        self.job_runtime_summary = QLabel("Noch keine Laufzeit- oder ETA-Daten für den aktuellen Auftrag.")
+        self.job_runtime_summary.setWordWrap(True)
+        self.job_runtime_summary.setProperty("role", "muted")
+        state_layout.addWidget(self.job_runtime_summary)
+        playback_row = QHBoxLayout()
+        self.play_job_button = QPushButton("▶ Start / Resume")
+        self.play_job_button.clicked.connect(self.start_selected_job)
+        playback_row.addWidget(self.play_job_button)
+        self.pause_job_button = QPushButton("⏸ Pause")
+        self.pause_job_button.clicked.connect(self.pause_selected_job)
+        playback_row.addWidget(self.pause_job_button)
+        self.stop_job_button = QPushButton("⏹ Stop")
+        self.stop_job_button.clicked.connect(self.stop_current_job)
+        playback_row.addWidget(self.stop_job_button)
+        state_layout.addLayout(playback_row)
         job_actions_row = QHBoxLayout()
         open_job_folder_button = QPushButton("Jobordner öffnen")
         open_job_folder_button.clicked.connect(self.open_current_job_folder)
@@ -578,14 +675,14 @@ class MainWindow(QMainWindow):
         self.job_summary.setPlaceholderText(
             "Hier stehen Stufenstatus, Kapitel, Chunk-Zusammenfassung und wichtige Artefakte des gewählten Auftrags."
         )
-        self.job_summary.setMinimumHeight(210)
+        self.job_summary.setMinimumHeight(140)
         state_layout.addWidget(self.job_summary)
-        detail_splitter = QSplitter(Qt.Horizontal)
+        detail_tabs = QTabWidget()
         stage_group = QGroupBox("Stufen")
         stage_layout = QVBoxLayout(stage_group)
         self.job_stage_list = QListWidget()
         stage_layout.addWidget(self.job_stage_list)
-        detail_splitter.addWidget(stage_group)
+        detail_tabs.addTab(stage_group, "Stufen")
         chapter_group = QGroupBox("Kapitel")
         chapter_layout = QVBoxLayout(chapter_group)
         self.job_chapter_list = QListWidget()
@@ -602,7 +699,7 @@ class MainWindow(QMainWindow):
         retry_chapter_button.clicked.connect(self.retry_selected_chapter)
         chapter_actions.addWidget(retry_chapter_button)
         chapter_layout.addLayout(chapter_actions)
-        detail_splitter.addWidget(chapter_group)
+        detail_tabs.addTab(chapter_group, "Kapitel")
         chunk_group = QGroupBox("Chunks")
         chunk_layout = QVBoxLayout(chunk_group)
         self.job_chunk_list = QListWidget()
@@ -628,18 +725,24 @@ class MainWindow(QMainWindow):
         retry_all_button.clicked.connect(self.retry_current_job)
         retry_actions.addWidget(retry_all_button)
         chunk_layout.addLayout(retry_actions)
-        detail_splitter.addWidget(chunk_group)
-        detail_splitter.setSizes([240, 320, 420])
-        state_layout.addWidget(detail_splitter)
+        detail_tabs.addTab(chunk_group, "Chunks")
+        selection_group = QGroupBox("Auswahldetails")
+        selection_layout = QVBoxLayout(selection_group)
         self.job_selection_details = QPlainTextEdit()
         self.job_selection_details.setReadOnly(True)
         self.job_selection_details.setPlaceholderText("Hier erscheinen Details zum ausgewählten Kapitel oder Chunk.")
         self.job_selection_details.setMinimumHeight(120)
-        state_layout.addWidget(self.job_selection_details)
+        selection_layout.addWidget(self.job_selection_details)
+        detail_tabs.addTab(selection_group, "Auswahl")
+        logs_group = QGroupBox("Job-Logs")
+        logs_layout = QVBoxLayout(logs_group)
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
         self.details.setPlaceholderText("Hier erscheinen die letzten Job-Logs und Statusmeldungen.")
-        state_layout.addWidget(self.details)
+        self.details.setMinimumHeight(180)
+        logs_layout.addWidget(self.details)
+        detail_tabs.addTab(logs_group, "Logs")
+        state_layout.addWidget(detail_tabs)
         jobs_layout.addWidget(state_group)
 
         queue_group = QGroupBox("Queue & gespeicherte Vorschauen")
@@ -648,6 +751,10 @@ class MainWindow(QMainWindow):
         self.queue_details.setReadOnly(True)
         self.queue_details.setPlaceholderText("Hier steht die eigentliche Verarbeitungswarteschlange.")
         queue_group_layout.addWidget(self.queue_details)
+        self.queue_runtime_summary = QLabel("Noch keine Queue-Prognose verfügbar.")
+        self.queue_runtime_summary.setWordWrap(True)
+        self.queue_runtime_summary.setProperty("role", "muted")
+        queue_group_layout.addWidget(self.queue_runtime_summary)
         self.preview_sessions_summary = QPlainTextEdit()
         self.preview_sessions_summary.setReadOnly(True)
         self.preview_sessions_summary.setPlaceholderText(
@@ -668,6 +775,24 @@ class MainWindow(QMainWindow):
         queue_actions_form.addRow("", self._wrap(queue_actions_row))
         jobs_layout.addWidget(queue_actions_group)
 
+        finished_group = QGroupBox("Fertige Hörbücher")
+        finished_layout = QVBoxLayout(finished_group)
+        self.finished_books_list = QListWidget()
+        self.finished_books_list.setMinimumHeight(140)
+        finished_layout.addWidget(self.finished_books_list)
+        finished_actions = QHBoxLayout()
+        open_finished_audio_button = QPushButton("Hörbuch öffnen")
+        open_finished_audio_button.clicked.connect(self.open_selected_finished_audio)
+        finished_actions.addWidget(open_finished_audio_button)
+        open_finished_folder_button = QPushButton("Ordner öffnen")
+        open_finished_folder_button.clicked.connect(self.open_selected_finished_folder)
+        finished_actions.addWidget(open_finished_folder_button)
+        delete_finished_job_button = QPushButton("Projekt löschen")
+        delete_finished_job_button.clicked.connect(self.delete_selected_finished_job)
+        finished_actions.addWidget(delete_finished_job_button)
+        finished_layout.addLayout(finished_actions)
+        jobs_layout.addWidget(finished_group)
+
         tabs.addTab(jobs_tab, "Aufträge")
 
         diagnostics_tab = QWidget()
@@ -684,6 +809,10 @@ class MainWindow(QMainWindow):
 
         diagnostics_group = QGroupBox("Laufzeit- und Systemzustand")
         diagnostics_layout = QVBoxLayout(diagnostics_group)
+        self.system_usage_label = QLabel("CPU -, RAM -, CUDA/GPU -")
+        self.system_usage_label.setWordWrap(True)
+        self.system_usage_label.setProperty("role", "muted")
+        diagnostics_layout.addWidget(self.system_usage_label)
         self.diagnostics_summary = QPlainTextEdit()
         self.diagnostics_summary.setReadOnly(True)
         self.diagnostics_summary.setPlaceholderText(
@@ -695,6 +824,9 @@ class MainWindow(QMainWindow):
         refresh_diagnostics_button = QPushButton("Diagnose aktualisieren")
         refresh_diagnostics_button.clicked.connect(self.refresh_diagnostics_summary_with_probe)
         diagnostics_row.addWidget(refresh_diagnostics_button)
+        self.diagnostics_xtts_setup_button = QPushButton("XTTS optional einrichten")
+        self.diagnostics_xtts_setup_button.clicked.connect(self.open_xtts_setup_dialog)
+        diagnostics_row.addWidget(self.diagnostics_xtts_setup_button)
         open_workspace_button = QPushButton("Arbeitsbereich öffnen")
         open_workspace_button.clicked.connect(lambda: self.open_path(self.paths.workspace))
         diagnostics_row.addWidget(open_workspace_button)
@@ -723,10 +855,36 @@ class MainWindow(QMainWindow):
 
         maintenance_group = QGroupBox("App-Zustand und Logging")
         maintenance_form = QFormLayout(maintenance_group)
+        self.ui_language_combo = QComboBox()
+        for code, label in ui_language_choices(self.ui_language):
+            self.ui_language_combo.addItem(label, code)
+        self.ui_language_combo.currentIndexChanged.connect(self.on_ui_language_changed)
+        maintenance_form.addRow(self._tr("settings.ui_language.label"), self.ui_language_combo)
+        self.ui_language_hint = QLabel(self._tr("settings.ui_language.hint"))
+        self.ui_language_hint.setWordWrap(True)
+        self.ui_language_hint.setProperty("role", "muted")
+        maintenance_form.addRow("", self.ui_language_hint)
         self.debug_logging_checkbox = QCheckBox("Sehr detailliertes Debug-Logging")
         self.debug_logging_checkbox.setChecked(self.app_settings.debug_logging)
         self.debug_logging_checkbox.toggled.connect(self.toggle_debug_logging)
         maintenance_form.addRow("Logging", self.debug_logging_checkbox)
+        self.xtts_processing_mode_combo = QComboBox()
+        self.xtts_processing_mode_combo.addItem("Automatisch entscheiden", "auto")
+        self.xtts_processing_mode_combo.addItem("Immer seriell", "serial")
+        self.xtts_processing_mode_combo.addItem("Parallel CPU-Postprozess bevorzugen", "parallel_cpu_postprocess")
+        self.xtts_processing_mode_combo.currentIndexChanged.connect(self.on_xtts_processing_mode_changed)
+        maintenance_form.addRow("XTTS-Verarbeitung", self.xtts_processing_mode_combo)
+        self.xtts_processing_mode_hint = QLabel(
+            "Automatisch lernt aus vergangenen Läufen. Seriell ist der konservative Pfad, "
+            "Parallel nutzt bei CUDA freie CPU-Kapazität für MP3-Nachbearbeitung."
+        )
+        self.xtts_processing_mode_hint.setWordWrap(True)
+        self.xtts_processing_mode_hint.setProperty("role", "muted")
+        maintenance_form.addRow("Modus-Hinweis", self.xtts_processing_mode_hint)
+        self.language_restart_hint = QLabel(self._tr("settings.ui_language.note"))
+        self.language_restart_hint.setWordWrap(True)
+        self.language_restart_hint.setProperty("role", "muted")
+        maintenance_form.addRow("", self.language_restart_hint)
         maintenance_row = QHBoxLayout()
         reset_button = QPushButton("App-Zustand zurücksetzen")
         reset_button.clicked.connect(self.reset_application_state)
@@ -754,7 +912,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(settings_tab, "Einstellungen")
 
         splitter.addWidget(right)
-        splitter.setSizes([340, 940])
+        splitter.setSizes([300, 1020])
         self.apply_default_controls()
         self.on_preset_changed()
         self.on_backend_changed()
@@ -783,10 +941,10 @@ class MainWindow(QMainWindow):
 
     def _source_structure_summary_text(self, structure: DocumentStructure) -> str:
         status_prefix = {
-            "idle": "Kapitelerkennung wartet auf eine Quelle.",
-            "supported": f"Kapitel erkannt: {structure.chapter_count} Kapitel können getrennt exportiert werden.",
-            "unsupported": "Keine nutzbare Kapitelstruktur erkannt. Kapiteldateien bleiben deaktiviert.",
-            "error": "Kapitelanalyse fehlgeschlagen.",
+            "idle": self._tr("source.analysis.idle"),
+            "supported": self._tr("source.analysis.supported", count=structure.chapter_count),
+            "unsupported": self._tr("source.analysis.unsupported"),
+            "error": self._tr("source.analysis.error"),
         }.get(structure.analysis_status, structure.summary)
         lines = [status_prefix, structure.summary]
         if structure.detection_method:
@@ -807,24 +965,259 @@ class MainWindow(QMainWindow):
             lines.extend(structure.analysis_notes[:3])
         return "\n".join(lines)
 
-    def on_source_path_changed(self) -> None:
-        self.refresh_source_analysis()
-
     def refresh_source_analysis(self) -> None:
-        raw_path = self.source_edit.text().strip()
-        if not raw_path:
+        self.source_structures = {}
+        self.source_list.clear()
+        if not self.selected_source_files:
             self.source_structure = self._empty_source_structure("Noch keine Quelle gewählt.")
+            self.source_count_label.setText(self._tr("source.count.none"))
         else:
-            source = Path(raw_path)
-            if not source.exists():
-                self.source_structure = self._empty_source_structure(
-                    "Datei noch nicht gefunden. Die Kapitelerkennung startet, sobald der Pfad gültig ist."
-                )
+            self.source_analysis_label.setText({
+                "de": "Kapitelanalyse läuft …",
+                "en": "Chapter analysis running …",
+                "es": "Analizando capítulos …",
+                "pt": "Analisando capítulos …",
+            }.get(self.ui_language, "Chapter analysis running …"))
+            for source in self.selected_source_files:
+                if not source.exists():
+                    structure = self._empty_source_structure(
+                        "Datei noch nicht gefunden. Die Kapitelerkennung startet, sobald der Pfad gültig ist."
+                    )
+                    structure.source_type = source.suffix.lower().lstrip(".")
+                    structure.analysis_status = "error"
+                    structure.error = f"Datei nicht gefunden: {source}"
+                else:
+                    structure = DocumentStructure(**self.service.analyze_source(source))
+                self.source_structures[str(source)] = structure
+            self.source_structure = self.source_structures.get(str(self.selected_source_files[0]), self._empty_source_structure("Noch keine Quelle gewählt."))
+            supported_count = sum(1 for structure in self.source_structures.values() if structure.supports_chapter_files)
+            total_count = len(self.selected_source_files)
+            self.source_count_label.setText(self._tr("source.count", total=total_count, supported=supported_count))
+            self.refresh_source_list()
+            if total_count == 1:
+                self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
             else:
-                self.source_analysis_label.setText("Kapitelanalyse läuft …")
-                self.source_structure = DocumentStructure(**self.service.analyze_source(source))
-        self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
+                self.source_analysis_label.setText(
+                    self._tr(
+                        "source.analysis.multi",
+                        total=total_count,
+                        supported=supported_count,
+                        fallback=total_count - supported_count,
+                    )
+                )
+        if not self.selected_source_files:
+            self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
         self.apply_job_output_mode_availability()
+
+    def refresh_source_list(self) -> None:
+        self.source_list.clear()
+        requested_mode = self.job_output_mode_requested or "single_file"
+        for source in self.selected_source_files:
+            structure = self.source_structures.get(str(source), self._empty_source_structure("Noch keine Analyse verfügbar."))
+            actual_mode = self._resolved_output_mode_for_structure(requested_mode, structure)
+            chapter_text = (
+                {
+                    "de": f"Kapitel {structure.chapter_count}",
+                    "en": f"chapters {structure.chapter_count}",
+                    "es": f"capítulos {structure.chapter_count}",
+                    "pt": f"capítulos {structure.chapter_count}",
+                }.get(self.ui_language, f"chapters {structure.chapter_count}")
+                if structure.supports_chapter_files
+                else {
+                    "de": "keine Kapiteldateien",
+                    "en": "no chapter files",
+                    "es": "sin archivos por capítulo",
+                    "pt": "sem arquivos por capítulo",
+                }.get(self.ui_language, "no chapter files")
+            )
+            item = QListWidgetItem(
+                f"{source.name} | {source.suffix.lower().lstrip('.') or '-'} | {chapter_text} | "
+                + {
+                    "de": "Ausgabe",
+                    "en": "output",
+                    "es": "salida",
+                    "pt": "saída",
+                }.get(self.ui_language, "output")
+                + f" {self._output_mode_label(actual_mode, self.target_part_minutes_spin.value())}"
+            )
+            item.setToolTip(f"{source}\n{self._source_structure_summary_text(structure)}")
+            self.source_list.addItem(item)
+
+    def set_selected_source_files(self, sources: list[Path]) -> None:
+        unique_sources: list[Path] = []
+        seen: set[Path] = set()
+        for source in sources:
+            normalized = source.expanduser().resolve()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            unique_sources.append(normalized)
+        self.selected_source_files = unique_sources
+        if not unique_sources:
+            summary = ""
+        elif len(unique_sources) == 1:
+            summary = str(unique_sources[0])
+        else:
+            summary = f"{len(unique_sources)} Dateien ausgewählt"
+        self.source_edit.blockSignals(True)
+        try:
+            self.source_edit.setText(summary)
+        finally:
+            self.source_edit.blockSignals(False)
+        self.refresh_source_analysis()
+        self.refresh_metadata_ui()
+
+    def clear_selected_source_files(self) -> None:
+        self.set_selected_source_files([])
+
+    def _active_metadata_source(self) -> Path | None:
+        return self.selected_source_files[0] if self.selected_source_files else None
+
+    def refresh_metadata_ui(self) -> None:
+        source = self._active_metadata_source()
+        single_source = len(self.selected_source_files) == 1 and source is not None
+        self.meta_title_edit.setEnabled(single_source)
+        self.metadata_search_button.setEnabled(single_source)
+        self.metadata_apply_button.setEnabled(single_source)
+        self.metadata_results_list.setEnabled(single_source)
+        if not source:
+            self.metadata_status_label.setText({
+                "de": "Noch keine Quelle gewählt. Danach können Metadaten vorgeschlagen oder online gesucht werden.",
+                "en": "No source selected yet. After that you can suggest metadata or search online.",
+                "es": "Todavía no se ha seleccionado ninguna fuente. Después podrás sugerir metadatos o buscarlos en línea.",
+                "pt": "Nenhuma fonte foi selecionada ainda. Depois disso você poderá sugerir metadados ou pesquisar online.",
+            }.get(self.ui_language, "No source selected yet. After that you can suggest metadata or search online."))
+            self.metadata_results_list.clear()
+            return
+        guessed = guess_metadata_from_filename(source)
+        if not self.meta_title_edit.text().strip() and single_source:
+            self.meta_title_edit.setText(str(guessed.get("title") or source.stem))
+        if not self.meta_author_edit.text().strip() and guessed.get("author"):
+            self.meta_author_edit.setText(str(guessed.get("author") or ""))
+        if not self.meta_language_tag_edit.text().strip():
+            structure = self.source_structures.get(str(source))
+            language_hint = preferred_content_language_code(self.ui_language).split("_", 1)[0]
+            if structure and structure.source_type:
+                self.meta_language_tag_edit.setText(language_hint)
+        if single_source:
+            self.metadata_status_label.setText({
+                "de": f"Metadaten für {source.name}: Dateiname wurde analysiert. Optional kannst du zusätzlich bei Open Library suchen.",
+                "en": f"Metadata for {source.name}: the file name has been analyzed. You can optionally search Open Library too.",
+                "es": f"Metadatos para {source.name}: se analizó el nombre del archivo. También puedes buscar en Open Library.",
+                "pt": f"Metadados para {source.name}: o nome do arquivo foi analisado. Você também pode pesquisar no Open Library.",
+            }.get(self.ui_language, f"Metadata for {source.name}: the file name has been analyzed. You can optionally search Open Library too."))
+        else:
+            self.metadata_status_label.setText({
+                "de": "Mehrere Quellen ausgewählt. Titel bleiben pro Datei individuell; gemeinsame Metadaten wie Autor, Sprecher, Genre und Kommentar gelten für alle Jobs.",
+                "en": "Multiple sources selected. Titles stay individual per file; shared metadata like author, narrator, genre, and comment are applied to all jobs.",
+                "es": "Se seleccionaron varias fuentes. Los títulos siguen siendo individuales por archivo; los metadatos comunes como autor, narrador, género y comentario se aplican a todos los trabajos.",
+                "pt": "Várias fontes foram selecionadas. Os títulos permanecem individuais por arquivo; metadados compartilhados como autor, narrador, gênero e comentário são aplicados a todas as tarefas.",
+            }.get(self.ui_language, "Multiple sources selected. Titles stay individual per file; shared metadata like author, narrator, genre, and comment are applied to all jobs."))
+            self.metadata_results_list.clear()
+
+    def populate_metadata_from_filename(self) -> None:
+        source = self._active_metadata_source()
+        if source is None:
+            return
+        guessed = guess_metadata_from_filename(source)
+        if len(self.selected_source_files) == 1:
+            self.meta_title_edit.setText(str(guessed.get("title") or source.stem))
+        self.meta_author_edit.setText(str(guessed.get("author") or self.meta_author_edit.text()))
+        if not self.meta_genre_edit.text().strip():
+            self.meta_genre_edit.setText("Audiobook")
+        self.metadata_status_label.setText({
+            "de": "Dateiname analysiert und als Metadatenvorschlag übernommen.",
+            "en": "The file name was analyzed and applied as a metadata suggestion.",
+            "es": "El nombre del archivo se analizó y se aplicó como sugerencia de metadatos.",
+            "pt": "O nome do arquivo foi analisado e aplicado como sugestão de metadados.",
+        }.get(self.ui_language, "The file name was analyzed and applied as a metadata suggestion."))
+
+    def search_metadata_online(self) -> None:
+        source = self._active_metadata_source()
+        if source is None or len(self.selected_source_files) != 1:
+            return
+        query_title = self.meta_title_edit.text().strip()
+        query_author = self.meta_author_edit.text().strip()
+        try:
+            suggestions = self.service.search_book_metadata(
+                title=query_title,
+                author=query_author,
+                query=f"{query_title} {query_author}".strip(),
+                limit=5,
+            )
+        except Exception as exc:
+            self.metadata_status_label.setText(
+                {
+                    "de": f"Metadatensuche fehlgeschlagen: {exc}",
+                    "en": f"Metadata search failed: {exc}",
+                    "es": f"La búsqueda de metadatos falló: {exc}",
+                    "pt": f"A busca de metadados falhou: {exc}",
+                }.get(self.ui_language, f"Metadata search failed: {exc}")
+            )
+            return
+        self.metadata_results_list.clear()
+        for entry in suggestions:
+            year = f" ({entry.get('year')})" if entry.get("year") else ""
+            author = str(entry.get("author") or "-")
+            item = QListWidgetItem(f"{entry.get('title')}{year} | {author}")
+            item.setData(Qt.UserRole, entry)
+            item.setToolTip(json.dumps(entry, indent=2, ensure_ascii=False))
+            self.metadata_results_list.addItem(item)
+        self.metadata_status_label.setText({
+            "de": f"Open Library Suche abgeschlossen: {len(suggestions)} Treffer.",
+            "en": f"Open Library search finished: {len(suggestions)} result(s).",
+            "es": f"Búsqueda en Open Library completada: {len(suggestions)} resultado(s).",
+            "pt": f"Busca no Open Library concluída: {len(suggestions)} resultado(s).",
+        }.get(self.ui_language, f"Open Library search finished: {len(suggestions)} result(s)."))
+        if self.metadata_results_list.count():
+            self.metadata_results_list.setCurrentRow(0)
+
+    def apply_best_metadata_result(self) -> None:
+        item = self.metadata_results_list.currentItem()
+        if item is None and self.metadata_results_list.count():
+            item = self.metadata_results_list.item(0)
+        if item is None:
+            return
+        entry = item.data(Qt.UserRole) or {}
+        if self.meta_title_edit.isEnabled():
+            self.meta_title_edit.setText(str(entry.get("title") or self.meta_title_edit.text()))
+        self.meta_author_edit.setText(str(entry.get("author") or self.meta_author_edit.text()))
+        if entry.get("genre"):
+            self.meta_genre_edit.setText(str(entry.get("genre")))
+        if entry.get("language"):
+            self.meta_language_tag_edit.setText(str(entry.get("language")))
+        if entry.get("comment") and not self.meta_comment_edit.toPlainText().strip():
+            self.meta_comment_edit.setPlainText(str(entry.get("comment")))
+        self.metadata_status_label.setText({
+            "de": "Metadaten aus dem ausgewählten Open-Library-Treffer übernommen.",
+            "en": "Metadata from the selected Open Library result has been applied.",
+            "es": "Se aplicaron los metadatos del resultado seleccionado de Open Library.",
+            "pt": "Os metadados do resultado selecionado do Open Library foram aplicados.",
+        }.get(self.ui_language, "Metadata from the selected Open Library result has been applied."))
+
+    def _metadata_payload_for_source(self, source: Path) -> dict[str, str]:
+        title = self.meta_title_edit.text().strip() if len(self.selected_source_files) == 1 else ""
+        narrator = self.meta_narrator_edit.text().strip()
+        payload = {
+            "title": title,
+            "album": title,
+            "artist": narrator,
+            "album_artist": narrator,
+            "narrator": narrator,
+            "author": self.meta_author_edit.text().strip(),
+            "genre": self.meta_genre_edit.text().strip() or "Audiobook",
+            "language": self.meta_language_tag_edit.text().strip() or preferred_content_language_code(self.ui_language).split("_", 1)[0],
+            "comment": self.meta_comment_edit.toPlainText().strip(),
+        }
+        return {key: value for key, value in payload.items() if value}
+
+    def _resolved_output_mode_for_structure(self, requested_mode: str, structure: DocumentStructure) -> str:
+        actual_mode = requested_mode or "single_file"
+        if actual_mode == "segments":
+            actual_mode = "single_file"
+        if actual_mode == "chapter_files" and not structure.supports_chapter_files:
+            actual_mode = "single_file"
+        return actual_mode
 
     def on_job_output_mode_radio_toggled(self, mode: str, checked: bool) -> None:
         if not checked or self._syncing_job_output_mode:
@@ -838,13 +1231,27 @@ class MainWindow(QMainWindow):
         if preferred_mode:
             self.job_output_mode_requested = preferred_mode
         desired_mode = self.job_output_mode_requested or self.selected_job_output_mode() or "single_file"
-        chapter_available = self.source_structure.supports_chapter_files
+        structures = list(self.source_structures.values()) if self.source_structures else ([self.source_structure] if self.source_structure.analysis_status != "idle" else [])
+        total_sources = len(self.selected_source_files)
+        supported_sources = sum(1 for structure in structures if structure.supports_chapter_files)
+        if total_sources <= 1:
+            chapter_available = supported_sources == 1
+        else:
+            chapter_available = supported_sources > 0
         self.job_output_chapter_radio.setEnabled(chapter_available)
-        chapter_tooltip = (
-            "Kapitel erkannt: diese Quelle kann als eine Datei pro Kapitel exportiert werden."
-            if chapter_available
-            else "Diese Quelle hat keine stabile Kapitelstruktur. Kapiteldateien bleiben deaktiviert."
-        )
+        if total_sources <= 1:
+            chapter_tooltip = (
+                "Kapitel erkannt: diese Quelle kann als eine Datei pro Kapitel exportiert werden."
+                if chapter_available
+                else "Diese Quelle hat keine stabile Kapitelstruktur. Kapiteldateien bleiben deaktiviert."
+            )
+        else:
+            chapter_tooltip = (
+                f"{supported_sources}/{total_sources} Quellen unterstützen Kapiteldateien. "
+                "Quellen ohne Kapitelstruktur fallen automatisch auf eine Enddatei zurück."
+                if chapter_available
+                else "Keine der ausgewählten Quellen hat eine stabile Kapitelstruktur."
+            )
         self.job_output_chapter_radio.setToolTip(chapter_tooltip)
         actual_mode = desired_mode
         if actual_mode == "segments":
@@ -865,10 +1272,12 @@ class MainWindow(QMainWindow):
             self._syncing_job_output_mode = False
 
         hint_parts = []
-        if chapter_available:
-            hint_parts.append("Kapiteldateien sind für diese Quelle freigeschaltet.")
+        if chapter_available and total_sources > 1:
+            hint_parts.append(self._tr("output.chapter.enabled.multi", supported=supported_sources, total=total_sources))
+        elif chapter_available:
+            hint_parts.append(self._tr("output.chapter.enabled.single"))
         else:
-            hint_parts.append("Kapiteldateien bleiben deaktiviert, bis eine Quelle mit erkannten Kapiteln gewählt ist.")
+            hint_parts.append(self._tr("output.chapter.disabled"))
         setting_id = self.saved_profile_combo.currentData() or ""
         if setting_id:
             setting = load_voice_setting(self.paths.voice_settings, setting_id)
@@ -876,13 +1285,14 @@ class MainWindow(QMainWindow):
             active_mode = self._output_mode_label(self.job_output_mode, setting.target_part_minutes)
             if setting.output_mode == "chapter_files" and self.job_output_mode != "chapter_files":
                 hint_parts.append(
-                    f"Das Profil würde standardmäßig {profile_mode} nutzen. Für diese Quelle wird auf {active_mode} zurückgefallen."
+                    self._tr("output.profile_fallback", profile_mode=profile_mode, active_mode=active_mode)
                 )
             else:
-                hint_parts.append(f"Aktive Auftragsausgabe: {active_mode}.")
+                hint_parts.append(self._tr("output.active_mode", mode=active_mode))
         else:
-            hint_parts.append("Wähle ein freigegebenes Produktionsprofil, um die finale Ausgabe zu übernehmen.")
+            hint_parts.append(self._tr("output.choose_profile"))
         self.job_output_mode_combo_hint.setText(" ".join(hint_parts))
+        self.refresh_source_list()
 
     def _make_scroll_tab(self, tab: QWidget) -> QVBoxLayout:
         outer_layout = QVBoxLayout(tab)
@@ -907,7 +1317,9 @@ class MainWindow(QMainWindow):
         jobs = diagnostics["jobs"]
         profiles = diagnostics["profiles"]
         perf = diagnostics["performance_logging"]
+        system_usage = diagnostics.get("system_usage", {})
         probe = xtts.get("probe")
+        runtime_stats = diagnostics["runtime_statistics"]
         if probe:
             probe_text = (
                 f"Probe: {'OK' if probe.get('ok') else 'Fehler'} | "
@@ -915,6 +1327,23 @@ class MainWindow(QMainWindow):
             )
         else:
             probe_text = "Probe: nicht frisch ausgeführt"
+        cpu_text = "-"
+        if system_usage.get("cpu_percent") is not None:
+            cpu_text = f"{system_usage['cpu_percent']:.0f}%"
+        ram_text = "-"
+        if system_usage.get("memory_percent") is not None:
+            ram_text = f"{system_usage['memory_percent']:.0f}% ({system_usage.get('memory_used_gb', 0):.1f}/{system_usage.get('memory_total_gb', 0):.1f} GB)"
+        gpu_entries = system_usage.get("gpus") or []
+        if gpu_entries:
+            top_gpu = gpu_entries[0]
+            gpu_text = (
+                f"{top_gpu.get('name', 'GPU')} {top_gpu.get('gpu_percent', 0):.0f}% | "
+                f"VRAM {top_gpu.get('memory_used_mb', 0)/1024:.1f}/{top_gpu.get('memory_total_mb', 0)/1024:.1f} GB "
+                f"({top_gpu.get('memory_percent', 0):.0f}%)"
+            )
+        else:
+            gpu_text = "kein NVIDIA/CUDA-Telemetriepfad"
+        self.system_usage_label.setText(f"CPU {cpu_text} | RAM {ram_text} | CUDA/GPU {gpu_text}")
         self.diagnostics_summary.setPlainText(
             "\n".join(
                 [
@@ -929,17 +1358,26 @@ class MainWindow(QMainWindow):
                     "",
                     f"XTTS verfügbar: {xtts['available']}",
                     f"XTTS Gerät gewählt: {xtts['selected_device_mode']} | empfohlen: {xtts['preferred_device_mode']}",
+                    f"XTTS Verarbeitungsmodus: {diagnostics['app_settings'].get('xtts_processing_mode', 'auto')}",
                     f"XTTS Hinweis: {xtts['availability_reason']}",
+                    f"XTTS Schnellstart: {xtts_launcher_hint()}",
                     probe_text,
+                    f"Host CPU-Auslastung: {cpu_text}",
+                    f"Host RAM-Auslastung: {ram_text}",
+                    f"Host GPU/CUDA-Auslastung: {gpu_text}",
                     "",
                     f"Performance-Logging aktiv: {perf['enabled']}",
                     f"Performance-Logdatei: {perf['target_file'] or '-'}",
                     f"Performance-Run-ID: {perf['run_id'] or '-'}",
                     "",
                     f"App-Einstellungen: {diagnostics['app_settings']}",
+                    "",
+                    f"Runtime-Statistiken: {runtime_stats['entry_count']} Einträge | Stand {runtime_stats['updated_at'] or '-'}",
+                    f"Durchschnitt gesamt: {runtime_stats['average_total_seconds']/60:.1f} min | Backends: {runtime_stats['backend_counts']} | Modi: {runtime_stats['mode_counts']}",
                 ]
             )
         )
+        self.update_xtts_setup_presentation()
 
     def refresh_diagnostics_summary_with_probe(self) -> None:
         self.refresh_diagnostics_summary(include_runtime_probe=True)
@@ -1137,7 +1575,14 @@ class MainWindow(QMainWindow):
                 f"Produktionsprofil: {job.saved_profile_name or '-'} ({job.saved_profile_id or '-'})",
                 f"Stimme/Profil: {job.voice_id or job.voice_profile_id or '-'}",
                 f"Output-Modus: {job.output_mode} | Ziel-Minuten: {job.target_part_minutes}",
+                f"Gerät/Verarbeitung: {job.device_mode} / {job.processing_mode}",
+                f"Verarbeitungsgrund: {job.processing_mode_reason or '-'}",
                 f"Blockgrund: {job.block_reason or '-'}",
+                f"Letzte Fehlerkategorie: {job.last_failure_category or '-'}",
+                f"Automatische Recovery-Versuche: {job.auto_recovery_attempts}",
+                f"Textlänge: {job.source_characters} Zeichen",
+                f"Schätzung: {self._format_duration_hm(job.estimated_total_seconds)} gesamt | Rest {self._format_duration_hm(job.estimated_remaining_seconds)} | Samples {job.estimated_from_samples} ({job.estimated_confidence})",
+                f"Ist-Dauer: {self._format_duration_hm(job.actual_total_seconds)}",
                 "",
                 "Stufen:",
                 *stage_lines,
@@ -1149,10 +1594,33 @@ class MainWindow(QMainWindow):
                 f"Extrakt: {job.extracted_file}",
                 f"Manifest: {job.manifest_file}",
                 f"Kapiteldatei: {job.chapters_file}",
+                f"Fehlerbericht: {job.failure_report_file or '-'}",
                 "Ausgaben:",
                 outputs,
             ]
         )
+
+    def _job_runtime_summary_text(self, job: JobState) -> str:
+        estimate_text = (
+            f"Schätzung ca. {self._format_duration_hm(job.estimated_total_seconds)}, Rest aktuell ca. {self._format_duration_hm(job.estimated_remaining_seconds)}."
+            if job.estimated_total_seconds > 0
+            else "Noch keine belastbare Schätzung für diesen Auftrag verfügbar."
+        )
+        actual_text = (
+            f" Bisher gemessene Gesamtdauer: {self._format_duration_hm(job.actual_total_seconds)}."
+            if job.actual_total_seconds > 0
+            else ""
+        )
+        confidence_text = (
+            f" Datenbasis: {job.estimated_from_samples} ähnlicher Lauf/Läufe ({job.estimated_confidence})."
+            if job.estimated_from_samples > 0
+            else ""
+        )
+        return (
+            f"Verarbeitung: {job.processing_mode} auf {job.device_mode}. "
+            f"{job.processing_mode_reason or 'Noch keine Modusbegründung.'} "
+            f"{estimate_text}{confidence_text}{actual_text}"
+        ).strip()
 
     def refresh_job_selection_details(self) -> None:
         job = self._current_job_state()
@@ -1253,12 +1721,19 @@ class MainWindow(QMainWindow):
         if not approved_settings:
             self.saved_profile_combo.addItem("Noch kein freigegebenes Produktionsprofil", "")
             self.saved_profile_summary.setText(
-                "Im Auftragsdialog erscheinen nur freigegebene Produktionsprofile. "
-                "Erstelle oder teste ein Profil im Profilstudio und gib es danach in der Profilbibliothek frei."
+                {
+                    "de": "Im Auftragsdialog erscheinen nur freigegebene Produktionsprofile. Erstelle oder teste ein Profil im Profilstudio und gib es danach in der Profilbibliothek frei.",
+                    "en": "Only approved production profiles appear in the job creator. Create or test a profile in the Profile Studio and approve it in the library afterwards.",
+                    "es": "En el creador de trabajos solo aparecen perfiles de producción aprobados. Crea o prueba un perfil en el estudio y apruébalo después en la biblioteca.",
+                    "pt": "Apenas perfis de produção aprovados aparecem no criador de tarefas. Crie ou teste um perfil no estúdio e aprove-o depois na biblioteca.",
+                }.get(self.ui_language, "Only approved production profiles appear in the job creator. Create or test a profile in the Profile Studio and approve it in the library afterwards.")
             )
-            self.job_snapshot_label.setText(
-                "Das Produktionsprofil bestimmt Backend, Stimme, Chunkgröße, Tempo und Ausgabeformat."
-            )
+            self.job_snapshot_label.setText({
+                "de": "Das Produktionsprofil bestimmt Backend, Stimme, Chunkgröße, Tempo und Ausgabeformat.",
+                "en": "The production profile defines backend, voice, chunk size, speaking speed, and output mode.",
+                "es": "El perfil de producción define backend, voz, tamaño de fragmento, velocidad y modo de salida.",
+                "pt": "O perfil de produção define backend, voz, tamanho do bloco, velocidade de fala e modo de saída.",
+            }.get(self.ui_language, "The production profile defines backend, voice, chunk size, speaking speed, and output mode."))
             self.apply_job_output_mode_availability(preferred_mode="single_file")
             self.refresh_profile_library()
             self.refresh_profile_hub_summary()
@@ -1275,12 +1750,18 @@ class MainWindow(QMainWindow):
     def refresh_saved_profile_summary(self) -> None:
         setting_id = self.saved_profile_combo.currentData() or ""
         if not setting_id:
-            self.saved_profile_summary.setText(
-                "Noch kein freigegebenes Produktionsprofil gewählt. Öffne die Profilbibliothek und gib ein getestetes Profil frei."
-            )
-            self.job_snapshot_label.setText(
-                "Das Produktionsprofil bestimmt Backend, Stimme, Chunkgröße, Tempo und Ausgabeformat."
-            )
+            self.saved_profile_summary.setText({
+                "de": "Noch kein freigegebenes Produktionsprofil gewählt. Öffne die Profilbibliothek und gib ein getestetes Profil frei.",
+                "en": "No approved production profile selected yet. Open the profile library and approve a tested profile.",
+                "es": "Todavía no se ha seleccionado ningún perfil de producción aprobado. Abre la biblioteca y aprueba un perfil probado.",
+                "pt": "Nenhum perfil de produção aprovado foi selecionado ainda. Abra a biblioteca e aprove um perfil testado.",
+            }.get(self.ui_language, "No approved production profile selected yet. Open the profile library and approve a tested profile."))
+            self.job_snapshot_label.setText({
+                "de": "Das Produktionsprofil bestimmt Backend, Stimme, Chunkgröße, Tempo und Ausgabeformat.",
+                "en": "The production profile defines backend, voice, chunk size, speaking speed, and output mode.",
+                "es": "El perfil de producción define backend, voz, tamaño de fragmento, velocidad y modo de salida.",
+                "pt": "O perfil de produção define backend, voz, tamanho do bloco, velocidade de fala e modo de saída.",
+            }.get(self.ui_language, "The production profile defines backend, voice, chunk size, speaking speed, and output mode."))
             self.apply_job_output_mode_availability(preferred_mode="single_file")
             return
         setting = load_voice_setting(self.paths.voice_settings, setting_id)
@@ -1293,7 +1774,7 @@ class MainWindow(QMainWindow):
         )
         self.saved_profile_summary.setText(
             f"{setting.display_name}\n"
-            f"Status: {profile_status_label(setting.status)} | Backend: {setting.backend} | Stimme/Profil: {voice_label}\n"
+            f"Status: {profile_status_label(setting.status, ui_language=self.ui_language)} | Backend: {setting.backend} | Stimme/Profil: {voice_label}\n"
             f"Preset: {setting.preset_hint} | Ausgabe: {mode_label}{benchmark_text}"
         )
         self.job_snapshot_label.setText(
@@ -1309,19 +1790,22 @@ class MainWindow(QMainWindow):
         self.profile_library_list.clear()
         settings = list_voice_settings(self.paths.voice_settings)
         if not settings:
-            self.profile_library_summary.setText(
-                "Noch keine Produktionsprofile vorhanden. Öffne das Profilstudio und speichere dort eine getestete Kombination."
-            )
+            self.profile_library_summary.setText({
+                "de": "Noch keine Produktionsprofile vorhanden. Öffne das Profilstudio und speichere dort eine getestete Kombination.",
+                "en": "No production profiles exist yet. Open the Profile Studio and save a tested combination there.",
+                "es": "Todavía no existen perfiles de producción. Abre el estudio de perfiles y guarda allí una combinación probada.",
+                "pt": "Ainda não existem perfis de produção. Abra o Estúdio de Perfis e salve lá uma combinação testada.",
+            }.get(self.ui_language, "No production profiles exist yet. Open the Profile Studio and save a tested combination there."))
             return
         for setting in settings:
             label = (
-                f"{profile_status_label(setting.status)} | {setting.display_name} | "
+                f"{profile_status_label(setting.status, ui_language=self.ui_language)} | {setting.display_name} | "
                 f"{setting.backend} | {setting.preset_hint}"
             )
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, setting.setting_id)
             item.setToolTip(
-                f"Status: {profile_status_label(setting.status)}\n"
+                f"Status: {profile_status_label(setting.status, ui_language=self.ui_language)}\n"
                 f"Backend: {setting.backend}\n"
                 f"Ausgabe: {self._output_mode_label(setting.output_mode, setting.target_part_minutes)}"
             )
@@ -1340,7 +1824,7 @@ class MainWindow(QMainWindow):
     def on_profile_library_selected(self) -> None:
         item = self.profile_library_list.currentItem()
         if not item:
-            self.profile_library_summary.setText("Noch kein Produktionsprofil gewählt.")
+            self.profile_library_summary.setText(self._text("Noch kein Produktionsprofil gewählt."))
             return
         setting_id = item.data(Qt.UserRole)
         setting = load_voice_setting(self.paths.voice_settings, setting_id)
@@ -1352,7 +1836,7 @@ class MainWindow(QMainWindow):
         )
         self.profile_library_summary.setText(
             f"{setting.display_name}\n"
-            f"Status: {profile_status_label(setting.status)} | Backend: {setting.backend} | Stimme/Profil: {setting.voice_profile_id or setting.voice_id or '-'}\n"
+            f"Status: {profile_status_label(setting.status, ui_language=self.ui_language)} | Backend: {setting.backend} | Stimme/Profil: {setting.voice_profile_id or setting.voice_id or '-'}\n"
             f"Preset: {setting.preset_hint} | Ausgabe: {self._output_mode_label(setting.output_mode, setting.target_part_minutes)}{benchmark_text}\n"
             f"Chunkgröße: {setting.max_chars} | Tempo: {setting.length_scale:.2f} | Modus: {runtime_label}\n"
             f"Freigegeben: {setting.approved_at or '-'} | Aktualisiert: {setting.updated_at}"
@@ -1389,7 +1873,7 @@ class MainWindow(QMainWindow):
         self.refresh_saved_profiles()
         self.select_profile_in_library(updated.setting_id)
         self.status_label.setText(
-            f"Profilstatus aktualisiert: {updated.display_name} -> {profile_status_label(updated.status)}"
+            f"Profilstatus aktualisiert: {updated.display_name} -> {profile_status_label(updated.status, ui_language=self.ui_language)}"
         )
         self.refresh_diagnostics_summary()
 
@@ -1401,11 +1885,15 @@ class MainWindow(QMainWindow):
         archived_count = sum(1 for setting in all_profiles if setting.status == PROFILE_STATUS_ARCHIVED)
         xtts_profile_count = max(0, self.voice_profile_combo.count() - (1 if self.voice_profile_combo.itemData(0) == "" else 0))
         self.profile_runtime_summary.setText(
-            f"{saved_profile_count} freigegebene Produktionsprofile, {tested_count} getestete, "
-            f"{draft_count} Entwürfe, {archived_count} archivierte, {len(self.installed_voice_ids)} Piper-Stimmen und "
-            f"{xtts_profile_count} XTTS-Profile verfügbar."
+            {
+                "de": f"{saved_profile_count} freigegebene Produktionsprofile, {tested_count} getestete, {draft_count} Entwürfe, {archived_count} archivierte, {len(self.installed_voice_ids)} Piper-Stimmen und {xtts_profile_count} XTTS-Profile verfügbar.",
+                "en": f"{saved_profile_count} approved production profiles, {tested_count} tested, {draft_count} drafts, {archived_count} archived, {len(self.installed_voice_ids)} Piper voices and {xtts_profile_count} XTTS profiles available.",
+                "es": f"{saved_profile_count} perfiles de producción aprobados, {tested_count} probados, {draft_count} borradores, {archived_count} archivados, {len(self.installed_voice_ids)} voces Piper y {xtts_profile_count} perfiles XTTS disponibles.",
+                "pt": f"{saved_profile_count} perfis de produção aprovados, {tested_count} testados, {draft_count} rascunhos, {archived_count} arquivados, {len(self.installed_voice_ids)} vozes Piper e {xtts_profile_count} perfis XTTS disponíveis.",
+            }.get(self.ui_language, f"{saved_profile_count} approved production profiles, {tested_count} tested, {draft_count} drafts, {archived_count} archived, {len(self.installed_voice_ids)} Piper voices and {xtts_profile_count} XTTS profiles available.")
         )
         self.profile_runtime_hint.setText(self.xtts_runtime_hint.text() or self.backend_summary.text())
+        self.update_xtts_setup_presentation()
 
     def apply_cuda_first_preference(self) -> None:
         if not self.xtts_backend.is_available():
@@ -1436,9 +1924,13 @@ class MainWindow(QMainWindow):
         self.installed_voice_ids = backend.installed_voices()
         self.voice_language_combo.blockSignals(True)
         self.voice_language_combo.clear()
-        for code, label in language_choices(self.installed_voice_ids):
+        for code, label in language_choices(self.installed_voice_ids, ui_language=self.ui_language):
             self.voice_language_combo.addItem(label, code)
         self.voice_language_combo.blockSignals(False)
+        preferred_language = preferred_content_language_code(self.ui_language)
+        preferred_index = self.voice_language_combo.findData(preferred_language)
+        if preferred_index >= 0:
+            self.voice_language_combo.setCurrentIndex(preferred_index)
         self.rebuild_voice_combo()
         self.refresh_voice_profiles()
         self.refresh_saved_profiles()
@@ -1464,13 +1956,14 @@ class MainWindow(QMainWindow):
         self.voice_combo.clear()
         if visible_voices:
             for voice_id in visible_voices:
-                self.voice_combo.addItem(format_voice_label(voice_id), voice_id)
+                self.voice_combo.addItem(format_voice_label(voice_id, ui_language=self.ui_language), voice_id)
             selected_index = self.voice_combo.findData(selected_voice_id)
             self.voice_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
         else:
             self.voice_combo.addItem(
                 voice_filter_empty_message(
                     language_code,
+                    ui_language=self.ui_language,
                     female_only=self.voice_female_only_checkbox.isChecked(),
                     high_only=self.voice_high_only_checkbox.isChecked(),
                 ),
@@ -1502,6 +1995,7 @@ class MainWindow(QMainWindow):
         self.refresh_selected_voice_profile()
         self.update_backend_summary()
         self.refresh_profile_hub_summary()
+        self.update_xtts_setup_presentation()
 
     def probe_xtts_runtime(self, *, refresh: bool = False) -> dict[str, object] | None:
         if self.xtts_probe_cache is not None and not refresh:
@@ -1532,6 +2026,7 @@ class MainWindow(QMainWindow):
         else:
             self.xtts_runtime_hint.setText(f"XTTS-Probe fehlgeschlagen: {probe.get('error', 'unbekannt')}")
         self.refresh_profile_hub_summary()
+        self.update_xtts_setup_presentation()
         return self.xtts_probe_cache
 
     def refresh_selected_voice_profile(self) -> None:
@@ -1591,30 +2086,90 @@ class MainWindow(QMainWindow):
         profile_count = max(0, self.voice_profile_combo.count() - (1 if self.voice_profile_combo.itemData(0) == "" else 0))
         if self.backend_combo.currentText() == "xtts":
             if not self.xtts_backend.is_available():
-                self.backend_summary.setText(f"XTTS nicht bereit. {self.xtts_backend.availability_reason()}")
+                self.backend_summary.setText(
+                    {
+                        "de": f"XTTS nicht bereit. {self.xtts_backend.availability_reason()}",
+                        "en": f"XTTS not ready. {self.xtts_backend.availability_reason()}",
+                        "es": f"XTTS no está listo. {self.xtts_backend.availability_reason()}",
+                        "pt": f"XTTS não está pronto. {self.xtts_backend.availability_reason()}",
+                    }.get(self.ui_language, f"XTTS not ready. {self.xtts_backend.availability_reason()}")
+                )
+                self.update_xtts_setup_presentation()
                 return
             probe = self.probe_xtts_runtime()
             if probe and probe.get("ok"):
                 actual_device = "CUDA" if probe.get("cuda_available") else "CPU"
                 self.backend_summary.setText(
-                    f"XTTS: {profile_count} Sprecherprofile verfuegbar. "
-                    f"Geraetemodus {self.xtts_device_combo.currentData() or 'auto'}, aktuelle Runtime {actual_device}. "
-                    "Empfohlen: Preset 'Premium Natuerlich' und ein gutes WebUI-/XTTS-Profil."
+                    {
+                        "de": f"XTTS: {profile_count} Sprecherprofile verfügbar. Gerätemodus {self.xtts_device_combo.currentData() or 'auto'}, aktuelle Runtime {actual_device}. Empfohlen: Preset 'Premium Natürlich' und ein gutes XTTS-Profil.",
+                        "en": f"XTTS: {profile_count} speaker profiles available. Device mode {self.xtts_device_combo.currentData() or 'auto'}, current runtime {actual_device}. Recommended: preset 'Premium Natural' and a good XTTS profile.",
+                        "es": f"XTTS: {profile_count} perfiles de voz disponibles. Modo de dispositivo {self.xtts_device_combo.currentData() or 'auto'}, runtime actual {actual_device}. Recomendado: preset 'Premium Natural' y un buen perfil XTTS.",
+                        "pt": f"XTTS: {profile_count} perfis de voz disponíveis. Modo do dispositivo {self.xtts_device_combo.currentData() or 'auto'}, runtime atual {actual_device}. Recomendado: preset 'Premium Natural' e um bom perfil XTTS.",
+                    }.get(self.ui_language, f"XTTS: {profile_count} speaker profiles available. Device mode {self.xtts_device_combo.currentData() or 'auto'}, current runtime {actual_device}. Recommended: preset 'Premium Natural' and a good XTTS profile.")
                 )
                 self.refresh_profile_hub_summary()
+                self.update_xtts_setup_presentation()
                 return
             self.backend_summary.setText(
-                f"XTTS: {profile_count} Sprecherprofile verfuegbar. "
-                "Empfohlen: Preset 'Premium Natuerlich' und ein gutes WebUI-/XTTS-Profil."
+                {
+                    "de": f"XTTS: {profile_count} Sprecherprofile verfügbar. Empfohlen: Preset 'Premium Natürlich' und ein gutes XTTS-Profil.",
+                    "en": f"XTTS: {profile_count} speaker profiles available. Recommended: preset 'Premium Natural' and a good XTTS profile.",
+                    "es": f"XTTS: {profile_count} perfiles de voz disponibles. Recomendado: preset 'Premium Natural' y un buen perfil XTTS.",
+                    "pt": f"XTTS: {profile_count} perfis de voz disponíveis. Recomendado: preset 'Premium Natural' e um bom perfil XTTS.",
+                }.get(self.ui_language, f"XTTS: {profile_count} speaker profiles available. Recommended: preset 'Premium Natural' and a good XTTS profile.")
             )
         else:
             self.backend_summary.setText(
-                f"Piper: {len(self.installed_voice_ids)} Offline-Stimmen verfuegbar. "
-                "Empfohlen fuer schnelle lokale Verarbeitung ohne XTTS-Runtime."
+                {
+                    "de": f"Piper: {len(self.installed_voice_ids)} Offline-Stimmen verfügbar. Empfohlen für schnelle lokale Verarbeitung ohne XTTS-Runtime.",
+                    "en": f"Piper: {len(self.installed_voice_ids)} offline voices available. Recommended for fast local processing without XTTS runtime.",
+                    "es": f"Piper: {len(self.installed_voice_ids)} voces offline disponibles. Recomendado para un procesamiento local rápido sin runtime XTTS.",
+                    "pt": f"Piper: {len(self.installed_voice_ids)} vozes offline disponíveis. Recomendado para processamento local rápido sem runtime XTTS.",
+                }.get(self.ui_language, f"Piper: {len(self.installed_voice_ids)} offline voices available. Recommended for fast local processing without XTTS runtime.")
             )
         self.refresh_profile_hub_summary()
+        self.update_xtts_setup_presentation()
+
+    def update_xtts_setup_presentation(self) -> None:
+        profile_count = max(
+            0,
+            self.voice_profile_combo.count() - (1 if self.voice_profile_combo.itemData(0) == "" else 0),
+        )
+        if self.xtts_backend.is_available():
+            setup_text = (
+                {
+                    "de": f"XTTS ist bereit. {profile_count} Sprecherprofile gefunden. Prüfe jetzt CUDA, lade bei Bedarf Starterprofile oder öffne direkt das XTTS-Profilstudio.",
+                    "en": f"XTTS is ready. {profile_count} speaker profiles found. Check CUDA, install starter profiles if needed, or open the XTTS profile studio.",
+                    "es": f"XTTS está listo. Se encontraron {profile_count} perfiles de voz. Comprueba CUDA, instala perfiles iniciales si hace falta o abre el estudio XTTS.",
+                    "pt": f"XTTS está pronto. {profile_count} perfis de voz encontrados. Verifique o CUDA, instale perfis iniciais se necessário ou abra o estúdio XTTS.",
+                }.get(self.ui_language, f"XTTS is ready. {profile_count} speaker profiles found. Check CUDA, install starter profiles if needed, or open the XTTS profile studio.")
+            )
+            button_text = self._text("XTTS optional einrichten")
+        else:
+            setup_text = (
+                {
+                    "de": f"Piper läuft sofort. XTTS ist optional und wird getrennt eingerichtet. Schnellstart: {xtts_launcher_hint()}. {xtts_license_hint()}",
+                    "en": f"Piper works immediately. XTTS is optional and set up separately. Quick start: {xtts_launcher_hint()}. {xtts_license_hint()}",
+                    "es": f"Piper funciona de inmediato. XTTS es opcional y se configura por separado. Inicio rápido: {xtts_launcher_hint()}. {xtts_license_hint()}",
+                    "pt": f"O Piper funciona imediatamente. O XTTS é opcional e configurado separadamente. Início rápido: {xtts_launcher_hint()}. {xtts_license_hint()}",
+                }.get(self.ui_language, f"Piper works immediately. XTTS is optional and set up separately. Quick start: {xtts_launcher_hint()}. {xtts_license_hint()}")
+            )
+            button_text = self._text("XTTS jetzt einrichten")
+        self.xtts_setup_summary_label.setText(setup_text)
+        self.xtts_setup_button.setText(button_text)
+        self.diagnostics_xtts_setup_button.setText(button_text)
+
+    def open_xtts_setup_dialog(self) -> None:
+        dialog = XttsSetupDialog(self.paths, self, ui_language=self.ui_language)
+        dialog.exec()
+        self.xtts_probe_cache = None
+        self.refresh_voice_profiles()
+        self.refresh_diagnostics_summary()
 
     def apply_default_controls(self) -> None:
+        language_index = self.ui_language_combo.findData(self.app_settings.ui_language)
+        if language_index >= 0:
+            self.ui_language_combo.setCurrentIndex(language_index)
         preset_index = self.preset_combo.findData(self.app_settings.default_preset_id)
         if preset_index >= 0:
             self.preset_combo.setCurrentIndex(preset_index)
@@ -1628,21 +2183,107 @@ class MainWindow(QMainWindow):
         device_index = self.xtts_device_combo.findData(self.app_settings.xtts_device_mode)
         if device_index >= 0:
             self.xtts_device_combo.setCurrentIndex(device_index)
+        processing_mode_index = self.xtts_processing_mode_combo.findData(self.app_settings.xtts_processing_mode)
+        if processing_mode_index >= 0:
+            self.xtts_processing_mode_combo.setCurrentIndex(processing_mode_index)
         self.update_output_mode_controls()
         self.apply_job_output_mode_availability(preferred_mode=self.app_settings.default_output_mode or "single_file")
         self.refresh_source_analysis()
 
+    def on_ui_language_changed(self) -> None:
+        selected = self.ui_language_combo.currentData() or "auto"
+        if selected == self.app_settings.ui_language:
+            return
+        self.app_settings.ui_language = selected
+        save_app_settings(self.paths.app_settings_file, self.app_settings)
+        self.status_label.setText(self._tr("status.language_changed"))
+        QMessageBox.information(
+            self,
+            self._tr("dialog.language_changed.title"),
+            self._tr("dialog.language_changed.body"),
+        )
+
     def _output_mode_label(self, output_mode: str, target_part_minutes: int) -> str:
-        return {
-            "single_file": "eine grosse Enddatei",
-            "chapter_files": "eine Enddatei pro Kapitel",
-            "timed_parts": f"Enddateien etwa alle {target_part_minutes} Minuten",
-            "segments": "nur Segmentdateien",
-        }.get(output_mode, output_mode)
+        labels = {
+            "de": {
+                "single_file": "eine große Enddatei",
+                "chapter_files": "eine Enddatei pro Kapitel",
+                "timed_parts": f"Enddateien etwa alle {target_part_minutes} Minuten",
+                "segments": "nur Segmentdateien",
+            },
+            "en": {
+                "single_file": "one final file",
+                "chapter_files": "one final file per chapter",
+                "timed_parts": f"final files every ~{target_part_minutes} minutes",
+                "segments": "segment files only",
+            },
+            "es": {
+                "single_file": "un archivo final",
+                "chapter_files": "un archivo final por capítulo",
+                "timed_parts": f"archivos finales cada ~{target_part_minutes} minutos",
+                "segments": "solo archivos de segmentos",
+            },
+            "pt": {
+                "single_file": "um arquivo final",
+                "chapter_files": "um arquivo final por capítulo",
+                "timed_parts": f"arquivos finais a cada ~{target_part_minutes} minutos",
+                "segments": "apenas arquivos de segmentos",
+            },
+        }
+        return labels.get(self.ui_language, labels["en"]).get(output_mode, output_mode)
 
     def update_output_mode_controls(self) -> None:
         output_mode = self.output_mode_combo.currentData() or "single_file"
         self.target_part_minutes_spin.setEnabled(output_mode == "timed_parts")
+
+    def _eta_short_label(self, seconds: float) -> str:
+        if seconds <= 0:
+            return self._tr("queue.eta.learning")
+        return f"ETA {self._format_duration_hm(seconds)}"
+
+    def _format_duration_hm(self, seconds: float) -> str:
+        total_seconds = int(round(max(0.0, seconds)))
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        if hours <= 0:
+            return {
+                "de": f"{minutes} min",
+                "en": f"{minutes} min",
+                "es": f"{minutes} min",
+                "pt": f"{minutes} min",
+            }.get(self.ui_language, f"{minutes} min")
+        return {
+            "de": f"{hours} h {minutes:02d} min",
+            "en": f"{hours} h {minutes:02d} min",
+            "es": f"{hours} h {minutes:02d} min",
+            "pt": f"{hours} h {minutes:02d} min",
+        }.get(self.ui_language, f"{hours} h {minutes:02d} min")
+
+    def _queue_eta_overview_text(self, jobs: list[JobState]) -> str:
+        queued_jobs = [job for job in jobs if job.status in {"queued", "prepared", "running"}]
+        if not queued_jobs:
+            return {
+                "de": "Keine aktiven oder wartenden Aufträge. Noch keine Restzeit in der Queue.",
+                "en": "No active or queued jobs. No remaining queue time yet.",
+                "es": "No hay trabajos activos o en cola. Aún no hay tiempo restante para la cola.",
+                "pt": "Não há tarefas ativas ou na fila. Ainda não há tempo restante da fila.",
+            }.get(self.ui_language, "No active or queued jobs. No remaining queue time yet.")
+        known_jobs = [job for job in queued_jobs if job.estimated_remaining_seconds > 0]
+        total_seconds = sum(max(0.0, job.estimated_remaining_seconds) for job in known_jobs)
+        if not known_jobs:
+            return {
+                "de": f"{len(queued_jobs)} aktive oder wartende Aufträge. Die erste Gesamtprognose erscheint, sobald die ersten echten Laufzeitdaten vorliegen.",
+                "en": f"{len(queued_jobs)} active or queued jobs. The first overall estimate appears as soon as the first real runtime data is available.",
+                "es": f"{len(queued_jobs)} trabajos activos o en cola. La primera estimación global aparecerá en cuanto exista el primer dato real de ejecución.",
+                "pt": f"{len(queued_jobs)} tarefas ativas ou na fila. A primeira estimativa geral aparecerá assim que existirem os primeiros dados reais de execução.",
+            }.get(self.ui_language, f"{len(queued_jobs)} active or queued jobs. The first overall estimate appears as soon as the first real runtime data is available.")
+        total_text = self._format_duration_hm(total_seconds)
+        return {
+            "de": f"{len(queued_jobs)} aktive oder wartende Aufträge | Gesamt-Restzeit ca. {total_text} | belastbare ETA für {len(known_jobs)}/{len(queued_jobs)} Jobs",
+            "en": f"{len(queued_jobs)} active or queued jobs | total remaining time approx. {total_text} | reliable ETA for {len(known_jobs)}/{len(queued_jobs)} jobs",
+            "es": f"{len(queued_jobs)} trabajos activos o en cola | tiempo restante total aprox. {total_text} | ETA fiable para {len(known_jobs)}/{len(queued_jobs)} trabajos",
+            "pt": f"{len(queued_jobs)} tarefas ativas ou na fila | tempo restante total aprox. {total_text} | ETA confiável para {len(known_jobs)}/{len(queued_jobs)} tarefas",
+        }.get(self.ui_language, f"{len(queued_jobs)} active or queued jobs | total remaining time approx. {total_text} | reliable ETA for {len(known_jobs)}/{len(queued_jobs)} jobs")
 
     def refresh_jobs(self) -> None:
         self.jobs_list.clear()
@@ -1650,17 +2291,32 @@ class MainWindow(QMainWindow):
         self.logger.info("Refreshing jobs list with %s jobs", len(jobs))
         queue_lines = []
         for job in jobs:
+            eta_label = self._eta_short_label(job.estimated_remaining_seconds or job.estimated_total_seconds)
             label = (
-                f"P{job.priority:02d} | {job.title} [{job.status}] "
-                f"{job.completed_chunks}/{job.total_chunks}"
+                f"{job.title}\n"
+                f"P{job.priority:02d} | {job.status} | {job.completed_chunks}/{job.total_chunks} Chunks | {eta_label}"
             )
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, job.job_id)
+            item.setToolTip(
+                "\n".join(
+                    [
+                        f"Status: {job.status}",
+                        f"Profil: {job.saved_profile_name or '-'}",
+                        f"Backend: {job.backend}",
+                        f"Verarbeitung: {job.processing_mode} auf {job.device_mode}",
+                        f"Schätzung gesamt: {self._format_duration_hm(job.estimated_total_seconds)}",
+                        f"Restzeit: {self._format_duration_hm(job.estimated_remaining_seconds)}",
+                        f"Datenbasis: {job.estimated_from_samples} Lauf/Läufe ({job.estimated_confidence})",
+                    ]
+                )
+            )
             self.jobs_list.addItem(item)
             queue_lines.append(
                 f"P{job.priority:02d} | {job.status:9s} | {job.title} | preset={job.preset_id} | "
                 f"output={job.output_mode} | ziel={job.target_part_minutes}m | "
-                f"profil={job.saved_profile_name or '-'} | voice={job.voice_id or job.voice_profile_id}"
+                f"profil={job.saved_profile_name or '-'} | voice={job.voice_id or job.voice_profile_id} | "
+                f"mode={job.processing_mode} | eta={self._format_duration_hm(job.estimated_remaining_seconds)}"
                 + (f" | block={job.block_reason}" if job.block_reason else "")
             )
         self.queue_details.setPlainText("\n".join(queue_lines) or "Keine Jobs in der Queue.")
@@ -1675,8 +2331,102 @@ class MainWindow(QMainWindow):
         self.preview_sessions_summary.setPlainText(
             "\n".join(preview_lines) or "Keine gespeicherten Profilstudio-Sessions vorhanden."
         )
+        queued_jobs = [job for job in jobs if job.status in {"queued", "prepared", "running"}]
+        queued_eta_seconds = sum(max(0.0, job.estimated_remaining_seconds) for job in queued_jobs)
+        processing_modes: dict[str, int] = {}
+        for job in queued_jobs:
+            processing_modes[job.processing_mode] = processing_modes.get(job.processing_mode, 0) + 1
+        if queued_jobs:
+            queued_eta_text = self._format_duration_hm(queued_eta_seconds)
+            self.queue_runtime_summary.setText(
+                {
+                    "de": f"{len(queued_jobs)} aktive oder wartende Aufträge | kumulierte Restzeit ca. {queued_eta_text} | Modi {processing_modes}",
+                    "en": f"{len(queued_jobs)} active or queued jobs | combined remaining time approx. {queued_eta_text} | modes {processing_modes}",
+                    "es": f"{len(queued_jobs)} trabajos activos o en cola | tiempo restante combinado aprox. {queued_eta_text} | modos {processing_modes}",
+                    "pt": f"{len(queued_jobs)} tarefas ativas ou na fila | tempo restante combinado aprox. {queued_eta_text} | modos {processing_modes}",
+                }.get(self.ui_language, f"{len(queued_jobs)} active or queued jobs | combined remaining time approx. {queued_eta_text} | modes {processing_modes}")
+            )
+        else:
+            self.queue_runtime_summary.setText(
+                {
+                    "de": "Keine aktiven oder wartenden Aufträge. Noch keine Restzeit in der Queue.",
+                    "en": "No active or queued jobs. No remaining queue time yet.",
+                    "es": "No hay trabajos activos o en cola. Aún no hay tiempo restante de cola.",
+                    "pt": "Não há tarefas ativas ou na fila. Ainda não existe tempo restante da fila.",
+                }.get(self.ui_language, "No active or queued jobs. No remaining queue time yet.")
+            )
+        self.queue_eta_header.setText(self._queue_eta_overview_text(jobs))
+        self.refresh_finished_books_list(jobs)
         self.refresh_diagnostics_summary()
         self.update_idle_status_from_queue(jobs)
+
+    def refresh_finished_books_list(self, jobs: list[JobState]) -> None:
+        self.finished_books_list.clear()
+        completed_jobs = [job for job in jobs if job.status == "completed" and job.final_output_files]
+        for job in completed_jobs:
+            author = job.audiobook_metadata.author or "-"
+            duration = f"{job.actual_total_seconds/60:.1f} min" if job.actual_total_seconds > 0 else self._eta_short_label(job.estimated_total_seconds)
+            file_word = {
+                "de": "Datei(en)",
+                "en": "file(s)",
+                "es": "archivo(s)",
+                "pt": "arquivo(s)",
+            }.get(self.ui_language, "file(s)")
+            item = QListWidgetItem(f"{job.audiobook_metadata.title} | {author} | {len(job.final_output_files)} {file_word} | {duration}")
+            item.setData(Qt.UserRole, job.job_id)
+            item.setToolTip(
+                "\n".join(
+                    [
+                        f"{self._text('Titel')}: {job.audiobook_metadata.title}",
+                        f"{self._text('Autor')}: {job.audiobook_metadata.author or '-'}",
+                        f"{self._text('Sprecher')}: {job.audiobook_metadata.narrator or '-'}",
+                        f"{self._text('Ausgabe')}: {self._job_output_dir(job)}",
+                    ]
+                )
+            )
+            self.finished_books_list.addItem(item)
+
+    def _selected_finished_job(self) -> JobState | None:
+        item = self.finished_books_list.currentItem()
+        if item is None:
+            return None
+        job_id = item.data(Qt.UserRole)
+        if not job_id:
+            return None
+        return self.manager.load_state(job_id)
+
+    def open_selected_finished_audio(self) -> None:
+        job = self._selected_finished_job()
+        if not job or not job.final_output_files:
+            return
+        self.open_path(Path(job.final_output_files[0]))
+
+    def open_selected_finished_folder(self) -> None:
+        job = self._selected_finished_job()
+        if not job:
+            return
+        self.open_path(self._job_output_dir(job))
+
+    def delete_selected_finished_job(self) -> None:
+        job = self._selected_finished_job()
+        if not job:
+            return
+        answer = QMessageBox.question(
+            self,
+            self._text("Loeschen"),
+            {
+                "de": f"Soll das fertige Hörbuchprojekt '{job.audiobook_metadata.title}' inklusive Arbeitsordner wirklich gelöscht werden?",
+                "en": f"Do you really want to delete the finished audiobook project '{job.audiobook_metadata.title}' including its working folder?",
+                "es": f"¿De verdad quieres eliminar el proyecto de audiolibro terminado '{job.audiobook_metadata.title}' junto con su carpeta de trabajo?",
+                "pt": f"Tem certeza de que deseja excluir o projeto de audiolivro concluído '{job.audiobook_metadata.title}' junto com a pasta de trabalho?",
+            }.get(self.ui_language, f"Do you really want to delete the finished audiobook project '{job.audiobook_metadata.title}' including its working folder?"),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if self.current_job_id == job.job_id:
+            self.current_job_id = None
+        self.manager.delete_job(job.job_id)
+        self.refresh_jobs()
 
     def on_preset_changed(self) -> None:
         preset_id = self.preset_combo.currentData()
@@ -1699,38 +2449,66 @@ class MainWindow(QMainWindow):
                 f"Enddateien: {output_label}."
             )
 
-    def select_source_file(self) -> None:
-        filename, _ = QFileDialog.getOpenFileName(
+    def select_source_files(self) -> None:
+        dialog_title = {
+            "de": "Quelldateien auswählen",
+            "en": "Choose source files",
+            "es": "Elegir archivos fuente",
+            "pt": "Escolher arquivos de origem",
+        }.get(self.ui_language, "Choose source files")
+        file_filter = {
+            "de": "Unterstützte Quellen (*.txt *.pdf *.epub);;Textdateien (*.txt);;PDF-Dateien (*.pdf);;EPUB-Dateien (*.epub);;Alle Dateien (*)",
+            "en": "Supported sources (*.txt *.pdf *.epub);;Text files (*.txt);;PDF files (*.pdf);;EPUB files (*.epub);;All files (*)",
+            "es": "Fuentes compatibles (*.txt *.pdf *.epub);;Archivos de texto (*.txt);;Archivos PDF (*.pdf);;Archivos EPUB (*.epub);;Todos los archivos (*)",
+            "pt": "Fontes compatíveis (*.txt *.pdf *.epub);;Arquivos de texto (*.txt);;Arquivos PDF (*.pdf);;Arquivos EPUB (*.epub);;Todos os arquivos (*)",
+        }.get(self.ui_language, "Supported sources (*.txt *.pdf *.epub);;Text files (*.txt);;PDF files (*.pdf);;EPUB files (*.epub);;All files (*)")
+        filenames, _ = QFileDialog.getOpenFileNames(
             self,
-            "Buchdatei wählen",
+            dialog_title,
             str(self.paths.root),
-            "Bücher (*.txt *.pdf *.epub)",
+            file_filter,
         )
-        if filename:
-            self.source_edit.setText(filename)
-            self.logger.info("Selected source file %s", filename)
+        if filenames:
+            self.set_selected_source_files([Path(filename) for filename in filenames])
+            self.logger.info("Selected source files %s", filenames)
 
     def create_job(self) -> None:
-        source = Path(self.source_edit.text().strip())
-        if not source.exists():
-            QMessageBox.warning(self, "Buch fehlt", "Bitte eine vorhandene TXT-, PDF- oder EPUB-Datei wählen.")
+        if not self.selected_source_files:
+            QMessageBox.warning(
+                self,
+                self._text("Quelle fehlt"),
+                {
+                    "de": "Bitte mindestens eine vorhandene TXT-, PDF- oder EPUB-Datei wählen.",
+                    "en": "Please choose at least one existing TXT, PDF, or EPUB file.",
+                    "es": "Elige al menos un archivo TXT, PDF o EPUB existente.",
+                    "pt": "Escolha pelo menos um arquivo TXT, PDF ou EPUB existente.",
+                }.get(self.ui_language, "Please choose at least one existing TXT, PDF, or EPUB file."),
+            )
             return
         setting_id = self.saved_profile_combo.currentData() or ""
         if not setting_id:
             QMessageBox.warning(
                 self,
-                "Kein Produktionsprofil",
-                "Im Auftragsdialog kann nur mit einem freigegebenen Produktionsprofil gearbeitet werden. "
-                "Bitte öffne zuerst die Profilbibliothek und gib dort ein getestetes Profil frei.",
+                self._text("Kein Produktionsprofil"),
+                {
+                    "de": "Im Auftragsdialog kann nur mit einem freigegebenen Produktionsprofil gearbeitet werden. Bitte öffne zuerst die Profilbibliothek und gib dort ein getestetes Profil frei.",
+                    "en": "The job creator only works with approved production profiles. Please open the profile library first and approve a tested profile there.",
+                    "es": "El creador de trabajos solo funciona con perfiles de producción aprobados. Primero abre la biblioteca de perfiles y aprueba allí un perfil probado.",
+                    "pt": "O criador de tarefas só funciona com perfis de produção aprovados. Primeiro abra a biblioteca de perfis e aprove lá um perfil testado.",
+                }.get(self.ui_language, "The job creator only works with approved production profiles. Please open the profile library first and approve a tested profile there."),
             )
             return
         setting = load_voice_setting(self.paths.voice_settings, setting_id)
         if setting.status != PROFILE_STATUS_APPROVED:
             QMessageBox.warning(
                 self,
-                "Profil nicht freigegeben",
-                "Dieses Produktionsprofil ist noch nicht freigegeben. "
-                "Bitte gib es zuerst in der Profilbibliothek frei.",
+                self._text("Profil nicht freigegeben"),
+                {
+                    "de": "Dieses Produktionsprofil ist noch nicht freigegeben. Bitte gib es zuerst in der Profilbibliothek frei.",
+                    "en": "This production profile is not approved yet. Please approve it first in the profile library.",
+                    "es": "Este perfil de producción todavía no está aprobado. Apruébalo primero en la biblioteca de perfiles.",
+                    "pt": "Este perfil de produção ainda não está aprovado. Aprove-o primeiro na biblioteca de perfis.",
+                }.get(self.ui_language, "This production profile is not approved yet. Please approve it first in the profile library."),
             )
             return
         backend = setting.backend.strip().lower()
@@ -1739,10 +2517,10 @@ class MainWindow(QMainWindow):
         if backend == "xtts" and not self.xtts_backend.is_available():
             QMessageBox.warning(self, "XTTS runtime fehlt", self.xtts_backend.availability_reason())
             return
-        job = self.manager.create_job(
-            source_path=source,
+        jobs = self.service.create_jobs(
+            source_paths=self.selected_source_files,
             saved_profile_id=setting.setting_id,
-            saved_profile_name=setting.display_name,
+            backend=backend,
             voice_id=voice_id,
             voice_profile_id=voice_profile_id,
             preset_id=setting.preset_hint,
@@ -1753,13 +2531,32 @@ class MainWindow(QMainWindow):
             keep_wav=False,
             sentence_silence=setting.sentence_silence,
             length_scale=setting.length_scale,
-            backend=backend,
+            audiobook_metadata=self._metadata_payload_for_source(self.selected_source_files[0]),
         )
-        self.current_job_id = job.job_id
-        self.logger.info("Created job %s", job.job_id)
+        if not jobs:
+            QMessageBox.warning(
+                self,
+                self._text("Keine Jobs erzeugt"),
+                {
+                    "de": "Aus der Auswahl konnten keine Aufträge erstellt werden.",
+                    "en": "No jobs could be created from the current selection.",
+                    "es": "No se pudieron crear trabajos a partir de la selección actual.",
+                    "pt": "Nenhuma tarefa pôde ser criada a partir da seleção atual.",
+                }.get(self.ui_language, "No jobs could be created from the current selection."),
+            )
+            return
+        self.current_job_id = str(jobs[0]["job_id"])
+        self.logger.info("Created %s job(s) from selected sources", len(jobs))
         self.refresh_jobs()
-        self.show_job(job)
-        self.status_label.setText(f"Auftrag aus Produktionsprofil erstellt: {setting.display_name}")
+        self.show_job(self.manager.load_state(self.current_job_id))
+        self.status_label.setText(
+            {
+                "de": f"{len(jobs)} Auftrag/Aufträge aus Produktionsprofil erstellt: {setting.display_name}",
+                "en": f"{len(jobs)} job(s) created from production profile: {setting.display_name}",
+                "es": f"Se crearon {len(jobs)} trabajo(s) desde el perfil de producción: {setting.display_name}",
+                "pt": f"Foram criadas {len(jobs)} tarefa(s) a partir do perfil de produção: {setting.display_name}",
+            }.get(self.ui_language, f"{len(jobs)} job(s) created from production profile: {setting.display_name}")
+        )
 
     def on_job_selected(self) -> None:
         item = self.jobs_list.currentItem()
@@ -1781,6 +2578,7 @@ class MainWindow(QMainWindow):
             int((job.completed_chunks / job.total_chunks) * 100) if job.total_chunks else 0
         )
         self.job_summary.setPlainText(self.build_job_summary(job))
+        self.job_runtime_summary.setText(self._job_runtime_summary_text(job))
         self.populate_job_detail_lists(job)
         self.refresh_job_selection_details()
         self.details.setPlainText("\n".join(job.logs[-200:]))
@@ -1809,18 +2607,43 @@ class MainWindow(QMainWindow):
             self.saved_profile_combo.setCurrentIndex(profile_index)
         self.target_part_minutes_spin.setValue(job.target_part_minutes)
         self.keep_wav_checkbox.setChecked(job.keep_wav)
+        self.update_job_transport_buttons(job)
         self.update_output_mode_controls()
         self.refresh_diagnostics_summary()
         self.logger.debug("Displayed job %s with status %s", job.job_id, job.status)
+
+    def update_job_transport_buttons(self, job: JobState | None) -> None:
+        has_job = job is not None
+        is_running = bool(self.worker and self.worker.isRunning() and job and job.job_id == self.current_job_id)
+        can_resume = bool(job and job.status in {"queued", "prepared", "stopped", "failed", "completed", "blocked"})
+        self.play_job_button.setEnabled(has_job and can_resume)
+        self.pause_job_button.setEnabled(is_running)
+        self.stop_job_button.setEnabled(is_running)
 
     def start_selected_job(self) -> None:
         if not self.current_job_id:
             QMessageBox.warning(self, "Kein Auftrag", "Bitte zuerst einen Auftrag erstellen oder auswählen.")
             return
+        self.pause_requested_job_id = None
         self.manager.enqueue_job(self.current_job_id)
         self.logger.info("Start/resume requested for job %s", self.current_job_id)
         self.refresh_jobs()
         self.maybe_start_next_job()
+
+    def pause_selected_job(self) -> None:
+        if not self.current_job_id or not self.worker or not self.worker.isRunning():
+            return
+        self.pause_requested_job_id = self.current_job_id
+        self.worker.request_stop()
+        self.status_label.setText(
+            {
+                "de": "Pause angefordert. Der Auftrag stoppt nach dem aktuellen Chunk/Batch und bleibt danach in der Queue.",
+                "en": "Pause requested. The job will stop after the current chunk/batch and then stay in the queue.",
+                "es": "Pausa solicitada. El trabajo se detendrá después del fragmento/lote actual y permanecerá en la cola.",
+                "pt": "Pausa solicitada. A tarefa será interrompida após o bloco/lote atual e permanecerá na fila.",
+            }.get(self.ui_language, "Pause requested. The job will stop after the current chunk/batch and then stay in the queue.")
+        )
+        self.logger.warning("Pause requested for current running job %s", self.current_job_id)
 
     def queue_selected_job(self) -> None:
         if not self.current_job_id:
@@ -1891,6 +2714,18 @@ class MainWindow(QMainWindow):
         )
         self.refresh_diagnostics_summary()
 
+    def on_xtts_processing_mode_changed(self) -> None:
+        processing_mode = self.xtts_processing_mode_combo.currentData() or "auto"
+        self.app_settings.xtts_processing_mode = processing_mode
+        save_app_settings(self.paths.app_settings_file, self.app_settings)
+        mode_labels = {
+            "auto": "XTTS-Verarbeitung lernt jetzt automatisch aus vergangenen Läufen.",
+            "serial": "XTTS-Verarbeitung wurde auf seriell festgesetzt.",
+            "parallel_cpu_postprocess": "XTTS-Verarbeitung bevorzugt jetzt parallelen CPU-Postprozess.",
+        }
+        self.status_label.setText(mode_labels.get(processing_mode, "XTTS-Verarbeitungsmodus aktualisiert."))
+        self.refresh_diagnostics_summary()
+
     def on_xtts_device_mode_changed(self) -> None:
         device_mode = self.xtts_device_combo.currentData() or "auto"
         self.app_settings.xtts_device_mode = device_mode
@@ -1943,10 +2778,15 @@ class MainWindow(QMainWindow):
         self.manager = JobManager(self.paths)
         self.service = Book2Mp3Service(self.paths)
         self.current_job_id = None
+        self.selected_source_files = []
+        self.source_structures = {}
         self.xtts_backend.set_device_mode(self.app_settings.xtts_device_mode)
         self.xtts_probe_cache = None
         self.debug_logging_checkbox.setChecked(self.app_settings.debug_logging)
-        self.source_edit.clear()
+        processing_mode_index = self.xtts_processing_mode_combo.findData(self.app_settings.xtts_processing_mode)
+        if processing_mode_index >= 0:
+            self.xtts_processing_mode_combo.setCurrentIndex(processing_mode_index)
+        self.clear_selected_source_files()
         self.apply_default_controls()
         self.job_summary.clear()
         self.job_stage_list.clear()
@@ -1963,7 +2803,7 @@ class MainWindow(QMainWindow):
         self.refresh_diagnostics_summary()
 
     def open_voice_lab(self) -> None:
-        dialog = VoiceLabDialog(self.paths, self)
+        dialog = VoiceLabDialog(self.paths, self, ui_language=self.ui_language)
         dialog.exec()
         self.refresh_voice_profiles()
         self.refresh_diagnostics_summary()
@@ -2076,7 +2916,7 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(profile_dir)))
 
     def open_find_best_setting(self, focus_assistant: bool = False) -> None:
-        dialog = FindBestSettingDialog(self.paths, self.manager, self, focus_assistant=focus_assistant)
+        dialog = FindBestSettingDialog(self.paths, self.manager, self, focus_assistant=focus_assistant, ui_language=self.ui_language)
         dialog.exec()
         self.refresh_saved_profiles()
         self.refresh_jobs()
@@ -2108,6 +2948,7 @@ class MainWindow(QMainWindow):
 
     def stop_current_job(self) -> None:
         if self.worker and self.worker.isRunning():
+            self.pause_requested_job_id = None
             self.worker.request_stop()
             self.status_label.setText("Stop requested")
             self.logger.warning("Stop requested for current running job")
@@ -2119,22 +2960,31 @@ class MainWindow(QMainWindow):
         queued_count = sum(1 for job in known_jobs if job.status in {"queued", "prepared"})
         blocked_count = sum(1 for job in known_jobs if job.status == "blocked")
         if queued_count:
-            self.status_label.setText(
-                f"Bereit. {queued_count} Auftrag/Aufträge warten in der Queue und starten erst nach einem manuellen Start."
-            )
+            self.status_label.setText(self._tr("status.ready.queue", count=queued_count))
         elif blocked_count:
-            self.status_label.setText(
-                f"Bereit. {blocked_count} Auftrag/Aufträge sind blockiert und warten auf fehlende Runtime oder Profile."
-            )
+            self.status_label.setText(self._tr("status.ready.blocked", count=blocked_count))
         elif not self.current_job_id:
-            self.status_label.setText("Bereit. Noch kein Auftrag läuft.")
+            self.status_label.setText(self._tr("status.ready.no_job"))
 
     def on_progress_changed(self, current: int, total: int, message: str) -> None:
         self.progress_bar.setValue(int((current / total) * 100) if total else 0)
-        self.status_label.setText(message)
+        eta_text = ""
+        if self.current_job_id:
+            try:
+                state = self.manager.load_state(self.current_job_id)
+            except FileNotFoundError:
+                state = None
+            if state and state.estimated_remaining_seconds > 0:
+                eta_text = f" | Rest ca. {state.estimated_remaining_seconds/60:.1f} min"
+        self.status_label.setText(f"{message}{eta_text}")
         self.logger.debug("Progress update: %s/%s %s", current, total, message)
 
     def on_job_finished(self, state: JobState) -> None:
+        skip_autostart = False
+        if self.pause_requested_job_id and state.job_id == self.pause_requested_job_id and state.status == "stopped":
+            state = self.manager.enqueue_job(state.job_id)
+            skip_autostart = True
+            self.pause_requested_job_id = None
         update_preview_job_status(
             self.paths,
             state.job_id,
@@ -2144,7 +2994,8 @@ class MainWindow(QMainWindow):
         self.refresh_jobs()
         self.show_job(state)
         self.logger.info("Job finished callback for %s with status %s", state.job_id, state.status)
-        self.maybe_start_next_job()
+        if not skip_autostart:
+            self.maybe_start_next_job()
 
     def on_job_failed(self, message: str) -> None:
         if self.current_job_id:

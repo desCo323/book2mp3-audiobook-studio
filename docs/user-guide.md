@@ -27,6 +27,19 @@ For the final portable release:
 
 That release is intended to include Python inside the application folder.
 
+Portable default:
+
+- `Piper` works immediately
+- `XTTS` remains optional
+- the job list shows an estimated duration per job as soon as first runtime data exists
+- the queue header shows the approximate combined remaining duration of all active or queued jobs
+
+Optional XTTS setup:
+
+- Linux: `./start.sh --install-xtts`
+- Windows: `start.bat --install-xtts`
+- or directly in the app via `XTTS-Profile` / `Diagnose`
+
 For the current source repository state, the development bootstrap is still:
 
 Install the runtime and starter voices:
@@ -140,6 +153,17 @@ The queue is persistent.
 - they are processed one after another
 - after a restart, interrupted running jobs go back to the queue
 - completed chunks are not regenerated on resume
+- the queue now shows an approximate remaining duration once enough timing data exists
+
+## Runtime Estimates
+
+`book2mp3` learns from real finished jobs.
+
+- after the first completed book, the app can already produce a first rough estimate
+- with more books, estimates get more specific for backend, profile, device mode and processing mode
+- the job list shows an ETA per job
+- the queue header shows the combined likely remaining time of the active queue
+- while a job is running, the estimate is updated from real progress
 
 ## CLI And Local API
 
@@ -228,9 +252,9 @@ python scripts/smoke_queue_resume.py
 ## Current Limits
 
 - the optional XTTS path needs its own dedicated runtime setup
-- Windows XTTS packaging is not yet validated end-to-end
+- Windows XTTS packaging is prepared, but still not fully real-validated end-to-end
 - chapter-aware export is not finished yet
-- packaged desktop builds are not finished yet
+- packaged desktop builds are available as portable builds, but XTTS stays optional
 - the repo source tree is not yet the final bundled release folder
 
 ## Status Rule

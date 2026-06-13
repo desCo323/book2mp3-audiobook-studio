@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from book2mp3.config import AppPaths
 from book2mp3.app_settings import load_app_settings, save_app_settings
+from book2mp3.i18n import apply_text, preferred_content_language_code, resolve_ui_language, translate_widget_tree
 from book2mp3.pipeline.audio import concat_mp3_files, wav_to_mp3
 from book2mp3.pipeline.chunking import split_text
 from book2mp3.pipeline.extract import DocumentStructure, analyze_document_structure
@@ -125,20 +126,59 @@ def _compact_xtts_preview_text(text: str, max_chars: int) -> str:
     return shortened
 
 
-def _assistant_language_label(code: str) -> str:
-    mapping = {
-        "de": "Deutsch",
-        "de_de": "Deutsch",
-        "en": "Englisch",
-        "en_us": "Englisch (US)",
-        "en_gb": "Englisch (UK)",
-        "fr": "Franzoesisch",
-        "it": "Italienisch",
-        "es": "Spanisch",
-        "sv": "Schwedisch",
+def _assistant_language_label(code: str, ui_language: str = "en") -> str:
+    mappings = {
+        "de": {
+            "de": "Deutsch",
+            "de_de": "Deutsch",
+            "en": "Englisch",
+            "en_us": "Englisch (US)",
+            "en_gb": "Englisch (UK)",
+            "fr": "Französisch",
+            "it": "Italienisch",
+            "es": "Spanisch",
+            "pt": "Portugiesisch",
+            "sv": "Schwedisch",
+        },
+        "en": {
+            "de": "German",
+            "de_de": "German",
+            "en": "English",
+            "en_us": "English (US)",
+            "en_gb": "English (UK)",
+            "fr": "French",
+            "it": "Italian",
+            "es": "Spanish",
+            "pt": "Portuguese",
+            "sv": "Swedish",
+        },
+        "es": {
+            "de": "Alemán",
+            "de_de": "Alemán",
+            "en": "Inglés",
+            "en_us": "Inglés (US)",
+            "en_gb": "Inglés (UK)",
+            "fr": "Francés",
+            "it": "Italiano",
+            "es": "Español",
+            "pt": "Portugués",
+            "sv": "Sueco",
+        },
+        "pt": {
+            "de": "Alemão",
+            "de_de": "Alemão",
+            "en": "Inglês",
+            "en_us": "Inglês (US)",
+            "en_gb": "Inglês (UK)",
+            "fr": "Francês",
+            "it": "Italiano",
+            "es": "Espanhol",
+            "pt": "Português",
+            "sv": "Sueco",
+        },
     }
     normalized = code.lower()
-    return mapping.get(normalized, code)
+    return mappings.get(ui_language, mappings["en"]).get(normalized, code)
 
 
 class LivePreviewWorker(QThread):
@@ -299,11 +339,13 @@ class FindBestSettingDialog(QDialog):
         parent: QWidget | None = None,
         *,
         focus_assistant: bool = False,
+        ui_language: str | None = None,
     ) -> None:
         super().__init__(parent)
         self.paths = paths
         self.logger = get_logger("find_best_setting")
         self.app_settings = load_app_settings(paths.app_settings_file)
+        self.ui_language = resolve_ui_language(ui_language or self.app_settings.ui_language)
         self.focus_assistant = focus_assistant
         self.current_source: Path | None = None
         self.current_session_id: str | None = None
@@ -336,10 +378,12 @@ class FindBestSettingDialog(QDialog):
         if app is not None:
             app.aboutToQuit.connect(self.handle_about_to_quit)
 
-        self.setWindowTitle("Profilstudio & Hörproben")
-        self.resize(1100, 820)
+        self.setWindowTitle(apply_text("Profilstudio & Hörproben", self.ui_language))
+        self.resize(1160, 740)
+        self.setMinimumSize(1060, 680)
         self._build_ui()
         apply_modern_window_style(self)
+        translate_widget_tree(self, self.ui_language)
         self.refresh_voice_list()
         self.refresh_voice_profiles()
         self.apply_cuda_first_preference()
@@ -351,6 +395,9 @@ class FindBestSettingDialog(QDialog):
                 self.test_mode_combo.setCurrentIndex(assistant_mode_index)
             self.studio_tabs.setCurrentWidget(self.test_page)
             self.test_assistant_button.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _text(self, text: str) -> str:
+        return apply_text(text, self.ui_language)
 
     def _build_ui(self) -> None:
         outer_layout = QVBoxLayout(self)
@@ -415,7 +462,7 @@ class FindBestSettingDialog(QDialog):
         self.excerpt_view = QPlainTextEdit()
         self.excerpt_view.setReadOnly(True)
         self.excerpt_view.setPlaceholderText("Hier erscheint automatisch eine zufaellige Stelle aus dem Buch.")
-        self.excerpt_view.setMinimumHeight(180)
+        self.excerpt_view.setMinimumHeight(140)
         session_layout.addWidget(self.excerpt_view)
         source_page_layout.addWidget(session_group)
         source_page_hint = QLabel(
@@ -813,7 +860,7 @@ class FindBestSettingDialog(QDialog):
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
         self.details.setPlaceholderText("Hier stehen kurze Tuning-Infos zur aktuellen Stelle.")
-        self.details.setMinimumHeight(210)
+        self.details.setMinimumHeight(150)
         preview_layout.addWidget(self.details)
         preview_page_layout.addWidget(preview_group)
         preview_page_layout.addStretch(1)
@@ -834,9 +881,13 @@ class FindBestSettingDialog(QDialog):
         self.installed_voices = PiperBackend(self.paths.runtime, self.paths.voices).installed_voices()
         self.voice_language_combo.blockSignals(True)
         self.voice_language_combo.clear()
-        for code, label in language_choices(self.installed_voices):
+        for code, label in language_choices(self.installed_voices, ui_language=self.ui_language):
             self.voice_language_combo.addItem(label, code)
         self.voice_language_combo.blockSignals(False)
+        preferred_language = preferred_content_language_code(self.ui_language)
+        preferred_index = self.voice_language_combo.findData(preferred_language)
+        if preferred_index >= 0:
+            self.voice_language_combo.setCurrentIndex(preferred_index)
         self.rebuild_voice_combo()
         self.refresh_assistant_language_choices()
 
@@ -872,7 +923,7 @@ class FindBestSettingDialog(QDialog):
             return
         for setting in settings:
             self.saved_settings_combo.addItem(
-                f"{profile_status_label(setting.status)} | {setting.display_name} | {setting.backend} | {setting.preset_hint}",
+                f"{profile_status_label(setting.status, ui_language=self.ui_language)} | {setting.display_name} | {setting.backend} | {setting.preset_hint}",
                 setting.setting_id,
             )
         selected_index = self.saved_settings_combo.findData(selected_setting_id)
@@ -897,7 +948,7 @@ class FindBestSettingDialog(QDialog):
             else ""
         )
         self.saved_settings_status_label.setText(
-            f"{setting.display_name} | Status {profile_status_label(setting.status)} | Backend {setting.backend} | "
+            f"{setting.display_name} | Status {profile_status_label(setting.status, ui_language=self.ui_language)} | Backend {setting.backend} | "
             f"Ausgabe {setting.output_mode}{benchmark_text} | freigegeben {setting.approved_at or '-'} | aktualisiert {setting.updated_at}"
         )
 
@@ -1042,10 +1093,11 @@ class FindBestSettingDialog(QDialog):
         return combo.currentData() or "any"
 
     def refresh_assistant_language_choices(self) -> None:
-        selected_assistant_code = self.assistant_language_combo.currentData() or "de"
+        selected_assistant_code = self.assistant_language_combo.currentData() or preferred_content_language_code(self.ui_language).split("_", 1)[0]
         selected_benchmark_code = self.benchmark_language_combo.currentData() or selected_assistant_code
-        codes: dict[str, str] = {"de": "Deutsch"}
-        for code, label in language_choices(self.installed_voices):
+        preferred_code = preferred_content_language_code(self.ui_language).split("_", 1)[0]
+        codes: dict[str, str] = {preferred_code: _assistant_language_label(preferred_code)}
+        for code, label in language_choices(self.installed_voices, ui_language=self.ui_language):
             normalized = str(code).strip().lower()
             if normalized and normalized != "all":
                 codes[normalized] = label
@@ -1076,7 +1128,7 @@ class FindBestSettingDialog(QDialog):
         )
         self.voice_combo.clear()
         for voice_id in visible_voices:
-            self.voice_combo.addItem(format_voice_label(voice_id), voice_id)
+            self.voice_combo.addItem(format_voice_label(voice_id, ui_language=self.ui_language), voice_id)
         if visible_voices:
             selected_index = self.voice_combo.findData(selected_voice_id)
             self.voice_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
@@ -1084,6 +1136,7 @@ class FindBestSettingDialog(QDialog):
             self.voice_combo.addItem(
                 voice_filter_empty_message(
                     language_code,
+                    ui_language=self.ui_language,
                     female_only=self.voice_female_only_checkbox.isChecked(),
                     high_only=self.voice_high_only_checkbox.isChecked(),
                 ),
@@ -1961,7 +2014,7 @@ class FindBestSettingDialog(QDialog):
         self.refresh_saved_settings()
         self.saved_settings_combo.setCurrentIndex(self.saved_settings_combo.findData(updated.setting_id))
         self.status_label.setText(
-            f"Produktionsprofilstatus aktualisiert: {updated.display_name} -> {profile_status_label(updated.status)}"
+            f"Produktionsprofilstatus aktualisiert: {updated.display_name} -> {profile_status_label(updated.status, ui_language=self.ui_language)}"
         )
 
     def save_setting(self, *, as_new: bool = False) -> None:
@@ -2017,7 +2070,7 @@ class FindBestSettingDialog(QDialog):
             self.show_session(self.current_session_id)
         action_text = "neu gespeichert" if as_new else "aktualisiert"
         self.status_label.setText(
-            f"Produktionsprofil {action_text}: {setting.display_name}. Status jetzt: {profile_status_label(setting.status)}."
+            f"Produktionsprofil {action_text}: {setting.display_name}. Status jetzt: {profile_status_label(setting.status, ui_language=self.ui_language)}."
         )
 
     def save_setting_as_new(self) -> None:
@@ -2055,11 +2108,11 @@ class FindBestSettingDialog(QDialog):
         self.current_saved_setting_id = setting.setting_id
         self.update_helper_text()
         self.status_label.setText(
-            f"Produktionsprofil geladen: {setting.display_name} ({profile_status_label(setting.status)})"
+            f"Produktionsprofil geladen: {setting.display_name} ({profile_status_label(setting.status, ui_language=self.ui_language)})"
         )
 
     def open_voice_lab(self) -> None:
-        dialog = VoiceLabDialog(self.paths, self)
+        dialog = VoiceLabDialog(self.paths, self, ui_language=self.ui_language)
         dialog.exec()
         self.refresh_voice_profiles()
 

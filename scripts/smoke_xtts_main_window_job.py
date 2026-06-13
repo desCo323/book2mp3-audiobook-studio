@@ -68,7 +68,7 @@ def main() -> int:
         QMessageBox.warning = staticmethod(lambda *args, **kwargs: QMessageBox.StandardButton.Ok)
 
         window = MainWindow(paths)
-        window.source_edit.setText(str(ROOT / "test.epub"))
+        window.set_selected_source_files([ROOT / "test.epub"])
         window.refresh_voice_profiles()
         approved_profile = save_voice_setting(
             paths.voice_settings,

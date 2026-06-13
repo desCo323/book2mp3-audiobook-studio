@@ -16,6 +16,8 @@ def expected_items(root: Path) -> list[Path]:
         program_root / "start.sh",
         program_root / "start.bat",
         program_root / "book2mp3" / "main.py",
+        program_root / "scripts" / "xtts_worker.py",
+        program_root / "scripts" / "setup_xtts_runtime.py",
         program_root / "runtime",
         program_root / "voices",
         program_root / "python",

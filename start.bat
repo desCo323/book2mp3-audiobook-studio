@@ -42,4 +42,20 @@ if defined PYTHONPATH (
   set "PYTHONPATH=%PYTHONPATH_ENTRY%"
 )
 
+if "%~1"=="--install-xtts" (
+  set "XTTS_SETUP_SCRIPT="
+  if exist "%APP_ROOT%\scripts\setup_xtts_runtime.py" set "XTTS_SETUP_SCRIPT=%APP_ROOT%\scripts\setup_xtts_runtime.py"
+  if not defined XTTS_SETUP_SCRIPT if exist "%APP_ROOT%\src\scripts\setup_xtts_runtime.py" set "XTTS_SETUP_SCRIPT=%APP_ROOT%\src\scripts\setup_xtts_runtime.py"
+  if not defined XTTS_SETUP_SCRIPT (
+    echo XTTS-Setup-Skript nicht gefunden.
+    exit /b 1
+  )
+  set "XTTS_RUNTIME_ROOT=%APP_ROOT%\runtime\xtts\windows\python"
+  if not exist "%APP_ROOT%\runtime" if exist "%APP_ROOT%\src\runtime" set "XTTS_RUNTIME_ROOT=%APP_ROOT%\src\runtime\xtts\windows\python"
+  echo Starte optionalen XTTS-Setup unter:
+  echo   %XTTS_RUNTIME_ROOT%
+  "%PYTHON_BIN%" "%XTTS_SETUP_SCRIPT%" "%XTTS_RUNTIME_ROOT%" --python "%PYTHON_BIN%" --torch-variant auto
+  exit /b %ERRORLEVEL%
+)
+
 "%PYTHON_BIN%" -m book2mp3.main %*

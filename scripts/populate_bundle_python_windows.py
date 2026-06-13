@@ -5,6 +5,7 @@ import io
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -132,7 +133,7 @@ def download_windows_wheels(
 ) -> list[str]:
     wheels_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "python3",
+        sys.executable,
         "-m",
         "pip",
         "download",

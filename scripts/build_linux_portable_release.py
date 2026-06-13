@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -63,7 +64,7 @@ def main() -> int:
     use_existing_linux_python = source_linux_python.exists()
     run(
         [
-            "python3",
+            sys.executable,
             str(ROOT / "scripts" / "build_portable_bundle.py"),
             str(output_dir),
             "--clean",
@@ -72,11 +73,11 @@ def main() -> int:
         ]
     )
     if not use_existing_linux_python:
-        run(["python3", str(ROOT / "scripts" / "populate_bundle_python_linux.py"), str(program_root(output_dir))])
+        run([sys.executable, str(ROOT / "scripts" / "populate_bundle_python_linux.py"), str(program_root(output_dir))])
     if args.include_xtts_in_app_python:
         run(
             [
-                "python3",
+                sys.executable,
                 str(ROOT / "scripts" / "install_xtts_into_bundle_python.py"),
                 str(program_root(output_dir)),
                 "--torch-variant",
@@ -86,7 +87,7 @@ def main() -> int:
     if args.include_xtts_runtime:
         run(
             [
-                "python3",
+                sys.executable,
                 str(ROOT / "scripts" / "setup_xtts_runtime.py"),
                 str(program_root(output_dir) / "runtime" / "xtts" / "linux"),
                 "--bootstrap-linux-standalone",
@@ -98,12 +99,12 @@ def main() -> int:
     if args.include_xtts_starter_profiles:
         run(
             [
-                "python3",
+                sys.executable,
                 str(ROOT / "scripts" / "install_xtts_starter_profiles.py"),
                 str(program_root(output_dir)),
             ]
         )
-    run(["python3", str(ROOT / "scripts" / "check_portable_bundle.py"), str(output_dir)])
+    run([sys.executable, str(ROOT / "scripts" / "check_portable_bundle.py"), str(output_dir)])
 
     if args.archive:
         archive_base = output_dir.parent / output_dir.name

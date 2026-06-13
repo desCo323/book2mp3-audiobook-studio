@@ -68,6 +68,7 @@ This repository now includes:
 - `scripts/install_windows_bundle_packages.py`
 - `scripts/setup_xtts_runtime.py`
 - `scripts/install_xtts_linux_standalone_python.py`
+- `src/scripts/` inside portable bundles for optional XTTS setup and runtime probes
 
 These launchers already target the final portable structure and intentionally fail if the bundle-local Python runtime is missing.
 
@@ -162,6 +163,18 @@ Recommended setup path:
 python scripts/setup_xtts_runtime.py runtime/xtts/linux --bootstrap-linux-standalone --torch-variant auto
 ```
 
+Portable end-user path:
+
+```bash
+./start.sh --install-xtts
+```
+
+or on Windows:
+
+```bat
+start.bat --install-xtts
+```
+
 That path now:
 
 - downloads a relocatable Python 3.11 build from `astral-sh/python-build-standalone`
@@ -170,6 +183,11 @@ That path now:
 - with `auto`, first tries CUDA on NVIDIA systems and falls back to CPU if the post-install CUDA probe fails
 - optionally installs `TTS` into that dedicated runtime
 - writes both a standalone-Python manifest and an XTTS runtime manifest
+
+Important:
+
+- this optional download path improves the bundle UX
+- it does **not** automatically solve the XTTS model licensing constraints
 
 For a larger Linux bundle build, the optional XTTS runtime can also be included directly:
 

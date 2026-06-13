@@ -39,10 +39,35 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--length-scale", type=float)
     _add_metadata_args(create)
 
+    create_bulk = sub.add_parser("create-bulk", help="Create multiple audiobook jobs at once")
+    create_bulk.add_argument("source_paths", nargs="+")
+    create_bulk.add_argument("--saved-profile-id", "--profile-id", dest="saved_profile_id", default="")
+    create_bulk.add_argument("--backend", default="piper")
+    create_bulk.add_argument("--voice-id", default="")
+    create_bulk.add_argument("--voice-profile-id", default="")
+    create_bulk.add_argument("--preset", default="balanced")
+    create_bulk.add_argument("--priority", type=int, default=50)
+    create_bulk.add_argument("--max-chars", type=int)
+    create_bulk.add_argument("--output-mode")
+    create_bulk.add_argument("--target-part-minutes", type=int)
+    create_bulk.add_argument("--keep-wav", action="store_true")
+    create_bulk.add_argument("--sentence-silence", type=float)
+    create_bulk.add_argument("--length-scale", type=float)
+    _add_metadata_args(create_bulk)
+
     sub.add_parser("list", help="List all jobs")
 
     source_analyze = sub.add_parser("source-analyze", help="Analyze a source file for chapter support")
     source_analyze.add_argument("source_path")
+
+    metadata_suggest = sub.add_parser("metadata-suggest", help="Suggest audiobook metadata from a file name and optional Open Library lookup")
+    metadata_suggest.add_argument("source_path")
+
+    metadata_search = sub.add_parser("metadata-search", help="Search Open Library for audiobook metadata")
+    metadata_search.add_argument("--query", default="")
+    metadata_search.add_argument("--title", default="")
+    metadata_search.add_argument("--author", default="")
+    metadata_search.add_argument("--limit", type=int, default=5)
 
     inspect = sub.add_parser("inspect", help="Inspect a single job")
     inspect.add_argument("job_id")
@@ -136,11 +161,45 @@ def main(argv: list[str] | None = None) -> int:
         )
         _print_json(payload)
         return 0
+    if args.command == "create-bulk":
+        payload = service.create_jobs(
+            source_paths=args.source_paths,
+            saved_profile_id=args.saved_profile_id,
+            backend=args.backend,
+            voice_id=args.voice_id,
+            voice_profile_id=args.voice_profile_id,
+            preset_id=args.preset,
+            priority=args.priority,
+            max_chars=args.max_chars,
+            output_mode=args.output_mode,
+            target_part_minutes=args.target_part_minutes,
+            keep_wav=True if args.keep_wav else None,
+            sentence_silence=args.sentence_silence,
+            length_scale=args.length_scale,
+            audiobook_metadata=_metadata_from_args(args),
+        )
+        _print_json({"jobs": payload})
+        return 0
     if args.command == "list":
         _print_json({"jobs": service.list_jobs()})
         return 0
     if args.command == "source-analyze":
         _print_json(service.analyze_source(args.source_path))
+        return 0
+    if args.command == "metadata-suggest":
+        _print_json(service.metadata_suggestions(args.source_path))
+        return 0
+    if args.command == "metadata-search":
+        _print_json(
+            {
+                "results": service.search_book_metadata(
+                    query=args.query,
+                    title=args.title,
+                    author=args.author,
+                    limit=args.limit,
+                )
+            }
+        )
         return 0
     if args.command == "inspect":
         _print_json(service.get_job(args.job_id))
