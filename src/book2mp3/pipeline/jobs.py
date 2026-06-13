@@ -629,6 +629,28 @@ class JobManager:
             shutil.rmtree(job_dir)
         self.logger.info("Deleted job %s", job_id)
 
+    def update_audiobook_metadata(
+        self,
+        job_id: str,
+        *,
+        metadata_overrides: dict[str, str],
+        reapply_outputs: bool = True,
+    ) -> JobState:
+        state = self.load_state(job_id)
+        fallback = state.audiobook_metadata
+        updated_metadata = AudiobookMetadata.from_dict(metadata_overrides, fallback=fallback)
+        state.audiobook_metadata = updated_metadata
+        if updated_metadata.title:
+            state.title = updated_metadata.title
+        state.append_log("Audiobook metadata updated")
+        logger = self.job_logger(state)
+        if reapply_outputs and state.final_output_files:
+            self._finalize_outputs(state, logger)
+            state.append_log("Updated MP3 tags and export manifests for completed outputs")
+        self.save_state(state)
+        logger.info("Updated audiobook metadata for job %s", job_id)
+        return state
+
     def retry_job(
         self,
         job_id: str,

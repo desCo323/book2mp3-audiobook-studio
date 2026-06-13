@@ -66,12 +66,26 @@ def main() -> int:
             raise AssertionError(f"Metadata title guess failed: {window.meta_title_edit.text()!r}")
         if window.meta_author_edit.text() != "Jane Austen":
             raise AssertionError(f"Metadata author guess failed: {window.meta_author_edit.text()!r}")
+        if window.jobs_list.count() != 0:
+            raise AssertionError(f"Completed jobs must not stay in active jobs list: {window.jobs_list.count()}")
         if window.finished_books_list.count() < 1:
             raise AssertionError("Finished books overview stayed empty")
 
         first_item = window.finished_books_list.item(0)
         if "Pride and Prejudice" not in first_item.text():
             raise AssertionError(f"Finished books overview did not show metadata title: {first_item.text()!r}")
+        window.finished_books_list.setCurrentRow(0)
+        app.processEvents()
+        if window.finished_meta_title_edit.text() != "Pride and Prejudice":
+            raise AssertionError(f"Finished metadata editor did not load title: {window.finished_meta_title_edit.text()!r}")
+        window.finished_meta_comment_edit.setPlainText("Test comment for final MP3 tags")
+        window.save_finished_job_metadata()
+        app.processEvents()
+        refreshed = service.manager.load_state(str(created["job_id"]))
+        if refreshed.audiobook_metadata.comment != "Test comment for final MP3 tags":
+            raise AssertionError(
+                f"Finished metadata save failed: {refreshed.audiobook_metadata.comment!r}"
+            )
 
         print(
             json.dumps(
@@ -80,7 +94,9 @@ def main() -> int:
                     "window_title": window.windowTitle(),
                     "metadata_title": window.meta_title_edit.text(),
                     "metadata_author": window.meta_author_edit.text(),
+                    "active_jobs_count": window.jobs_list.count(),
                     "finished_books_count": window.finished_books_list.count(),
+                    "finished_metadata_comment": refreshed.audiobook_metadata.comment,
                     "finished_job_status": finished["status"],
                 },
                 indent=2,

@@ -275,6 +275,20 @@ class Book2Mp3Service:
         state = self.manager.retry_job(job_id, chunk_indexes=chunk_indexes, reset_output=reset_output)
         return self.serialize_job(state)
 
+    def update_job_metadata(
+        self,
+        job_id: str,
+        *,
+        audiobook_metadata: dict[str, str],
+        reapply_outputs: bool = True,
+    ) -> dict[str, Any]:
+        state = self.manager.update_audiobook_metadata(
+            job_id,
+            metadata_overrides=audiobook_metadata,
+            reapply_outputs=reapply_outputs,
+        )
+        return self.serialize_job(state)
+
     def delete_job(self, job_id: str) -> None:
         self.manager.delete_job(job_id)
 

@@ -148,7 +148,7 @@ class MainWindow(QMainWindow):
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
-        hero = QLabel("Aufträge")
+        hero = QLabel("Aktive Aufträge")
         hero.setProperty("role", "hero")
         left_layout.addWidget(hero)
         sidebar_hint = QLabel(
@@ -779,6 +779,7 @@ class MainWindow(QMainWindow):
         finished_layout = QVBoxLayout(finished_group)
         self.finished_books_list = QListWidget()
         self.finished_books_list.setMinimumHeight(140)
+        self.finished_books_list.itemSelectionChanged.connect(self.on_finished_book_selected)
         finished_layout.addWidget(self.finished_books_list)
         finished_actions = QHBoxLayout()
         open_finished_audio_button = QPushButton("Hörbuch öffnen")
@@ -791,6 +792,43 @@ class MainWindow(QMainWindow):
         delete_finished_job_button.clicked.connect(self.delete_selected_finished_job)
         finished_actions.addWidget(delete_finished_job_button)
         finished_layout.addLayout(finished_actions)
+        finished_meta_group = QGroupBox("Abschluss: Metadaten & Tags")
+        finished_meta_form = QFormLayout(finished_meta_group)
+        self.finished_meta_title_edit = QLineEdit()
+        finished_meta_form.addRow("Titel", self.finished_meta_title_edit)
+        self.finished_meta_author_edit = QLineEdit()
+        finished_meta_form.addRow("Autor", self.finished_meta_author_edit)
+        self.finished_meta_narrator_edit = QLineEdit()
+        finished_meta_form.addRow("Sprecher", self.finished_meta_narrator_edit)
+        self.finished_meta_genre_edit = QLineEdit()
+        finished_meta_form.addRow("Genre", self.finished_meta_genre_edit)
+        self.finished_meta_language_edit = QLineEdit()
+        finished_meta_form.addRow("Sprachtag", self.finished_meta_language_edit)
+        self.finished_meta_comment_edit = QPlainTextEdit()
+        self.finished_meta_comment_edit.setMinimumHeight(90)
+        finished_meta_form.addRow("Kommentar", self.finished_meta_comment_edit)
+        finished_meta_actions = QHBoxLayout()
+        self.finished_metadata_guess_button = QPushButton("Aus Dateinamen vorschlagen")
+        self.finished_metadata_guess_button.clicked.connect(self.populate_finished_metadata_from_filename)
+        finished_meta_actions.addWidget(self.finished_metadata_guess_button)
+        self.finished_metadata_search_button = QPushButton("Open Library suchen")
+        self.finished_metadata_search_button.clicked.connect(self.search_finished_metadata_online)
+        finished_meta_actions.addWidget(self.finished_metadata_search_button)
+        self.finished_metadata_apply_button = QPushButton("Besten Treffer übernehmen")
+        self.finished_metadata_apply_button.clicked.connect(self.apply_finished_metadata_result)
+        finished_meta_actions.addWidget(self.finished_metadata_apply_button)
+        self.finished_metadata_save_button = QPushButton("Tags speichern")
+        self.finished_metadata_save_button.clicked.connect(self.save_finished_job_metadata)
+        finished_meta_actions.addWidget(self.finished_metadata_save_button)
+        finished_meta_form.addRow("", self._wrap(finished_meta_actions))
+        self.finished_metadata_status_label = QLabel("Wähle unten ein fertiges Hörbuch, um Metadaten zu prüfen oder nachzutragen.")
+        self.finished_metadata_status_label.setWordWrap(True)
+        self.finished_metadata_status_label.setProperty("role", "muted")
+        finished_meta_form.addRow("Status", self.finished_metadata_status_label)
+        self.finished_metadata_results_list = QListWidget()
+        self.finished_metadata_results_list.setMinimumHeight(100)
+        finished_meta_form.addRow("Treffer", self.finished_metadata_results_list)
+        finished_layout.addWidget(finished_meta_group)
         jobs_layout.addWidget(finished_group)
 
         tabs.addTab(jobs_tab, "Aufträge")
@@ -2288,9 +2326,10 @@ class MainWindow(QMainWindow):
     def refresh_jobs(self) -> None:
         self.jobs_list.clear()
         jobs = self.manager.list_jobs()
+        active_jobs = [job for job in jobs if job.status != "completed"]
         self.logger.info("Refreshing jobs list with %s jobs", len(jobs))
         queue_lines = []
-        for job in jobs:
+        for job in active_jobs:
             eta_label = self._eta_short_label(job.estimated_remaining_seconds or job.estimated_total_seconds)
             label = (
                 f"{job.title}\n"
@@ -2319,6 +2358,12 @@ class MainWindow(QMainWindow):
                 f"mode={job.processing_mode} | eta={self._format_duration_hm(job.estimated_remaining_seconds)}"
                 + (f" | block={job.block_reason}" if job.block_reason else "")
             )
+        if self.current_job_id:
+            for row in range(self.jobs_list.count()):
+                item = self.jobs_list.item(row)
+                if item.data(Qt.UserRole) == self.current_job_id:
+                    self.jobs_list.setCurrentRow(row)
+                    break
         self.queue_details.setPlainText("\n".join(queue_lines) or "Keine Jobs in der Queue.")
         preview_lines = []
         for session in list_preview_sessions(self.paths):
@@ -2331,7 +2376,7 @@ class MainWindow(QMainWindow):
         self.preview_sessions_summary.setPlainText(
             "\n".join(preview_lines) or "Keine gespeicherten Profilstudio-Sessions vorhanden."
         )
-        queued_jobs = [job for job in jobs if job.status in {"queued", "prepared", "running"}]
+        queued_jobs = [job for job in active_jobs if job.status in {"queued", "prepared", "running"}]
         queued_eta_seconds = sum(max(0.0, job.estimated_remaining_seconds) for job in queued_jobs)
         processing_modes: dict[str, int] = {}
         for job in queued_jobs:
@@ -2355,10 +2400,10 @@ class MainWindow(QMainWindow):
                     "pt": "Não há tarefas ativas ou na fila. Ainda não existe tempo restante da fila.",
                 }.get(self.ui_language, "No active or queued jobs. No remaining queue time yet.")
             )
-        self.queue_eta_header.setText(self._queue_eta_overview_text(jobs))
+        self.queue_eta_header.setText(self._queue_eta_overview_text(active_jobs))
         self.refresh_finished_books_list(jobs)
         self.refresh_diagnostics_summary()
-        self.update_idle_status_from_queue(jobs)
+        self.update_idle_status_from_queue(active_jobs)
 
     def refresh_finished_books_list(self, jobs: list[JobState]) -> None:
         self.finished_books_list.clear()
@@ -2385,6 +2430,12 @@ class MainWindow(QMainWindow):
                 )
             )
             self.finished_books_list.addItem(item)
+        if self.current_job_id:
+            for row in range(self.finished_books_list.count()):
+                item = self.finished_books_list.item(row)
+                if item.data(Qt.UserRole) == self.current_job_id:
+                    self.finished_books_list.setCurrentRow(row)
+                    break
 
     def _selected_finished_job(self) -> JobState | None:
         item = self.finished_books_list.currentItem()
@@ -2394,6 +2445,183 @@ class MainWindow(QMainWindow):
         if not job_id:
             return None
         return self.manager.load_state(job_id)
+
+    def on_finished_book_selected(self) -> None:
+        job = self._selected_finished_job()
+        if job is None:
+            self.refresh_finished_metadata_editor(None)
+            return
+        self.current_job_id = job.job_id
+        self.jobs_list.clearSelection()
+        self.show_job(job)
+        self.refresh_finished_metadata_editor(job)
+
+    def refresh_finished_metadata_editor(self, job: JobState | None) -> None:
+        fields = (
+            self.finished_meta_title_edit,
+            self.finished_meta_author_edit,
+            self.finished_meta_narrator_edit,
+            self.finished_meta_genre_edit,
+            self.finished_meta_language_edit,
+        )
+        for field in fields:
+            field.setEnabled(job is not None)
+        self.finished_meta_comment_edit.setEnabled(job is not None)
+        self.finished_metadata_guess_button.setEnabled(job is not None)
+        self.finished_metadata_search_button.setEnabled(job is not None)
+        self.finished_metadata_apply_button.setEnabled(job is not None)
+        self.finished_metadata_save_button.setEnabled(job is not None)
+        self.finished_metadata_results_list.setEnabled(job is not None)
+        if job is None:
+            for field in fields:
+                field.clear()
+            self.finished_meta_comment_edit.setPlainText("")
+            self.finished_metadata_results_list.clear()
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": "Wähle unten ein fertiges Hörbuch, um Metadaten zu prüfen oder nachzutragen.",
+                    "en": "Choose a finished audiobook below to review or update its metadata.",
+                    "es": "Elige abajo un audiolibro terminado para revisar o actualizar sus metadatos.",
+                    "pt": "Escolha abaixo um audiolivro concluído para revisar ou atualizar seus metadados.",
+                }.get(self.ui_language, "Choose a finished audiobook below to review or update its metadata.")
+            )
+            return
+        meta = job.audiobook_metadata
+        self.finished_meta_title_edit.setText(meta.title)
+        self.finished_meta_author_edit.setText(meta.author)
+        self.finished_meta_narrator_edit.setText(meta.narrator)
+        self.finished_meta_genre_edit.setText(meta.genre)
+        self.finished_meta_language_edit.setText(meta.language)
+        self.finished_meta_comment_edit.setPlainText(meta.comment)
+        self.finished_metadata_results_list.clear()
+        self.finished_metadata_status_label.setText(
+            {
+                "de": f"Fertiges Hörbuch geladen. Änderungen werden direkt in die MP3-Tags und Manifeste geschrieben: {job.audiobook_metadata.title}",
+                "en": f"Finished audiobook loaded. Changes are written directly into the MP3 tags and manifests: {job.audiobook_metadata.title}",
+                "es": f"Audiolibro terminado cargado. Los cambios se escribirán directamente en las etiquetas MP3 y manifiestos: {job.audiobook_metadata.title}",
+                "pt": f"Audiolivro concluído carregado. As alterações serão gravadas diretamente nas tags MP3 e nos manifestos: {job.audiobook_metadata.title}",
+            }.get(self.ui_language, f"Finished audiobook loaded. Changes are written directly into the MP3 tags and manifests: {job.audiobook_metadata.title}")
+        )
+
+    def _finished_metadata_payload(self) -> dict[str, str]:
+        title = self.finished_meta_title_edit.text().strip()
+        narrator = self.finished_meta_narrator_edit.text().strip()
+        payload = {
+            "title": title,
+            "album": title,
+            "artist": narrator,
+            "album_artist": narrator,
+            "narrator": narrator,
+            "author": self.finished_meta_author_edit.text().strip(),
+            "genre": self.finished_meta_genre_edit.text().strip() or "Audiobook",
+            "language": self.finished_meta_language_edit.text().strip() or preferred_content_language_code(self.ui_language).split("_", 1)[0],
+            "comment": self.finished_meta_comment_edit.toPlainText().strip(),
+        }
+        return {key: value for key, value in payload.items() if value}
+
+    def populate_finished_metadata_from_filename(self) -> None:
+        job = self._selected_finished_job()
+        if job is None:
+            return
+        guessed = guess_metadata_from_filename(Path(job.source_file))
+        self.finished_meta_title_edit.setText(str(guessed.get("title") or job.audiobook_metadata.title or Path(job.source_file).stem))
+        self.finished_meta_author_edit.setText(str(guessed.get("author") or self.finished_meta_author_edit.text()))
+        if not self.finished_meta_genre_edit.text().strip():
+            self.finished_meta_genre_edit.setText("Audiobook")
+        self.finished_metadata_status_label.setText(
+            {
+                "de": "Der Dateiname des fertigen Hörbuchprojekts wurde analysiert und als Metadatenvorschlag übernommen.",
+                "en": "The file name of the finished audiobook project was analyzed and applied as a metadata suggestion.",
+                "es": "El nombre del archivo del proyecto terminado se analizó y se aplicó como sugerencia de metadatos.",
+                "pt": "O nome do arquivo do projeto concluído foi analisado e aplicado como sugestão de metadados.",
+            }.get(self.ui_language, "The file name of the finished audiobook project was analyzed and applied as a metadata suggestion.")
+        )
+
+    def search_finished_metadata_online(self) -> None:
+        job = self._selected_finished_job()
+        if job is None:
+            return
+        try:
+            suggestions = self.service.search_book_metadata(
+                title=self.finished_meta_title_edit.text().strip(),
+                author=self.finished_meta_author_edit.text().strip(),
+                query=f"{self.finished_meta_title_edit.text().strip()} {self.finished_meta_author_edit.text().strip()}".strip(),
+                limit=5,
+            )
+        except Exception as exc:
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Metadatensuche für das fertige Hörbuch fehlgeschlagen: {exc}",
+                    "en": f"Metadata search for the finished audiobook failed: {exc}",
+                    "es": f"La búsqueda de metadatos para el audiolibro terminado falló: {exc}",
+                    "pt": f"A busca de metadados para o audiolivro concluído falhou: {exc}",
+                }.get(self.ui_language, f"Metadata search for the finished audiobook failed: {exc}")
+            )
+            return
+        self.finished_metadata_results_list.clear()
+        for entry in suggestions:
+            year = f" ({entry.get('year')})" if entry.get("year") else ""
+            author = str(entry.get("author") or "-")
+            item = QListWidgetItem(f"{entry.get('title')}{year} | {author}")
+            item.setData(Qt.UserRole, entry)
+            item.setToolTip(json.dumps(entry, indent=2, ensure_ascii=False))
+            self.finished_metadata_results_list.addItem(item)
+        self.finished_metadata_status_label.setText(
+            {
+                "de": f"Open Library Suche für das fertige Hörbuch abgeschlossen: {len(suggestions)} Treffer.",
+                "en": f"Open Library search for the finished audiobook finished: {len(suggestions)} result(s).",
+                "es": f"La búsqueda en Open Library para el audiolibro terminado finalizó: {len(suggestions)} resultado(s).",
+                "pt": f"A busca no Open Library para o audiolivro concluído terminou: {len(suggestions)} resultado(s).",
+            }.get(self.ui_language, f"Open Library search for the finished audiobook finished: {len(suggestions)} result(s).")
+        )
+        if self.finished_metadata_results_list.count():
+            self.finished_metadata_results_list.setCurrentRow(0)
+
+    def apply_finished_metadata_result(self) -> None:
+        item = self.finished_metadata_results_list.currentItem()
+        if item is None and self.finished_metadata_results_list.count():
+            item = self.finished_metadata_results_list.item(0)
+        if item is None:
+            return
+        entry = item.data(Qt.UserRole) or {}
+        self.finished_meta_title_edit.setText(str(entry.get("title") or self.finished_meta_title_edit.text()))
+        self.finished_meta_author_edit.setText(str(entry.get("author") or self.finished_meta_author_edit.text()))
+        if entry.get("genre"):
+            self.finished_meta_genre_edit.setText(str(entry.get("genre")))
+        if entry.get("language"):
+            self.finished_meta_language_edit.setText(str(entry.get("language")))
+        if entry.get("comment") and not self.finished_meta_comment_edit.toPlainText().strip():
+            self.finished_meta_comment_edit.setPlainText(str(entry.get("comment")))
+        self.finished_metadata_status_label.setText(
+            {
+                "de": "Open-Library-Metadaten wurden auf das fertige Hörbuch übertragen. Speichere jetzt die Tags, um die Enddateien zu aktualisieren.",
+                "en": "Open Library metadata has been copied to the finished audiobook. Save the tags now to update the final files.",
+                "es": "Los metadatos de Open Library se copiaron al audiolibro terminado. Guarda ahora las etiquetas para actualizar los archivos finales.",
+                "pt": "Os metadados do Open Library foram copiados para o audiolivro concluído. Agora salve as tags para atualizar os arquivos finais.",
+            }.get(self.ui_language, "Open Library metadata has been copied to the finished audiobook. Save the tags now to update the final files.")
+        )
+
+    def save_finished_job_metadata(self) -> None:
+        job = self._selected_finished_job()
+        if job is None:
+            return
+        updated = self.service.update_job_metadata(
+            job.job_id,
+            audiobook_metadata=self._finished_metadata_payload(),
+            reapply_outputs=True,
+        )
+        updated_state = self.manager.load_state(job.job_id)
+        self.refresh_jobs()
+        self.refresh_finished_metadata_editor(updated_state)
+        self.show_job(updated_state)
+        self.status_label.setText(
+            {
+                "de": f"Metadaten und MP3-Tags für '{updated_state.audiobook_metadata.title}' wurden aktualisiert.",
+                "en": f"Metadata and MP3 tags for '{updated_state.audiobook_metadata.title}' were updated.",
+                "es": f"Se actualizaron los metadatos y las etiquetas MP3 de '{updated_state.audiobook_metadata.title}'.",
+                "pt": f"Os metadados e as tags MP3 de '{updated_state.audiobook_metadata.title}' foram atualizados.",
+            }.get(self.ui_language, f"Metadata and MP3 tags for '{updated_state.audiobook_metadata.title}' were updated.")
+        )
 
     def open_selected_finished_audio(self) -> None:
         job = self._selected_finished_job()
@@ -2564,6 +2792,8 @@ class MainWindow(QMainWindow):
             return
         job_id = item.data(Qt.UserRole)
         self.current_job_id = job_id
+        self.finished_books_list.clearSelection()
+        self.refresh_finished_metadata_editor(None)
         self.logger.info("Selected job %s", job_id)
         self.show_job(self.manager.load_state(job_id))
 
@@ -2615,7 +2845,7 @@ class MainWindow(QMainWindow):
     def update_job_transport_buttons(self, job: JobState | None) -> None:
         has_job = job is not None
         is_running = bool(self.worker and self.worker.isRunning() and job and job.job_id == self.current_job_id)
-        can_resume = bool(job and job.status in {"queued", "prepared", "stopped", "failed", "completed", "blocked"})
+        can_resume = bool(job and job.status in {"queued", "prepared", "stopped", "failed", "blocked"})
         self.play_job_button.setEnabled(has_job and can_resume)
         self.pause_job_button.setEnabled(is_running)
         self.stop_job_button.setEnabled(is_running)
