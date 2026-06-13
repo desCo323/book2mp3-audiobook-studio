@@ -90,16 +90,91 @@ def copy_python_runtime(source_dir: str | None, target_dir: Path) -> bool:
     return True
 
 
+def installed_voice_counts_by_core_language(voices_root: Path) -> dict[str, int]:
+    counts = {"de": 0, "en": 0, "es": 0, "pt": 0}
+    for model in voices_root.rglob("*.onnx"):
+        voice_id = model.stem
+        prefix = voice_id.split("_", 1)[0]
+        if prefix in counts:
+            counts[prefix] += 1
+    return counts
+
+
+def write_start_here(output_dir: Path) -> Path:
+    app_dir = program_root(output_dir)
+    voices_root = app_dir / "voices"
+    counts = installed_voice_counts_by_core_language(voices_root) if voices_root.exists() else {"de": 0, "en": 0, "es": 0, "pt": 0}
+    lines = [
+        "# START HERE",
+        "",
+        "## What this bundle is",
+        "",
+        "This portable build is meant for end users.",
+        "You do not need to install Python separately.",
+        "",
+        "## Start the app",
+        "",
+        "- Linux: `./start.sh`",
+        "- Windows: `start.bat`",
+        "",
+        "## What works immediately",
+        "",
+        "- Piper is bundled and ready to use.",
+        "- Local GUI, CLI and local API are included.",
+        "- Saved jobs, queue resume and final MP3 export work without extra Python setup.",
+        "",
+        "## Included Piper language coverage",
+        "",
+        f"- German voices: {counts['de']}",
+        f"- English voices: {counts['en']}",
+        f"- Spanish voices: {counts['es']}",
+        f"- Portuguese voices: {counts['pt']}",
+        "",
+        "## Optional XTTS setup",
+        "",
+        "XTTS is optional and not required for normal Piper-based use.",
+        "",
+        "- Linux: `./start.sh --install-xtts`",
+        "- Windows: `start.bat --install-xtts`",
+        "",
+        "After XTTS setup, open `XTTS-Profile` or `Diagnostics` in the app to verify the runtime.",
+        "",
+        "Important: the optional XTTS download path improves setup convenience,",
+        "but it does not automatically resolve XTTS model licensing constraints for public or commercial distribution.",
+        "",
+        "## Main areas in the app",
+        "",
+        "- `Neuer Auftrag` / `New job`: import books and create production jobs",
+        "- `Aufträge` / `Jobs`: active queue, ETA, stages, chapters, chunks, logs",
+        "- `Produktionsprofile` / `Production profiles`: approved job presets",
+        "- `Benchmark-Studio` / `Benchmark Studio`: compare voices and tune settings",
+        "- `Fertige Hörbücher` / `Finished audiobooks`: open final books and edit metadata/tags",
+        "",
+        "## More documentation",
+        "",
+        "- `src/README.md`",
+        "- `src/docs/quickstart-portable.md`",
+        "- `src/docs/open-source-compliance.md`",
+        "- `src/THIRD_PARTY_NOTICES.md`",
+        "",
+    ]
+    target = output_dir / "START_HERE.md"
+    target.write_text("\n".join(lines), encoding="utf-8")
+    return target
+
+
 def write_manifest(
     output_dir: Path,
     copied: list[str],
     linux_python: bool,
     windows_python: bool,
+    start_here_path: Path,
 ) -> Path:
     manifest = {
         "bundle_root": str(output_dir.resolve()),
         "program_root": str(program_root(output_dir).resolve()),
         "copied_items": copied,
+        "start_here": str(start_here_path.resolve()),
         "python": {
             "linux": linux_python,
             "windows": windows_python,
@@ -123,11 +198,12 @@ def main() -> int:
         without_voices=args.without_voices,
         without_runtime=args.without_runtime,
     )
+    start_here_path = write_start_here(output_dir)
 
     python_root = program_root(output_dir) / "python"
     linux_python = copy_python_runtime(args.python_linux, python_root / "linux")
     windows_python = copy_python_runtime(args.python_windows, python_root / "windows")
-    manifest_path = write_manifest(output_dir, copied, linux_python, windows_python)
+    manifest_path = write_manifest(output_dir, copied, linux_python, windows_python, start_here_path)
 
     print(
         json.dumps(

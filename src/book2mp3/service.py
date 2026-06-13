@@ -21,7 +21,7 @@ from book2mp3.runtime_stats import runtime_statistics_summary
 from book2mp3.tts.piper import PiperBackend
 from book2mp3.tts.xtts import XttsBackend
 from book2mp3.utils.perf_logging import current_run_id, is_perf_logging_enabled, perf_log_target_hint
-from book2mp3.voice_catalog import format_voice_label, voice_language_code
+from book2mp3.voice_catalog import core_language_voice_counts, format_voice_label, voice_language_code
 from book2mp3.voice_lab import list_voice_profiles, load_voice_profile
 from book2mp3.voice_settings import (
     PROFILE_STATUS_ARCHIVED,
@@ -335,7 +335,8 @@ class Book2Mp3Service:
         profiles = list_voice_settings(self.paths.voice_settings)
         xtts_profiles = list_voice_profiles(self.paths.voice_profiles)
         piper_backend = PiperBackend(self.paths.runtime, self.paths.voices)
-        piper_voice_count = len(piper_backend.installed_voices())
+        installed_piper_voices = piper_backend.installed_voices()
+        piper_voice_count = len(installed_piper_voices)
         xtts_backend = XttsBackend(self.paths.runtime, device_mode=app_settings.xtts_device_mode)
 
         probe: dict[str, Any] | None = None
@@ -389,6 +390,7 @@ class Book2Mp3Service:
             },
             "voices": {
                 "piper_voice_count": piper_voice_count,
+                "core_language_voice_counts": core_language_voice_counts(installed_piper_voices),
                 "xtts_profile_count": len(xtts_profiles),
             },
             "xtts": {

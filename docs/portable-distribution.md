@@ -11,6 +11,10 @@ The user must get a folder or zip archive that works without:
 - installing local build tools
 - manually configuring TTS runtimes
 
+Every portable bundle should also contain a small end-user start guide at the bundle root:
+
+- `START_HERE.md`
+
 The application must be startable directly with:
 
 - `start.sh` on Linux
@@ -77,6 +81,7 @@ Portable releases should also preserve:
 - `THIRD_PARTY_NOTICES.md`
 - voice `MODEL_CARD` files
 - upstream runtime license files where available
+- a top-level `START_HERE.md` with launch, XTTS setup and language coverage hints
 
 For development only, they can fall back to a system Python when `BOOK2MP3_ALLOW_SYSTEM_PYTHON=1` is set.
 

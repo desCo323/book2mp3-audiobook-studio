@@ -11,6 +11,7 @@ Diese Datei ist eine technische Compliance-Einschaetzung und keine Rechtsberatun
 - den Quellcode auf GitHub veroeffentlichen
 - die eigene Projektlogik unter einer Open-Source-Lizenz veroeffentlichen
 - die Dokumentation und Build-Skripte oeffentlich machen
+- portable Piper-Ready-Testbuilds mit klaren Lizenz- und Notice-Dateien verteilen
 
 ### Was heute **nicht** als unproblematische Release-Verteilung gilt
 

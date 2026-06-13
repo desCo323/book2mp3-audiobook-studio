@@ -62,6 +62,7 @@ from book2mp3.ui.worker import JobWorker
 from book2mp3.ui.xtts_setup_dialog import XttsSetupDialog
 from book2mp3.utils.logging_utils import configure_logging, get_logger
 from book2mp3.voice_catalog import (
+    core_language_label,
     filter_voice_ids,
     format_voice_label,
     language_choices,
@@ -1388,6 +1389,11 @@ class MainWindow(QMainWindow):
         system_usage = diagnostics.get("system_usage", {})
         probe = xtts.get("probe")
         runtime_stats = diagnostics["runtime_statistics"]
+        core_voice_counts = diagnostics["voices"].get("core_language_voice_counts", {})
+        core_voice_summary = ", ".join(
+            f"{core_language_label(prefix, ui_language=self.ui_language)} {core_voice_counts.get(prefix, 0)}"
+            for prefix in ("de", "en", "es", "pt")
+        )
         if probe:
             probe_text = (
                 f"Probe: {'OK' if probe.get('ok') else 'Fehler'} | "
@@ -1423,6 +1429,7 @@ class MainWindow(QMainWindow):
                     f"Jobs: {jobs['count']} | Status: {jobs['status_counts']}",
                     f"Profile: {profiles['count']} | Status: {profiles['status_counts']}",
                     f"Piper-Stimmen: {diagnostics['voices']['piper_voice_count']} | XTTS-Profile: {diagnostics['voices']['xtts_profile_count']}",
+                    f"Kernsprachen Piper: {core_voice_summary}",
                     "",
                     f"XTTS verfügbar: {xtts['available']}",
                     f"XTTS Gerät gewählt: {xtts['selected_device_mode']} | empfohlen: {xtts['preferred_device_mode']}",

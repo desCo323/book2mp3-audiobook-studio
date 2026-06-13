@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from book2mp3.i18n import resolve_ui_language
 
+CORE_LANGUAGE_PREFIXES = ("de", "en", "es", "pt")
+
 LANGUAGE_LABELS = {
     "de": {
         "de_DE": "Deutsch",
@@ -236,6 +238,46 @@ def voice_note(voice_id: str) -> str:
 
 def is_female_voice(voice_id: str) -> bool:
     return voice_note(voice_id) == "female"
+
+
+def core_language_label(language_prefix: str, *, ui_language: str = "en") -> str:
+    labels = {
+        "de": {
+            "de": "Deutsch",
+            "en": "Englisch",
+            "es": "Spanisch",
+            "pt": "Portugiesisch",
+        },
+        "en": {
+            "de": "German",
+            "en": "English",
+            "es": "Spanish",
+            "pt": "Portuguese",
+        },
+        "es": {
+            "de": "Alemán",
+            "en": "Inglés",
+            "es": "Español",
+            "pt": "Portugués",
+        },
+        "pt": {
+            "de": "Alemão",
+            "en": "Inglês",
+            "es": "Espanhol",
+            "pt": "Português",
+        },
+    }
+    bundle = labels.get(resolve_ui_language(ui_language), labels["en"])
+    return bundle.get(language_prefix, language_prefix)
+
+
+def core_language_voice_counts(voice_ids: list[str]) -> dict[str, int]:
+    counts = {prefix: 0 for prefix in CORE_LANGUAGE_PREFIXES}
+    for voice_id in voice_ids:
+        prefix = voice_language_code(voice_id).split("_", 1)[0]
+        if prefix in counts:
+            counts[prefix] += 1
+    return counts
 
 
 def format_voice_label(voice_id: str, *, ui_language: str = "en") -> str:

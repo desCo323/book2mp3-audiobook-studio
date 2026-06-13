@@ -63,6 +63,7 @@ Die Software trennt bewusst zwischen Quelle, Kapitelanalyse, Profilen, Testreihe
 - automatische Kapitelanalyse mit klarer Rückmeldung
 - Ausgabe als Gesamtdatei, Kapiteldateien oder Zeitteile
 - lokale Piper-Stimmen und optionaler XTTS-Pfad
+- UI und kuratierte Sprachpfade für Deutsch, Englisch, Spanisch und Portugiesisch
 - Produktionsprofile mit `draft`, `tested`, `approved`, `archived`
 - Benchmarking von Varianten, Geschwindigkeit und Chunk-Größen
 - Queue, Prioritäten und Wiederaufnahme
@@ -76,6 +77,7 @@ Für ein fertiges Endnutzer-Bundle gilt:
 - `Piper` ist sofort nutzbar
 - `XTTS` bleibt optional
 - Python muss nicht separat installiert werden
+- im Bundle liegt zusätzlich eine `START_HERE.md` mit dem Endnutzerpfad
 
 Start unter Linux:
 
@@ -141,16 +143,7 @@ book2mp3-cli run-next
 book2mp3-cli serve --host 127.0.0.1 --port 8765
 ```
 
-The bootstrap now installs a starter pack of standard female voices by default when available:
-
-- `de_DE-eva_k-x_low`
-- `de_DE-kerstin-low`
-- `de_DE-ramona-low`
-- `en_US-amy-medium`
-- `en_US-kathleen-low`
-- `en_GB-alba-medium`
-- `en_GB-cori-medium`
-- `fr_FR-siwis-low`
+The default starter pack is intentionally multilingual and includes curated German, English, Spanish and Portuguese voices in addition to the German defaults.
 
 ## Projektstruktur
 

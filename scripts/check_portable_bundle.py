@@ -13,6 +13,7 @@ def app_root(root: Path) -> Path:
 def expected_items(root: Path) -> list[Path]:
     program_root = app_root(root)
     return [
+        root / "START_HERE.md",
         program_root / "start.sh",
         program_root / "start.bat",
         program_root / "book2mp3" / "main.py",

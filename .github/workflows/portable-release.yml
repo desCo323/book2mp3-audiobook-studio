@@ -91,5 +91,6 @@ jobs:
 
             This release is meant for direct end-user testing.
             Piper is bundled and ready to use.
+            Each archive contains a `START_HERE.md` guide for end users.
             XTTS remains optional and may require an extra setup step (`start.sh --install-xtts` / `start.bat --install-xtts`) and separate license review.
           overwrite_files: true
