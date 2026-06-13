@@ -180,6 +180,11 @@ class JobManager:
                     logger=logger,
                     append_log=job.status in {"running", "failed", "stopped"},
                 )
+                job = self._catch_up_xtts_deferred_mp3_artifacts(
+                    job,
+                    logger=logger,
+                    append_log=job.status in {"running", "failed", "stopped"},
+                )
             if job.status == "running":
                 job.status = "queued"
                 job.append_log("Recovered running job after restart and returned it to the queue")
@@ -380,6 +385,68 @@ class JobManager:
         if chunk.status != "done":
             return True
         return not self._xtts_chunk_has_audio(chunk, defer_mp3=defer_mp3)
+
+    def _chunk_text_has_content(self, chunk: ChunkRecord) -> bool:
+        text_path = Path(chunk.text_file)
+        if not text_path.exists():
+            return False
+        try:
+            return text_path.stat().st_size > 0
+        except OSError:
+            return False
+
+    def _catch_up_xtts_deferred_mp3_artifacts(
+        self,
+        state: JobState,
+        *,
+        logger: logging.Logger,
+        append_log: bool = False,
+    ) -> JobState:
+        if state.backend != "xtts" or not self._xtts_should_defer_mp3(state):
+            return state
+        repaired = 0
+        updated_chunks = list(state.chunks)
+        for chunk in state.chunks:
+            if not self._chunk_text_has_content(chunk):
+                continue
+            mp3_path = Path(chunk.mp3_file)
+            if mp3_path.exists():
+                continue
+            wav_path = Path(chunk.wav_file)
+            if not wav_path.exists():
+                continue
+            logger.warning(
+                "Found text-bearing XTTS chunk with WAV but missing MP3; catching up deferred postprocess for chunk %s",
+                chunk.index,
+            )
+            wav_to_mp3(wav_path, mp3_path, logger=logger)
+            if not state.keep_wav and wav_path.exists():
+                wav_path.unlink()
+                logger.debug("Removed intermediate WAV %s after deferred catch-up", chunk.wav_file)
+            updated_chunks[chunk.index - 1] = replace(
+                chunk,
+                status="done",
+                error="",
+                updated_at=utc_now(),
+            )
+            repaired += 1
+        if not repaired:
+            return state
+        state.chunks = updated_chunks
+        if append_log:
+            state.append_log(f"Recovered {repaired} XTTS chunk MP3 file(s) from existing WAV artifacts")
+        self.save_state(state)
+        logger.info("Recovered %s deferred XTTS MP3 artifact(s) for job %s", repaired, state.job_id)
+        return state
+
+    def _missing_text_audio_chunks(self, state: JobState) -> list[int]:
+        missing: list[int] = []
+        for chunk in state.chunks:
+            if not self._chunk_text_has_content(chunk):
+                continue
+            if self._chunk_audio_path(chunk) is None:
+                missing.append(chunk.index)
+        return missing
 
     def _reconcile_chunk_artifacts(
         self,
@@ -711,6 +778,7 @@ class JobManager:
         state = self.load_state(job_id)
         if state.chunks:
             state = self._reconcile_chunk_artifacts(state, logger=self.job_logger(state), append_log=True)
+            state = self._catch_up_xtts_deferred_mp3_artifacts(state, logger=self.job_logger(state), append_log=True)
         if state.status not in {"completed"}:
             state.status = "queued"
             state.block_reason = ""
@@ -902,6 +970,11 @@ class JobManager:
                 logger=logger,
                 append_log=state.status in {"failed", "stopped", "running"},
             )
+            state = self._catch_up_xtts_deferred_mp3_artifacts(
+                state,
+                logger=logger,
+                append_log=state.status in {"failed", "stopped", "running"},
+            )
         state = self.refresh_job_availability(state)
         if state.status == "blocked":
             logger.warning("Skipping blocked job %s: %s", state.job_id, state.block_reason)
@@ -1064,6 +1137,7 @@ class JobManager:
                         state.append_log(f"XTTS CPU postprocess failed: {exc}")
                         self.save_state(state)
                         raise
+                    state = self._catch_up_xtts_deferred_mp3_artifacts(state, logger=logger, append_log=True)
                     xtts_defer_mp3 = False
             else:
                 for idx, chunk in enumerate(state.chunks, start=1):
@@ -1121,6 +1195,14 @@ class JobManager:
                         raise
 
             synthesis_finished = time.perf_counter()
+            missing_audio_chunks = self._missing_text_audio_chunks(state)
+            if missing_audio_chunks:
+                preview = ", ".join(str(index) for index in missing_audio_chunks[:12])
+                raise RuntimeError(
+                    "Missing audio artifacts for text-bearing chunk(s): "
+                    f"{preview}"
+                    + (" ..." if len(missing_audio_chunks) > 12 else "")
+                )
             state.final_output_files = []
             for chapter in state.chapters:
                 chapter.output_file = ""

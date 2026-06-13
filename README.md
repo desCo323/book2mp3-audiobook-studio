@@ -195,6 +195,7 @@ Details:
 - [Architecture](docs/architecture.md)
 - [Requirements V1](docs/anforderungen-book2mp3-v1.md)
 - [Portable Distribution](docs/portable-distribution.md)
+- [Release Checklist](docs/release-checklist.md)
 - [Roadmap](docs/roadmap.md)
 - [Voice Strategy](docs/voice-strategy.md)
 - [Next Agent Handover](docs/next-agent.md)

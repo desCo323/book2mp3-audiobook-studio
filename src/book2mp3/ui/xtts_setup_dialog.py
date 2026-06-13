@@ -46,6 +46,14 @@ class XttsSetupDialog(QDialog):
         apply_modern_window_style(self)
         translate_widget_tree(self, self.ui_language)
 
+    def _text(self, de: str, en: str, es: str, pt: str) -> str:
+        return {
+            "de": de,
+            "en": en,
+            "es": es,
+            "pt": pt,
+        }.get(self.ui_language, en)
+
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
@@ -55,7 +63,12 @@ class XttsSetupDialog(QDialog):
 
         intro = QLabel(
             f"{xtts_setup_summary(self.paths)} "
-            "Die App bleibt währenddessen benutzbar, aber der XTTS-Setup selbst kann einige Minuten dauern."
+            + self._text(
+                "Die App bleibt währenddessen benutzbar, aber der XTTS-Setup selbst kann einige Minuten dauern.",
+                "The app remains usable while this runs, but the XTTS setup itself can take several minutes.",
+                "La aplicación seguirá siendo utilizable mientras esto se ejecuta, pero la instalación de XTTS puede tardar varios minutos.",
+                "O aplicativo continua utilizável durante esse processo, mas a instalação do XTTS pode levar vários minutos.",
+            )
         )
         intro.setWordWrap(True)
         intro.setProperty("role", "hint")
@@ -67,7 +80,12 @@ class XttsSetupDialog(QDialog):
         layout.addWidget(license_note)
 
         self.status_label = QLabel(
-            f"Empfohlener Endnutzerpfad: {xtts_launcher_hint()} oder direkt aus diesem Dialog starten."
+            self._text(
+                f"Empfohlener Endnutzerpfad: {xtts_launcher_hint()} oder direkt aus diesem Dialog starten.",
+                f"Recommended end-user path: {xtts_launcher_hint()} or start it directly from this dialog.",
+                f"Ruta recomendada para el usuario final: {xtts_launcher_hint()} o iniciarlo directamente desde este diálogo.",
+                f"Caminho recomendado para o usuário final: {xtts_launcher_hint()} ou iniciá-lo diretamente neste diálogo.",
+            )
         )
         self.status_label.setWordWrap(True)
         self.status_label.setProperty("role", "muted")
@@ -78,14 +96,26 @@ class XttsSetupDialog(QDialog):
         if xtts_setup_supported(self.paths):
             self.command_view.setPlainText(xtts_setup_command_text(self.paths, python_executable=sys.executable))
         else:
-            self.command_view.setPlainText("XTTS-Setup ist in dieser Laufzeit nicht vorbereitet.")
+            self.command_view.setPlainText(
+                self._text(
+                    "XTTS-Setup ist in dieser Laufzeit nicht vorbereitet.",
+                    "XTTS setup is not prepared in this runtime.",
+                    "La instalación de XTTS no está preparada en este runtime.",
+                    "A instalação do XTTS não está preparada neste runtime.",
+                )
+            )
         self.command_view.setMinimumHeight(84)
         layout.addWidget(self.command_view)
 
         self.output_view = QPlainTextEdit()
         self.output_view.setReadOnly(True)
         self.output_view.setPlaceholderText(
-            "Hier erscheinen der Download- und Installationsfortschritt der optionalen XTTS-Runtime."
+            self._text(
+                "Hier erscheinen der Download- und Installationsfortschritt der optionalen XTTS-Runtime.",
+                "Download and installation progress for the optional XTTS runtime appears here.",
+                "Aquí aparecerá el progreso de descarga e instalación del runtime opcional de XTTS.",
+                "Aqui aparecerá o progresso do download e da instalação do runtime opcional do XTTS.",
+            )
         )
         layout.addWidget(self.output_view, 1)
 
@@ -103,7 +133,14 @@ class XttsSetupDialog(QDialog):
 
         if not xtts_setup_supported(self.paths):
             self.start_button.setEnabled(False)
-            self.status_label.setText("XTTS-Setup ist in dieser Laufzeit nicht vorbereitet.")
+            self.status_label.setText(
+                self._text(
+                    "XTTS-Setup ist in dieser Laufzeit nicht vorbereitet.",
+                    "XTTS setup is not prepared in this runtime.",
+                    "La instalación de XTTS no está preparada en este runtime.",
+                    "A instalação do XTTS não está preparada neste runtime.",
+                )
+            )
 
     def open_runtime_folder(self) -> None:
         from PySide6.QtCore import QUrl
@@ -115,14 +152,33 @@ class XttsSetupDialog(QDialog):
         if self.process.state() != QProcess.ProcessState.NotRunning:
             return
         if not xtts_setup_supported(self.paths):
-            QMessageBox.warning(self, "XTTS-Setup fehlt", "Die Installationsskripte sind in dieser Laufzeit nicht vorhanden.")
+            QMessageBox.warning(
+                self,
+                self._text("XTTS-Setup fehlt", "XTTS setup missing", "Falta la instalación de XTTS", "Falta a instalação do XTTS"),
+                self._text(
+                    "Die Installationsskripte sind in dieser Laufzeit nicht vorhanden.",
+                    "The installation scripts are not present in this runtime.",
+                    "Los scripts de instalación no están presentes en este runtime.",
+                    "Os scripts de instalação não estão presentes neste runtime.",
+                ),
+            )
             return
         command = xtts_setup_command(self.paths, python_executable=sys.executable)
         self.output_view.clear()
-        self.output_view.appendPlainText(f"Starte: {xtts_setup_command_text(self.paths, python_executable=sys.executable)}\n")
+        self.output_view.appendPlainText(
+            self._text("Starte", "Starting", "Iniciando", "Iniciando")
+            + f": {xtts_setup_command_text(self.paths, python_executable=sys.executable)}\n"
+        )
         self.start_button.setEnabled(False)
         self.close_button.setEnabled(False)
-        self.status_label.setText("XTTS-Setup läuft. Downloads und Paketinstallation können einige Minuten dauern.")
+        self.status_label.setText(
+            self._text(
+                "XTTS-Setup läuft. Downloads und Paketinstallation können einige Minuten dauern.",
+                "XTTS setup is running. Downloads and package installation can take several minutes.",
+                "La instalación de XTTS está en curso. Las descargas y la instalación de paquetes pueden tardar varios minutos.",
+                "A instalação do XTTS está em andamento. Downloads e instalação de pacotes podem levar vários minutos.",
+            )
+        )
         self.process.start(command[0], command[1:])
 
     def _append_output(self) -> None:
@@ -138,30 +194,57 @@ class XttsSetupDialog(QDialog):
         self.close_button.setEnabled(True)
         if exit_status == QProcess.ExitStatus.NormalExit and exit_code == 0:
             self.status_label.setText(
-                "XTTS-Runtime installiert. Als Nächstes kannst du Starterprofile laden oder direkt ein XTTS-Profil testen."
+                self._text(
+                    "XTTS-Runtime installiert. Als Nächstes kannst du Starterprofile laden oder direkt ein XTTS-Profil testen.",
+                    "XTTS runtime installed. Next you can load starter profiles or test an XTTS profile directly.",
+                    "Runtime XTTS instalado. Ahora puedes cargar perfiles iniciales o probar directamente un perfil XTTS.",
+                    "Runtime XTTS instalado. Agora você pode carregar perfis iniciais ou testar diretamente um perfil XTTS.",
+                )
             )
             QMessageBox.information(
                 self,
-                "XTTS bereit",
-                "Die optionale XTTS-Runtime wurde eingerichtet. Lade jetzt bei Bedarf Starterprofile oder öffne das XTTS-Profilstudio.",
+                self._text("XTTS bereit", "XTTS ready", "XTTS listo", "XTTS pronto"),
+                self._text(
+                    "Die optionale XTTS-Runtime wurde eingerichtet. Lade jetzt bei Bedarf Starterprofile oder öffne das XTTS-Profilstudio.",
+                    "The optional XTTS runtime is ready. You can now load starter profiles or open the XTTS profile studio.",
+                    "El runtime opcional de XTTS está listo. Ahora puedes cargar perfiles iniciales o abrir el estudio de perfiles XTTS.",
+                    "O runtime opcional do XTTS está pronto. Agora você pode carregar perfis iniciais ou abrir o estúdio de perfis XTTS.",
+                ),
             )
             return
-        self.status_label.setText("XTTS-Setup ist fehlgeschlagen. Prüfe die Logausgabe und bleibe vorerst bei Piper.")
+        self.status_label.setText(
+            self._text(
+                "XTTS-Setup ist fehlgeschlagen. Prüfe die Logausgabe und bleibe vorerst bei Piper.",
+                "XTTS setup failed. Check the log output and stay with Piper for now.",
+                "La instalación de XTTS ha fallado. Revisa el log y utiliza Piper por ahora.",
+                "A instalação do XTTS falhou. Verifique o log e use Piper por enquanto.",
+            )
+        )
         QMessageBox.warning(
             self,
-            "XTTS-Setup fehlgeschlagen",
-            "Die optionale XTTS-Runtime konnte nicht eingerichtet werden. Details stehen im Logbereich dieses Dialogs.",
+            self._text("XTTS-Setup fehlgeschlagen", "XTTS setup failed", "Falló la instalación de XTTS", "A instalação do XTTS falhou"),
+            self._text(
+                "Die optionale XTTS-Runtime konnte nicht eingerichtet werden. Details stehen im Logbereich dieses Dialogs.",
+                "The optional XTTS runtime could not be installed. Details are shown in the log area of this dialog.",
+                "No se pudo instalar el runtime opcional de XTTS. Los detalles se muestran en el área de log de este diálogo.",
+                "Não foi possível instalar o runtime opcional do XTTS. Os detalhes aparecem na área de log deste diálogo.",
+            ),
         )
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
-        self.output_view.appendPlainText(f"\nProzessfehler: {error}")
+        self.output_view.appendPlainText(f"\n{self._text('Prozessfehler', 'Process error', 'Error del proceso', 'Erro do processo')}: {error}")
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self.process.state() != QProcess.ProcessState.NotRunning:
             answer = QMessageBox.question(
                 self,
-                "Setup läuft noch",
-                "Der XTTS-Setup läuft noch. Soll er wirklich abgebrochen werden?",
+                self._text("Setup läuft noch", "Setup still running", "La instalación sigue en curso", "A instalação ainda está em andamento"),
+                self._text(
+                    "Der XTTS-Setup läuft noch. Soll er wirklich abgebrochen werden?",
+                    "The XTTS setup is still running. Do you really want to abort it?",
+                    "La instalación de XTTS sigue en curso. ¿Seguro que quieres cancelarla?",
+                    "A instalação do XTTS ainda está em andamento. Deseja realmente cancelá-la?",
+                ),
             )
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()

@@ -126,6 +126,8 @@ def main() -> int:
             recovered = manager.load_state(state.job_id)
             assert recovered.status == "queued", recovered.status
             assert [chunk.status for chunk in recovered.chunks[:5]] == ["done", "done", "done", "done", "done"]
+            assert Path(recovered.chunks[4].mp3_file).exists(), recovered.chunks[4].mp3_file
+            assert not Path(recovered.chunks[4].wav_file).exists(), recovered.chunks[4].wav_file
             assert all(chunk.status == "pending" for chunk in recovered.chunks[5:])
 
             resumed = manager.run_job(recovered)
@@ -150,6 +152,7 @@ def main() -> int:
                     "job_id": resumed.job_id,
                     "backend_calls": backend.calls,
                     "recovered_first_statuses": [chunk.status for chunk in recovered.chunks[:6]],
+                    "caught_up_mp3": Path(recovered.chunks[4].mp3_file).name,
                     "remaining_after_recovery": [chunk.index for chunk in recovered.chunks if chunk.status != "done"],
                 },
                 indent=2,
