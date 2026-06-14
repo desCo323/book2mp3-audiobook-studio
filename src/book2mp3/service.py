@@ -1,14 +1,26 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import asdict
 import os
+import mimetypes
 from pathlib import Path
 import subprocess
+import tempfile
+import urllib.parse
 from typing import Any
+
+import requests
 
 from book2mp3.app_settings import AppSettings, load_app_settings, reset_workspace_state, save_app_settings
 from book2mp3.config import AppPaths
-from book2mp3.metadata_extractor import extract_metadata_from_source, guess_metadata_from_filename, search_online_book_metadata
+from book2mp3.metadata_extractor import (
+    build_author_pronunciation_rules,
+    extract_metadata_from_source,
+    guess_metadata_from_filename,
+    search_online_book_metadata,
+)
 from book2mp3.models import AudiobookMetadata, JobState, default_audiobook_metadata
 from book2mp3.pipeline.extract import DocumentStructure, analyze_document_structure
 from book2mp3.pipeline.jobs import JobManager
@@ -17,6 +29,7 @@ from book2mp3.runtime_stats import runtime_statistics_summary
 from book2mp3.tts.piper import PiperBackend
 from book2mp3.tts.xtts import XttsBackend
 from book2mp3.utils.perf_logging import current_run_id, is_perf_logging_enabled, perf_log_target_hint
+from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_catalog import core_language_voice_counts, format_voice_label, voice_language_code
 from book2mp3.voice_lab import list_voice_profiles, load_voice_profile
 from book2mp3.voice_settings import (
@@ -29,6 +42,7 @@ from book2mp3.voice_settings import (
     profile_status_label,
     update_voice_setting_status,
 )
+from book2mp3.xtts_options import default_xtts_inference, normalize_pronunciation_rules, normalize_xtts_inference, normalize_xtts_quality_mode
 from book2mp3.xtts_setup import xtts_launcher_hint, xtts_setup_supported
 
 
@@ -40,6 +54,8 @@ class Book2Mp3Service:
         self.paths = paths
         self.paths.ensure()
         self.manager = JobManager(paths)
+        self.logger = get_logger("service")
+        self._metadata_history_warning_emitted = False
 
     def recover_interrupted_jobs(self) -> None:
         self.manager.recover_interrupted_jobs()
@@ -155,6 +171,9 @@ class Book2Mp3Service:
         sentence_silence: float | None = None,
         length_scale: float | None = None,
         audiobook_metadata: dict[str, str] | None = None,
+        xtts_quality_mode: str | None = None,
+        xtts_inference: dict[str, Any] | None = None,
+        pronunciation_rules: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         source = Path(source_path).expanduser().resolve()
         if not source.exists():
@@ -162,6 +181,9 @@ class Book2Mp3Service:
 
         resolved_saved_profile_id = saved_profile_id.strip() or profile_id.strip()
         saved_profile_name = ""
+        resolved_xtts_quality_mode = normalize_xtts_quality_mode(xtts_quality_mode)
+        resolved_xtts_inference = normalize_xtts_inference(xtts_inference, quality_mode=resolved_xtts_quality_mode)
+        resolved_pronunciation_rules = normalize_pronunciation_rules(pronunciation_rules)
         if resolved_saved_profile_id:
             saved_profile = load_voice_setting(self.paths.voice_settings, resolved_saved_profile_id)
             if saved_profile.status == PROFILE_STATUS_ARCHIVED:
@@ -185,6 +207,12 @@ class Book2Mp3Service:
                 sentence_silence = saved_profile.sentence_silence
             if length_scale is None:
                 length_scale = saved_profile.length_scale
+            if xtts_quality_mode is None:
+                resolved_xtts_quality_mode = saved_profile.xtts_quality_mode
+            if xtts_inference is None:
+                resolved_xtts_inference = dict(saved_profile.xtts_inference)
+            if pronunciation_rules is None:
+                resolved_pronunciation_rules = list(saved_profile.pronunciation_rules)
         preset = get_preset(preset_id)
         backend = backend.strip().lower()
         if backend not in {"piper", "xtts"}:
@@ -193,6 +221,17 @@ class Book2Mp3Service:
             raise ValueError("voice_id is required for Piper jobs")
         if backend == "xtts" and not voice_profile_id:
             raise ValueError("voice_profile_id is required for XTTS jobs")
+        if backend == "xtts":
+            resolved_xtts_quality_mode = normalize_xtts_quality_mode(resolved_xtts_quality_mode)
+            resolved_xtts_inference = normalize_xtts_inference(
+                resolved_xtts_inference,
+                quality_mode=resolved_xtts_quality_mode,
+            )
+            resolved_pronunciation_rules = normalize_pronunciation_rules(resolved_pronunciation_rules)
+        else:
+            resolved_xtts_quality_mode = "fast"
+            resolved_xtts_inference = default_xtts_inference("fast")
+            resolved_pronunciation_rules = []
         if output_mode is not None and output_mode not in VALID_OUTPUT_MODES:
             raise ValueError(f"Unsupported output mode: {output_mode}")
 
@@ -205,6 +244,11 @@ class Book2Mp3Service:
             voice_profile_id=voice_profile_id,
             overrides=audiobook_metadata,
         )
+        if backend == "xtts":
+            resolved_pronunciation_rules = self._merge_pronunciation_rules(
+                resolved_pronunciation_rules,
+                build_author_pronunciation_rules(authors={metadata.author}),
+            )
         state = self.manager.create_job(
             source_path=source,
             saved_profile_id=resolved_saved_profile_id,
@@ -221,9 +265,34 @@ class Book2Mp3Service:
             length_scale=length_scale if length_scale is not None else preset.length_scale,
             backend=backend,
             audiobook_metadata=metadata,
+            xtts_quality_mode=resolved_xtts_quality_mode,
+            xtts_inference=resolved_xtts_inference,
+            pronunciation_rules=resolved_pronunciation_rules,
         )
         state = self.manager.prepare_job(state)
+        self.record_metadata_history(state.audiobook_metadata.to_dict())
         return self.serialize_job(state)
+
+    def _merge_pronunciation_rules(
+        self,
+        preferred_rules: list[dict[str, Any]] | None,
+        fallback_rules: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        seen_matches: set[str] = set()
+        for raw_rule in normalize_pronunciation_rules(preferred_rules):
+            match = str(raw_rule.get("match", "") or "").strip()
+            if not match:
+                continue
+            seen_matches.add(match.casefold())
+            merged.append(raw_rule)
+        for raw_rule in normalize_pronunciation_rules(fallback_rules):
+            match = str(raw_rule.get("match", "") or "").strip()
+            if not match or match.casefold() in seen_matches:
+                continue
+            seen_matches.add(match.casefold())
+            merged.append(raw_rule)
+        return merged
 
     def create_jobs(
         self,
@@ -242,14 +311,18 @@ class Book2Mp3Service:
         keep_wav: bool | None = None,
         sentence_silence: float | None = None,
         length_scale: float | None = None,
-        audiobook_metadata: dict[str, str] | None = None,
+        audiobook_metadata: dict[str, Any] | list[dict[str, Any]] | None = None,
+        xtts_quality_mode: str | None = None,
+        xtts_inference: dict[str, Any] | None = None,
+        pronunciation_rules: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
+        source_items = self._collect_source_paths(source_paths)
+        if not source_items:
+            raise ValueError("No supported source files found. Supported: .txt, .pdf, .epub")
+        normalized_overrides = self._normalize_job_metadata_overrides(source_items, audiobook_metadata)
         created: list[dict[str, Any]] = []
-        source_items = [Path(source).expanduser().resolve() for source in source_paths]
-        for source in source_items:
-            per_source_metadata = dict(audiobook_metadata or {})
-            if len(source_items) > 1 and per_source_metadata.get("title"):
-                per_source_metadata["title"] = f"{per_source_metadata['title']} - {source.stem}"
+        for index, source in enumerate(source_items):
+            per_source_metadata = dict(normalized_overrides[index]) if index < len(normalized_overrides) else {}
             created.append(
                 self.create_job(
                     source_path=source,
@@ -267,6 +340,9 @@ class Book2Mp3Service:
                     sentence_silence=sentence_silence,
                     length_scale=length_scale,
                     audiobook_metadata=per_source_metadata or None,
+                    xtts_quality_mode=xtts_quality_mode,
+                    xtts_inference=xtts_inference,
+                    pronunciation_rules=pronunciation_rules,
                 )
             )
         return created
@@ -307,7 +383,120 @@ class Book2Mp3Service:
             metadata_overrides=audiobook_metadata,
             reapply_outputs=reapply_outputs,
         )
+        self.record_metadata_history(state.audiobook_metadata.to_dict())
         return self.serialize_job(state)
+
+    def metadata_history_suggestions(self, field_name: str, prefix: str = "", limit: int = 12) -> list[str]:
+        payload = self._load_metadata_history()
+        values = [str(item).strip() for item in payload.get(field_name, []) if str(item).strip()]
+        if prefix.strip():
+            lowered = prefix.strip().lower()
+            values = [value for value in values if lowered in value.lower()]
+        # Newest entries should appear first.
+        values = list(reversed(values))
+        deduplicated: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            marker = value.casefold()
+            if marker in seen:
+                continue
+            seen.add(marker)
+            deduplicated.append(value)
+            if len(deduplicated) >= max(1, int(limit)):
+                break
+        return deduplicated
+
+    def record_metadata_history(self, metadata: dict[str, Any]) -> None:
+        tracked_fields = ("title", "author", "narrator", "publisher", "subject", "genre", "language")
+        payload = self._load_metadata_history()
+        changed = False
+        for field_name in tracked_fields:
+            value = str(metadata.get(field_name, "") or "").strip()
+            if not value:
+                continue
+            existing = [str(item).strip() for item in payload.get(field_name, []) if str(item).strip()]
+            existing = [item for item in existing if item.casefold() != value.casefold()]
+            existing.append(value)
+            payload[field_name] = existing[-80:]
+            changed = True
+        if changed:
+            self._save_metadata_history(payload)
+
+    def _metadata_history_path(self) -> Path:
+        return self.paths.statistics / "metadata_history.json"
+
+    def _metadata_history_fallback_path(self) -> Path:
+        return Path(tempfile.gettempdir()) / "book2mp3-state" / "metadata_history.json"
+
+    def _write_metadata_history(self, path: Path, payload: dict[str, list[str]]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _load_metadata_history(self) -> dict[str, list[str]]:
+        history_path = self._metadata_history_path()
+        fallback_path = self._metadata_history_fallback_path()
+        bootstrap = self._collect_metadata_history_from_jobs()
+        if not history_path.exists():
+            if bootstrap:
+                self._save_metadata_history(bootstrap)
+            if fallback_path.exists():
+                try:
+                    payload = json.loads(fallback_path.read_text(encoding="utf-8"))
+                    if isinstance(payload, dict):
+                        bootstrap = {**bootstrap, **{str(k): [str(v) for v in vals if str(v).strip()] for k, vals in payload.items() if isinstance(vals, list)}}
+                except (OSError, json.JSONDecodeError):
+                    pass
+            return bootstrap
+        try:
+            payload = json.loads(history_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            try:
+                payload = json.loads(fallback_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return bootstrap
+        if not isinstance(payload, dict):
+            return bootstrap
+        normalized: dict[str, list[str]] = {}
+        for key, values in payload.items():
+            if not isinstance(values, list):
+                continue
+            normalized[str(key)] = [str(item) for item in values if str(item).strip()]
+        for key, values in bootstrap.items():
+            merged = normalized.get(key, [])
+            for value in values:
+                if value.casefold() not in {item.casefold() for item in merged}:
+                    merged.append(value)
+            normalized[key] = merged[-80:]
+        return normalized
+
+    def _save_metadata_history(self, payload: dict[str, list[str]]) -> None:
+        history_path = self._metadata_history_path()
+        try:
+            self._write_metadata_history(history_path, payload)
+            return
+        except PermissionError:
+            fallback_path = self._metadata_history_fallback_path()
+            self._write_metadata_history(fallback_path, payload)
+            if not self._metadata_history_warning_emitted:
+                self.logger.warning(
+                    "Primary metadata history file was not writable, using fallback file %s",
+                    fallback_path,
+                )
+                self._metadata_history_warning_emitted = True
+
+    def _collect_metadata_history_from_jobs(self) -> dict[str, list[str]]:
+        tracked_fields = ("title", "author", "narrator", "publisher", "subject", "genre", "language")
+        collected: dict[str, list[str]] = {field_name: [] for field_name in tracked_fields}
+        for job in self.manager.list_jobs():
+            metadata = job.audiobook_metadata.to_dict()
+            for field_name in tracked_fields:
+                value = str(metadata.get(field_name, "") or "").strip()
+                if not value:
+                    continue
+                if value.casefold() in {item.casefold() for item in collected[field_name]}:
+                    continue
+                collected[field_name].append(value)
+        return {key: values for key, values in collected.items() if values}
 
     def delete_job(self, job_id: str) -> None:
         self.manager.delete_job(job_id)
@@ -460,6 +649,8 @@ class Book2Mp3Service:
             "priority": state.priority,
             "output_mode": state.output_mode,
             "target_part_minutes": state.target_part_minutes,
+            "xtts_quality_mode": state.xtts_quality_mode,
+            "pronunciation_rule_count": len(state.pronunciation_rules),
             "device_mode": state.device_mode,
             "processing_mode": state.processing_mode,
             "processing_mode_reason": state.processing_mode_reason,
@@ -507,6 +698,9 @@ class Book2Mp3Service:
             "source_candidate_id": setting.source_candidate_id,
             "created_at": setting.created_at,
             "updated_at": setting.updated_at,
+            "xtts_quality_mode": setting.xtts_quality_mode,
+            "xtts_inference": setting.xtts_inference,
+            "pronunciation_rules": setting.pronunciation_rules,
         }
 
     def _path_info(self, path: Path) -> dict[str, Any]:
@@ -585,6 +779,50 @@ class Book2Mp3Service:
             "gpu_error": gpu_error,
         }
 
+    def _collect_source_paths(self, source_paths: list[str | Path]) -> list[Path]:
+        allowed_suffixes = {".txt", ".pdf", ".epub"}
+        collected: list[Path] = []
+        seen: set[Path] = set()
+        for source_path in source_paths:
+            source = Path(source_path).expanduser().resolve()
+            if source.is_dir():
+                for candidate in sorted(source.rglob("*")):
+                    if candidate.is_file() and candidate.suffix.lower() in allowed_suffixes:
+                        normalized = candidate.resolve()
+                        if normalized in seen:
+                            continue
+                        seen.add(normalized)
+                        collected.append(normalized)
+                continue
+            if source.is_file() and source.suffix.lower() in allowed_suffixes:
+                normalized = source
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
+                collected.append(normalized)
+        return collected
+
+    def _normalize_job_metadata_overrides(
+        self,
+        source_paths: list[Path],
+        audiobook_metadata: dict[str, Any] | list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        if not source_paths:
+            return []
+        if audiobook_metadata is None:
+            return [dict() for _ in source_paths]
+        if isinstance(audiobook_metadata, dict):
+            return [dict(audiobook_metadata) for _ in source_paths]
+        normalized_list: list[dict[str, Any]] = []
+        for item in audiobook_metadata:
+            if isinstance(item, dict):
+                normalized_list.append(dict(item))
+        if not normalized_list:
+            return [dict() for _ in source_paths]
+        while len(normalized_list) < len(source_paths):
+            normalized_list.append(dict(normalized_list[-1]))
+        return normalized_list[: len(source_paths)]
+
     def _resolve_metadata(
         self,
         *,
@@ -604,6 +842,9 @@ class Book2Mp3Service:
             profile = load_voice_profile(self.paths.voice_profiles, voice_profile_id)
             language = profile.target_language
             narrator = profile.display_name
+        if overrides is None:
+            overrides = {}
+        overrides_dict = {str(key): value for key, value in overrides.items()}
         fallback = default_audiobook_metadata(
             title=title,
             backend=backend,
@@ -628,6 +869,7 @@ class Book2Mp3Service:
                     transfer = result.mp3_transfer_payload(narrator=narrator)
                     suggested_payload = {
                         **transfer.get("core_metadata", {}),
+                        "cover_url": str(transfer.get("cover_url") or ""),
                         "publisher": str(transfer.get("ffmetadata_tags", {}).get("publisher") or ""),
                         "year": int(str(transfer.get("ffmetadata_tags", {}).get("year") or "0") or 0),
                         "subject": str(transfer.get("ffmetadata_tags", {}).get("subject") or ""),
@@ -640,7 +882,78 @@ class Book2Mp3Service:
                 except Exception:
                     suggested_payload = {}
         resolved = AudiobookMetadata.from_dict(suggested_payload or None, fallback=fallback)
-        return AudiobookMetadata.from_dict(overrides, fallback=resolved)
+        with_overrides = AudiobookMetadata.from_dict(overrides_dict, fallback=resolved)
+        resolved_cover_file = self._resolve_cover_art_file(
+            source_path=source_path,
+            override_cover_url=str(overrides_dict.get("cover_url", "") or ""),
+            suggested_cover_url=resolved.cover_url,
+            override_cover_art_file=str(overrides_dict.get("cover_art_file", "") or ""),
+        )
+        with_overrides.cover_art_file = str(resolved_cover_file)
+        override_cover_url = str(overrides_dict.get("cover_url", "") or "").strip()
+        with_overrides.cover_url = override_cover_url or str(with_overrides.cover_url).strip()
+        return with_overrides
+
+    def _resolve_cover_art_file(
+        self,
+        *,
+        source_path: Path | None,
+        override_cover_url: str,
+        suggested_cover_url: str,
+        override_cover_art_file: str,
+    ) -> Path | str:
+        source_hint = source_path.name if source_path else "unknown_source"
+        requested_local_path = str(override_cover_art_file or "").strip()
+        if requested_local_path:
+            if not Path(requested_local_path).is_absolute():
+                candidate = Path(requested_local_path)
+                if candidate.exists():
+                    return candidate.resolve()
+            candidate = Path(requested_local_path)
+            if candidate.exists():
+                return candidate.resolve()
+        requested_url = str(override_cover_url or "").strip()
+        url = requested_url.strip() or str(suggested_cover_url or "").strip()
+        if url and source_path is not None:
+            if not (url.startswith("http://") or url.startswith("https://")):
+                local_candidate = Path(url)
+                if local_candidate.exists():
+                    return local_candidate.resolve()
+                return ""
+            cache_root = self.paths.workspace / "metadata_covers"
+            cache_root.mkdir(parents=True, exist_ok=True)
+            digest = hashlib.sha1(url.encode("utf-8")).hexdigest()
+            extension = self._image_extension_from_url(url)
+            filename = f"{source_hint}_{digest}{extension}"
+            target_path = cache_root / filename
+            if target_path.exists() and target_path.stat().size > 0:
+                return target_path.resolve()
+            try:
+                response = requests.get(url, timeout=20)
+                response.raise_for_status()
+                if not response.content:
+                    return ""
+                extension = extension or self._image_extension_from_content_type(response.headers.get("Content-Type"))
+                target_path = cache_root / f"{source_hint}_{digest}{extension}"
+                target_path.write_bytes(response.content)
+                return target_path.resolve()
+            except Exception:
+                return ""
+        return ""
+
+    def _image_extension_from_url(self, value: str) -> str:
+        parsed = urllib.parse.urlparse(value)
+        candidate = Path(parsed.path or "").suffix.lower()
+        if candidate in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}:
+            return candidate
+        return ""
+
+    def _image_extension_from_content_type(self, content_type: str | None) -> str:
+        if not content_type:
+            return ".jpg"
+        mime = content_type.split(";", 1)[0].strip().lower()
+        extension = mimetypes.guess_extension(mime) or ".jpg"
+        return extension if extension in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"} else ".jpg"
 
     def _resolve_output_mode_for_source(self, source: Path, requested_output_mode: str) -> str:
         if requested_output_mode != "chapter_files":

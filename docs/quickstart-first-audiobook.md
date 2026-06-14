@@ -53,14 +53,23 @@ Pflege nach Bedarf:
 
 Diese Informationen werden fuer MP3-Tags und Manifestdateien genutzt.
 
-## 5. Auftrag starten
+## 5. Bei XTTS das Lexikon pruefen
+
+Wenn du ein XTTS-Produktionsprofil nutzt:
+
+- trage zuerst den Autor sauber ein
+- klicke `Lexikon`
+- pruefe die automatisch geladenen Autoren- und Namensregeln
+- korrigiere problematische Eigennamen vor dem echten Lauf
+
+## 6. Auftrag starten
 
 Waehle:
 
 - `Jetzt starten`, wenn der Auftrag sofort laufen soll
 - `In Queue`, wenn spaeter verarbeitet werden soll
 
-## 6. Fortschritt verfolgen
+## 7. Fortschritt verfolgen
 
 In `Auftraege` kannst du sehen:
 
@@ -71,9 +80,9 @@ In `Auftraege` kannst du sehen:
 - Audio-Artefakte
 - Retry-Aktionen bei Fehlern
 
-## 7. Ergebnis pruefen
+## 8. Ergebnis pruefen
 
-Im Ausgabeordner findest du je nach Modus:
+Im Bereich `Fertige Bücher` und im Ausgabeordner findest du je nach Modus:
 
 - Kapitel-MP3s
 - eine Gesamtdatei

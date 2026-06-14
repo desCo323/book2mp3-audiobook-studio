@@ -43,6 +43,9 @@ Direkt als Modul:
 PYTHONPATH=src python3 -m book2mp3.metadata_extractor extract /pfad/zum/buch.pdf
 PYTHONPATH=src python3 -m book2mp3.metadata_extractor extract /pfad/zum/buch.pdf --offline
 PYTHONPATH=src python3 -m book2mp3.metadata_extractor evaluate /home/codex/repo/book2mp3/EBOOKS --offline
+PYTHONPATH=src python3 -m book2mp3.metadata_extractor lexicon-validate
+PYTHONPATH=src python3 -m book2mp3.metadata_extractor lexicon-scan /home/codex/Schreibtisch/books --suffix .epub
+PYTHONPATH=src python3 -m book2mp3.metadata_extractor lexicon-rules
 ```
 
 ## Ergebnisformat
@@ -82,6 +85,53 @@ PYTHONPATH=src python3 -m book2mp3.metadata_extractor evaluate /home/codex/repo/
 - `core_metadata`
 - `ffmetadata_tags`
 - `extended_book_metadata`
+
+## Globales Lexikon
+
+Zusätzlich liegt unter:
+
+- `src/book2mp3/metadata_extractor/global_book_lexicon.json`
+
+ein globales, editierbares Autoren-/Buch-/Figurenlexikon.
+
+Ziel des Lexikons:
+
+- schwierige Namen zentral pflegen
+- spätere UI-Autovervollständigung ermöglichen
+- XTTS-Ausspracheregeln reproduzierbar aus Daten erzeugen
+- lokale Bücher gegen bekannte Figuren prüfen
+
+Programmgesteuert:
+
+```python
+from book2mp3.metadata_extractor import (
+    build_pronunciation_rules,
+    build_xtts_profile_patch,
+    load_global_lexicon,
+    scan_books_for_lexicon,
+    validate_global_lexicon,
+)
+
+lexicon = load_global_lexicon()
+report = validate_global_lexicon()
+rules = build_pronunciation_rules(lexicon)
+coverage = scan_books_for_lexicon("/home/codex/Schreibtisch/books", suffixes={".epub"})
+```
+
+CLI:
+
+```bash
+PYTHONPATH=src python3 -m book2mp3.metadata_extractor lexicon-validate
+PYTHONPATH=src python3 -m book2mp3.metadata_extractor lexicon-scan /home/codex/Schreibtisch/books --suffix .epub
+PYTHONPATH=src python3 -m book2mp3.metadata_extractor lexicon-rules
+```
+
+Das Lexikon ist bewusst datengetrieben:
+
+- `book_title_aliases` steuern die Buchzuordnung
+- `characters[].aliases` steuern die Buchabdeckungstests
+- `characters[].spoken_as` plus `use_for_xtts=true` steuern die XTTS-Regeln
+- `characters[].sources` dokumentieren, woher der Eintrag stammt
 
 ## Interne Strategie
 

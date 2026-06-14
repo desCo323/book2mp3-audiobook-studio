@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import os
 from pathlib import Path
+from typing import Any
 
 from book2mp3.i18n import resolve_ui_language
 from book2mp3.models import utc_now
+from book2mp3.xtts_options import (
+    default_xtts_inference,
+    normalize_pronunciation_rules,
+    normalize_xtts_inference,
+    normalize_xtts_quality_mode,
+)
 
 PROFILE_STATUS_DRAFT = "draft"
 PROFILE_STATUS_TESTED = "tested"
@@ -83,6 +90,9 @@ class VoiceSetting:
     source_session_id: str = ""
     source_run_id: str = ""
     source_candidate_id: str = ""
+    xtts_quality_mode: str = "fast"
+    xtts_inference: dict[str, Any] = field(default_factory=dict)
+    pronunciation_rules: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def is_approved(self) -> bool:
@@ -135,6 +145,9 @@ def save_voice_setting(
     source_session_id: str | None = None,
     source_run_id: str | None = None,
     source_candidate_id: str | None = None,
+    xtts_quality_mode: str | None = None,
+    xtts_inference: dict[str, Any] | None = None,
+    pronunciation_rules: list[dict[str, Any]] | None = None,
     *,
     setting_id: str | None = None,
     ensure_unique_name: bool = False,
@@ -150,6 +163,16 @@ def save_voice_setting(
     )
     resolved_status = normalize_profile_status(status or (existing.status if existing else PROFILE_STATUS_TESTED))
     resolved_approved_at = approved_at if approved_at is not None else (existing.approved_at if existing else "")
+    resolved_quality_mode = normalize_xtts_quality_mode(
+        xtts_quality_mode if xtts_quality_mode is not None else (existing.xtts_quality_mode if existing else "fast")
+    )
+    resolved_inference = normalize_xtts_inference(
+        xtts_inference if xtts_inference is not None else (existing.xtts_inference if existing else None),
+        quality_mode=resolved_quality_mode,
+    )
+    resolved_pronunciation_rules = normalize_pronunciation_rules(
+        pronunciation_rules if pronunciation_rules is not None else (existing.pronunciation_rules if existing else [])
+    )
     if resolved_status == PROFILE_STATUS_APPROVED and not resolved_approved_at:
         resolved_approved_at = now
     if resolved_status != PROFILE_STATUS_APPROVED and status is not None and approved_at is None:
@@ -201,6 +224,9 @@ def save_voice_setting(
             if source_candidate_id is not None
             else (existing.source_candidate_id if existing else "")
         ),
+        xtts_quality_mode=resolved_quality_mode,
+        xtts_inference=resolved_inference,
+        pronunciation_rules=resolved_pronunciation_rules,
     )
     target = _setting_path(root, resolved_setting_id)
     payload = json.dumps(asdict(setting), indent=2, ensure_ascii=False)
@@ -236,7 +262,16 @@ def list_voice_settings(root: Path) -> list[VoiceSetting]:
         payload.setdefault("source_session_id", "")
         payload.setdefault("source_run_id", "")
         payload.setdefault("source_candidate_id", "")
+        payload.setdefault("xtts_quality_mode", "fast")
+        payload.setdefault("xtts_inference", {})
+        payload.setdefault("pronunciation_rules", [])
         payload["status"] = normalize_profile_status(payload.get("status"))
+        payload["xtts_quality_mode"] = normalize_xtts_quality_mode(payload.get("xtts_quality_mode"))
+        payload["xtts_inference"] = normalize_xtts_inference(
+            payload.get("xtts_inference"),
+            quality_mode=payload["xtts_quality_mode"],
+        )
+        payload["pronunciation_rules"] = normalize_pronunciation_rules(payload.get("pronunciation_rules"))
         settings.append(VoiceSetting(**payload))
     return sorted(settings, key=lambda item: item.updated_at, reverse=True)
 
@@ -255,7 +290,16 @@ def load_voice_setting(root: Path, setting_id: str) -> VoiceSetting:
     payload.setdefault("source_session_id", "")
     payload.setdefault("source_run_id", "")
     payload.setdefault("source_candidate_id", "")
+    payload.setdefault("xtts_quality_mode", "fast")
+    payload.setdefault("xtts_inference", {})
+    payload.setdefault("pronunciation_rules", [])
     payload["status"] = normalize_profile_status(payload.get("status"))
+    payload["xtts_quality_mode"] = normalize_xtts_quality_mode(payload.get("xtts_quality_mode"))
+    payload["xtts_inference"] = normalize_xtts_inference(
+        payload.get("xtts_inference"),
+        quality_mode=payload["xtts_quality_mode"],
+    )
+    payload["pronunciation_rules"] = normalize_pronunciation_rules(payload.get("pronunciation_rules"))
     return VoiceSetting(**payload)
 
 
@@ -283,5 +327,8 @@ def update_voice_setting_status(root: Path, setting_id: str, status: str) -> Voi
         source_session_id=existing.source_session_id,
         source_run_id=existing.source_run_id,
         source_candidate_id=existing.source_candidate_id,
+        xtts_quality_mode=existing.xtts_quality_mode,
+        xtts_inference=existing.xtts_inference,
+        pronunciation_rules=existing.pronunciation_rules,
         setting_id=existing.setting_id,
     )

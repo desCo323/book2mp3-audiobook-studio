@@ -44,6 +44,7 @@ class MetadataExtractionResult:
     candidates: list[MetadataCandidate]
     online_results: list[dict[str, Any]]
     online_errors: list[str]
+    cover_url: str = ""
     debug: dict[str, Any] = field(default_factory=dict)
 
     def guessed_metadata(self) -> dict[str, str]:
@@ -70,6 +71,7 @@ class MetadataExtractionResult:
             "title_source": self.title_source,
             "author_source": self.author_source,
             "source_path": self.source_path,
+            "cover_url": self.cover_url,
         }
 
     def mp3_transfer_payload(self, *, narrator: str = "") -> dict[str, Any]:
@@ -98,6 +100,7 @@ class MetadataExtractionResult:
         return {
             "core_metadata": core,
             "ffmetadata_tags": {key: value for key, value in ffmetadata_tags.items() if value},
+            "cover_url": self.cover_url,
             "extended_book_metadata": self.extended_book_metadata(),
         }
 
@@ -110,6 +113,7 @@ class MetadataExtractionResult:
             "genre": self.genre,
             "publisher": self.publisher,
             "year": int(self.year or 0),
+            "cover_url": self.cover_url,
             "identifiers": list(self.identifiers),
             "subjects": list(self.subjects),
             "comment": self.comment,

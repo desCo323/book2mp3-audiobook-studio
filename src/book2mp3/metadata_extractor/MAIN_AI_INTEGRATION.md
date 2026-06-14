@@ -35,7 +35,13 @@ Benutze nur diese öffentlichen APIs:
 ```python
 from pathlib import Path
 
-from book2mp3.metadata_extractor import extract_metadata_from_source
+from book2mp3.metadata_extractor import (
+    build_pronunciation_rules,
+    build_xtts_profile_patch,
+    extract_metadata_from_source,
+    load_global_lexicon,
+    validate_global_lexicon,
+)
 ```
 
 Hauptaufruf:
@@ -55,6 +61,14 @@ result.guessed_metadata()
 result.extended_book_metadata()
 result.mp3_transfer_payload(narrator="")
 result.to_dict()
+```
+
+Für das globale Lexikon:
+
+```python
+lexicon = load_global_lexicon()
+lexicon_report = validate_global_lexicon()
+xtts_rules = build_pronunciation_rules(lexicon)
 ```
 
 ## Was Zurückkommt
@@ -272,6 +286,36 @@ paths.workspace / "statistics" / "metadata_online_cache.json"
 ```
 
 Nicht bei jedem UI-Refresh neue Online-Suchen auslösen.
+
+## Globales Lexikon Und XTTS
+
+Zusätzlich zur Metadatenextraktion existiert ein globales Autoren-/Figurenlexikon:
+
+- `src/book2mp3/metadata_extractor/global_book_lexicon.json`
+
+Das Lexikon ist absichtlich editierbar und soll nicht in mehrere Stellen der Hauptsoftware kopiert werden.
+
+Verwendung:
+
+1. Lexikon beim Start oder beim Öffnen des Profilstudios laden.
+2. Vor Verwendung optional `validate_global_lexicon()` aufrufen.
+3. Für XTTS-Regeln `build_pronunciation_rules(...)` verwenden.
+4. Wenn ein XTTS-Profil aktualisiert werden soll, lieber aus dem Lexikon generieren als Regeln manuell in JSON-Dateien zu duplizieren.
+
+Empfohlener späterer Flow:
+
+```python
+from book2mp3.metadata_extractor import build_xtts_profile_patch, load_global_lexicon
+
+lexicon = load_global_lexicon()
+patched = build_xtts_profile_patch(existing_profile_dict, payload=lexicon)
+```
+
+Das ist wichtig, weil:
+
+- neue Figuren nur an einer Stelle gepflegt werden sollen
+- Ausspracheregeln sonst auseinanderlaufen
+- spätere Buttons wie `Lexikon auf Profil anwenden` direkt auf demselben Datenmodell aufsetzen können
 
 ## Nicht Tun
 

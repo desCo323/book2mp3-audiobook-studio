@@ -27,10 +27,17 @@ from book2mp3.pipeline.chunking import split_text
 from book2mp3.pipeline.extract import extract_document
 from book2mp3.presets import get_preset
 from book2mp3.runtime_stats import estimate_runtime, preferred_processing_mode, record_runtime_stat
+from book2mp3.tts.pronunciation import apply_pronunciation_rules
 from book2mp3.tts.piper import PiperBackend
 from book2mp3.tts.xtts import XttsBackend
 from book2mp3.utils.logging_utils import attach_job_file_logger, get_logger
 from book2mp3.voice_lab import load_voice_profile
+from book2mp3.xtts_options import (
+    default_xtts_inference,
+    normalize_pronunciation_rules,
+    normalize_xtts_inference,
+    normalize_xtts_quality_mode,
+)
 
 
 class StopRequested(Exception):
@@ -48,6 +55,7 @@ class JobManager:
         self.paths = paths
         self.paths.ensure()
         self.logger = get_logger("jobs")
+        self._last_runtime_state_save: dict[str, float] = {}
 
     def job_logger(self, state: JobState) -> logging.Logger:
         app_settings = load_app_settings(self.paths.app_settings_file)
@@ -75,6 +83,9 @@ class JobManager:
         saved_profile_id: str = "",
         saved_profile_name: str = "",
         audiobook_metadata: AudiobookMetadata | dict[str, str] | None = None,
+        xtts_quality_mode: str = "fast",
+        xtts_inference: dict[str, object] | None = None,
+        pronunciation_rules: list[dict[str, object]] | None = None,
     ) -> JobState:
         job_id = uuid.uuid4().hex[:12]
         job_dir = self.paths.jobs / job_id
@@ -127,6 +138,12 @@ class JobManager:
             chapters_file=str(output_dir / "chapters.json"),
             chapters=[],
             chunks=[],
+            xtts_quality_mode=normalize_xtts_quality_mode(xtts_quality_mode),
+            xtts_inference=normalize_xtts_inference(
+                xtts_inference if xtts_inference is not None else default_xtts_inference(xtts_quality_mode),
+                quality_mode=xtts_quality_mode,
+            ),
+            pronunciation_rules=normalize_pronunciation_rules(pronunciation_rules),
             device_mode="cpu" if backend == "piper" else "auto",
             processing_mode="serial",
             processing_mode_reason="Noch kein Lauf gestartet.",
@@ -147,7 +164,7 @@ class JobManager:
     def list_jobs(self) -> list[JobState]:
         jobs: list[JobState] = []
         for state_file in sorted(self.paths.jobs.glob("*/state.json")):
-            jobs.append(self.load_state(state_file.parent.name))
+            jobs.append(self.load_state(state_file.parent.name, include_details=False))
         return sorted(
             jobs,
             key=lambda item: (
@@ -157,9 +174,22 @@ class JobManager:
             ),
         )
 
-    def load_state(self, job_id: str) -> JobState:
+    def load_state(self, job_id: str, include_details: bool = True) -> JobState:
         state_file = self.paths.jobs / job_id / "state.json"
         payload = json.loads(state_file.read_text(encoding="utf-8"))
+        if not include_details:
+            raw_chunks = payload.get("chunks", []) or []
+            payload["cached_total_chunks"] = len(raw_chunks)
+            payload["cached_completed_chunks"] = sum(
+                1 for chunk in raw_chunks if str(chunk.get("status", "")) == "done"
+            )
+            payload["cached_failed_chunks"] = sum(
+                1 for chunk in raw_chunks if str(chunk.get("status", "")) == "failed"
+            )
+            payload["chunks"] = []
+            payload["chapters"] = []
+            logs = payload.get("logs", []) or []
+            payload["logs"] = logs[-20:]
         return JobState.from_dict(payload)
 
     def save_state(self, state: JobState) -> None:
@@ -170,6 +200,14 @@ class JobManager:
             json.dumps(state.to_dict(), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+
+    def _save_runtime_state(self, state: JobState, *, min_interval: float = 1.0, force: bool = False) -> None:
+        now = time.perf_counter()
+        last = self._last_runtime_state_save.get(state.job_id, 0.0)
+        if not force and (now - last) < max(0.0, min_interval):
+            return
+        self.save_state(state)
+        self._last_runtime_state_save[state.job_id] = now
 
     def recover_interrupted_jobs(self) -> None:
         for job in self.list_jobs():
@@ -184,6 +222,10 @@ class JobManager:
                     job,
                     logger=logger,
                     append_log=job.status in {"running", "failed", "stopped"},
+                )
+                job = self._rechunk_xtts_job_chunks_if_needed(
+                    job,
+                    logger=logger,
                 )
             if job.status == "running":
                 job.status = "queued"
@@ -252,6 +294,15 @@ class JobManager:
         backend = XttsBackend(self.paths.runtime, logger=logger, device_mode="auto")
         preferred = backend.preferred_device_mode()
         return preferred if preferred in {"cuda", "cpu"} else "auto"
+
+    def _xtts_effective_max_chars(self, state: JobState) -> int:
+        requested = max(1, int(state.max_chars or 0))
+        app_settings = load_app_settings(self.paths.app_settings_file)
+        device = self._resolved_xtts_device_mode(app_settings.xtts_device_mode)
+        # XTTS is most stable with shorter chunks on CPU and still fast enough on CUDA.
+        if device == "cuda":
+            return min(requested, 280)
+        return min(requested, 220)
 
     def _xtts_batch_parameters(self, state: JobState) -> tuple[int, int]:
         del state
@@ -358,8 +409,8 @@ class JobManager:
         updated_chunks = list(state.chunks)
         changed = False
         for item in batch:
-            wav_exists = Path(item.wav_file).exists()
-            mp3_exists = Path(item.mp3_file).exists()
+            wav_exists = self._audio_file_has_content(Path(item.wav_file))
+            mp3_exists = self._audio_file_has_content(Path(item.mp3_file))
             if not wav_exists and not mp3_exists:
                 continue
             current = updated_chunks[item.index - 1]
@@ -377,7 +428,7 @@ class JobManager:
             return state
         state.chunks = updated_chunks
         state = self._update_runtime_progress(state, started_monotonic=started_monotonic)
-        self.save_state(state)
+        self._save_runtime_state(state, min_interval=1.5)
         if progress and rendered_indexes:
             progress(
                 max(rendered_indexes),
@@ -391,6 +442,14 @@ class JobManager:
             len(rendered_indexes),
         )
         return state
+
+    def _audio_file_has_content(self, path: Path) -> bool:
+        if not path.exists():
+            return False
+        try:
+            return path.stat().st_size > 128
+        except OSError:
+            return False
 
     def _run_xtts_batch_with_live_progress(
         self,
@@ -412,6 +471,7 @@ class JobManager:
                 xtts_profile,
                 wav_paths,
                 length_scale=state.length_scale,
+                inference_options=state.xtts_inference,
             )
             while True:
                 try:
@@ -443,29 +503,32 @@ class JobManager:
         for item in batch:
             wav_path = Path(item.wav_file)
             mp3_path = Path(item.mp3_file)
-            if not wav_path.exists():
+            if not self._audio_file_has_content(wav_path):
                 continue
             wav_to_mp3(wav_path, mp3_path, logger=logger)
+            if not self._audio_file_has_content(mp3_path):
+                logger.warning("MP3 conversion produced no usable output for chunk %s", item.index)
+                continue
             if not keep_wav and wav_path.exists():
                 wav_path.unlink()
                 logger.debug("Removed intermediate WAV %s after CPU postprocess", item.wav_file)
 
     def _chunk_audio_path(self, chunk: ChunkRecord) -> Path | None:
         mp3_path = Path(chunk.mp3_file)
-        if mp3_path.exists():
+        if self._audio_file_has_content(mp3_path):
             return mp3_path
         wav_path = Path(chunk.wav_file)
-        if wav_path.exists():
+        if self._audio_file_has_content(wav_path):
             return wav_path
         return None
 
     def _xtts_chunk_has_audio(self, chunk: ChunkRecord, *, defer_mp3: bool) -> bool:
         mp3_path = Path(chunk.mp3_file)
-        if mp3_path.exists():
+        if self._audio_file_has_content(mp3_path):
             return True
         if defer_mp3:
             wav_path = Path(chunk.wav_file)
-            if wav_path.exists():
+            if self._audio_file_has_content(wav_path):
                 return True
         return False
 
@@ -483,6 +546,74 @@ class JobManager:
         except OSError:
             return False
 
+    def _chunk_spoken_text_path(self, state: JobState, chunk_index: int) -> Path:
+        return state.job_dir(self.paths.jobs) / "spoken_chunks" / f"{chunk_index:05d}.txt"
+
+    def _chunk_render_text(self, chunk: ChunkRecord) -> str:
+        preferred = Path(chunk.spoken_text_file) if chunk.spoken_text_file else None
+        if preferred and preferred.exists():
+            return preferred.read_text(encoding="utf-8")
+        return Path(chunk.text_file).read_text(encoding="utf-8")
+
+    def _prepare_xtts_spoken_chunks(
+        self,
+        state: JobState,
+        *,
+        logger: logging.Logger,
+    ) -> JobState:
+        if state.backend != "xtts" or not state.chunks:
+            return state
+        spoken_dir = state.job_dir(self.paths.jobs) / "spoken_chunks"
+        spoken_dir.mkdir(parents=True, exist_ok=True)
+        updated_chunks: list[ChunkRecord] = []
+        changed = False
+        transformed_chunks = 0
+        applied_occurrences = 0
+        for chunk in state.chunks:
+            original_text = Path(chunk.text_file).read_text(encoding="utf-8")
+            transformed = apply_pronunciation_rules(original_text, state.pronunciation_rules)
+            spoken_path = self._chunk_spoken_text_path(state, chunk.index)
+            previous_spoken = ""
+            if spoken_path.exists():
+                try:
+                    previous_spoken = spoken_path.read_text(encoding="utf-8")
+                except OSError:
+                    previous_spoken = ""
+            if previous_spoken != transformed.spoken_text:
+                spoken_path.write_text(transformed.spoken_text, encoding="utf-8")
+                changed = True
+            updated = replace(
+                chunk,
+                spoken_text_file=str(spoken_path),
+                spoken_text_length=len(transformed.spoken_text),
+                pronunciation_rule_count=transformed.applied_rule_count,
+                pronunciation_applied_occurrences=transformed.applied_occurrences,
+            )
+            if updated != chunk:
+                changed = True
+            if transformed.applied_occurrences > 0:
+                transformed_chunks += 1
+                applied_occurrences += transformed.applied_occurrences
+            updated_chunks.append(updated)
+        if not changed:
+            return state
+        state.chunks = updated_chunks
+        if transformed_chunks > 0:
+            state.append_log(
+                f"Prepared XTTS spoken text for {transformed_chunks} chunk(s) with {applied_occurrences} pronunciation replacement(s)"
+            )
+        else:
+            state.append_log("Prepared XTTS spoken text files for current chunk set")
+        self.save_state(state)
+        logger.info(
+            "Prepared XTTS spoken chunk text for job %s (rules=%s transformed_chunks=%s occurrences=%s)",
+            state.job_id,
+            len(state.pronunciation_rules),
+            transformed_chunks,
+            applied_occurrences,
+        )
+        return state
+
     def _catch_up_xtts_deferred_mp3_artifacts(
         self,
         state: JobState,
@@ -498,10 +629,10 @@ class JobManager:
             if not self._chunk_text_has_content(chunk):
                 continue
             mp3_path = Path(chunk.mp3_file)
-            if mp3_path.exists():
+            if self._audio_file_has_content(mp3_path):
                 continue
             wav_path = Path(chunk.wav_file)
-            if not wav_path.exists():
+            if not self._audio_file_has_content(wav_path):
                 continue
             logger.warning(
                 "Found text-bearing XTTS chunk with WAV but missing MP3; catching up deferred postprocess for chunk %s",
@@ -592,12 +723,74 @@ class JobManager:
         selected: list[ChunkRecord] = []
         total_chars = 0
         for chunk in pending_chunks:
-            text_size = Path(chunk.text_file).stat().st_size if Path(chunk.text_file).exists() else state.max_chars
+            text_size = chunk.spoken_text_length if chunk.spoken_text_length > 0 else chunk.text_length if chunk.text_length > 0 else state.max_chars
+            if text_size == 0:
+                text_path = Path(chunk.text_file)
+                if text_path.exists():
+                    try:
+                        text_size = len(text_path.read_text(encoding="utf-8"))
+                    except OSError:
+                        text_size = state.max_chars
             if selected and (len(selected) >= batch_limit or total_chars + text_size > char_limit):
                 break
             selected.append(chunk)
             total_chars += text_size
         return selected[:batch_limit] or pending_chunks[:1]
+
+    def _xtts_chunk_too_large(self, chunk: ChunkRecord, max_chars: int) -> bool:
+        if chunk.text_length > 0:
+            return chunk.text_length > max_chars
+        text_path = Path(chunk.text_file)
+        if not text_path.exists():
+            return False
+        try:
+            return len(text_path.read_text(encoding="utf-8")) > max_chars
+        except OSError:
+            return False
+
+    def _rechunk_xtts_job_chunks_if_needed(self, state: JobState, logger: logging.Logger) -> JobState:
+        if state.backend != "xtts":
+            return state
+        max_chars = self._xtts_effective_max_chars(state)
+        if not state.chunks:
+            state.max_chars = max_chars
+            return state
+        if all(not self._xtts_chunk_too_large(chunk, max_chars) for chunk in state.chunks):
+            if state.max_chars != max_chars:
+                state.max_chars = max_chars
+                state.append_log(f"Adjusted XTTS chunk size cap to {max_chars}")
+                self.save_state(state)
+            return state
+        logger.warning(
+            "Rechunking job %s because one or more XTTS chunks exceed %s chars",
+            state.job_id,
+            max_chars,
+        )
+        # Remove stale artifacts to avoid mismatched audio-to-text chunk mappings.
+        for chunk in state.chunks:
+            for artifact in (chunk.text_file, chunk.spoken_text_file, chunk.wav_file, chunk.mp3_file):
+                path = Path(artifact)
+                if path.exists():
+                    path.unlink()
+        chunks_dir = state.job_dir(self.paths.jobs) / "chunks"
+        if chunks_dir.exists():
+            shutil.rmtree(chunks_dir)
+        spoken_dir = state.job_dir(self.paths.jobs) / "spoken_chunks"
+        if spoken_dir.exists():
+            shutil.rmtree(spoken_dir)
+        state.chunks = []
+        state.final_output_files = []
+        for chapter in state.chapters:
+            chapter.output_file = ""
+        state.status = "queued"
+        state.block_reason = ""
+        state.append_log(
+            "Rechunking job because existing chunk files exceeded XTTS safety limit; chunks will be recreated before processing."
+        )
+        state.max_chars = max_chars
+        self._delete_export_artifacts(state)
+        self.save_state(state)
+        return state
 
     def _job_failure_report_path(self, state: JobState) -> Path:
         return state.job_dir(self.paths.jobs) / "failure_report.json"
@@ -799,12 +992,21 @@ class JobManager:
             state.title = updated_metadata.title
         state.append_log("Audiobook metadata updated")
         logger = self.job_logger(state)
-        if reapply_outputs and state.final_output_files:
+        if reapply_outputs and self._job_has_existing_mp3_outputs(state):
             self._finalize_outputs(state, logger)
-            state.append_log("Updated MP3 tags and export manifests for completed outputs")
+            state.append_log("Updated MP3 tags and export manifests for all existing job MP3 files")
         self.save_state(state)
         logger.info("Updated audiobook metadata for job %s", job_id)
         return state
+
+    def _job_has_existing_mp3_outputs(self, state: JobState) -> bool:
+        for path_str in state.final_output_files:
+            if path_str and Path(path_str).exists():
+                return True
+        for chunk in state.chunks:
+            if chunk.mp3_file and Path(chunk.mp3_file).exists():
+                return True
+        return False
 
     def retry_job(
         self,
@@ -885,6 +1087,8 @@ class JobManager:
         job_dir = self.paths.jobs / state.job_id
         logger = self.job_logger(state)
         extracted_path = Path(state.extracted_file)
+        if state.backend == "xtts":
+            state = self._rechunk_xtts_job_chunks_if_needed(state, logger=logger)
         if not extracted_path.exists() or not state.chapters:
             extracted_path.parent.mkdir(parents=True, exist_ok=True)
             logger.info("Extracting source text from %s", state.source_file)
@@ -928,6 +1132,8 @@ class JobManager:
             chunks_dir.mkdir(parents=True, exist_ok=True)
             chunks: list[ChunkRecord] = []
             chunk_index = 1
+            if state.backend == "xtts":
+                state.max_chars = self._xtts_effective_max_chars(state)
             logger.info("Preparing chunks with max_chars=%s across %s chapter(s)", state.max_chars, len(state.chapters))
             for chapter in state.chapters or [
                 ChapterRecord(
@@ -948,12 +1154,14 @@ class JobManager:
                     wav_file = job_dir / "audio" / "wav" / f"{chunk_index:05d}.wav"
                     mp3_file = job_dir / "audio" / "mp3" / f"{chunk_index:05d}.mp3"
                     text_file.write_text(part, encoding="utf-8")
+                    text_length = len(part)
                     chunks.append(
                         ChunkRecord(
                             index=chunk_index,
                             text_file=str(text_file),
                             wav_file=str(wav_file),
                             mp3_file=str(mp3_file),
+                            text_length=text_length,
                             chapter_index=chapter.index,
                             chapter_title=chapter.title,
                         )
@@ -964,6 +1172,8 @@ class JobManager:
             state.chapters = [chapter for chapter in state.chapters if chapter.chunk_end_index >= chapter.chunk_start_index > 0]
             state.append_log(f"Prepared {len(chunks)} chunk files")
             logger.debug("Chunk manifest prepared")
+        if state.backend == "xtts":
+            state = self._prepare_xtts_spoken_chunks(state, logger=logger)
         state.status = "queued"
         if state.backend == "xtts":
             state.device_mode = self._resolved_xtts_device_mode(load_app_settings(self.paths.app_settings_file).xtts_device_mode)
@@ -1058,6 +1268,7 @@ class JobManager:
                 logger=logger,
                 append_log=state.status in {"failed", "stopped", "running"},
             )
+            state = self._rechunk_xtts_job_chunks_if_needed(state, logger=logger)
             state = self._catch_up_xtts_deferred_mp3_artifacts(
                 state,
                 logger=logger,
@@ -1143,14 +1354,7 @@ class JobManager:
                             logger.warning("Stop requested before chunk %s", first_chunk.index)
                             raise StopRequested()
                         try:
-                            loop_key = f"{first_chunk.index}:{batch[-1].index}:{state.completed_chunks}"
-                            loop_guard[loop_key] = loop_guard.get(loop_key, 0) + 1
-                            if loop_guard[loop_key] >= 3:
-                                raise RuntimeError(
-                                    f"Potential endless loop detected for XTTS batch {first_chunk.index}-{batch[-1].index} "
-                                    f"without progress (completed_chunks={state.completed_chunks})."
-                                )
-                            texts = [Path(item.text_file).read_text(encoding="utf-8") for item in batch]
+                            texts = [self._chunk_render_text(item) for item in batch]
                             wav_paths = [Path(item.wav_file) for item in batch]
                             logger.info(
                                 "Processing XTTS batch starting at chunk %s with %s chunk(s)",
@@ -1182,21 +1386,40 @@ class JobManager:
                                         logger=logger,
                                     )
                                 )
-                            for item in batch:
-                                if not xtts_defer_mp3:
+                            if not xtts_defer_mp3:
+                                for item in batch:
                                     wav_to_mp3(Path(item.wav_file), Path(item.mp3_file), logger=logger)
+                                    if not self._audio_file_has_content(Path(item.mp3_file)):
+                                        raise RuntimeError(f"Missing MP3 output after XTTS conversion for chunk {item.index}")
                                     if not state.keep_wav and Path(item.wav_file).exists():
                                         Path(item.wav_file).unlink()
                                         logger.debug("Removed intermediate WAV %s", item.wav_file)
-                                state.chunks[item.index - 1] = replace(
-                                    item,
-                                    status="done",
-                                    error="",
-                                    updated_at=utc_now(),
+                            state = self._mark_xtts_batch_render_progress(
+                                state,
+                                batch,
+                                started_monotonic=run_started,
+                                logger=logger,
+                                progress=progress,
+                            )
+                            rendered_chunks = [item for item in batch if self._xtts_chunk_has_audio(item, defer_mp3=xtts_defer_mp3)]
+                            if not rendered_chunks:
+                                loop_key = f"{first_chunk.index}:{batch[-1].index}:{state.completed_chunks}"
+                                loop_guard[loop_key] = loop_guard.get(loop_key, 0) + 1
+                                if loop_guard[loop_key] >= 3:
+                                    raise RuntimeError(
+                                        f"Potential endless loop detected for XTTS batch {first_chunk.index}-{batch[-1].index} "
+                                        f"without rendered chunks (attempts={loop_guard[loop_key]})."
+                                    )
+                                raise RuntimeError(
+                                    f"XTTS batch {first_chunk.index}-{batch[-1].index} produced no usable audio artifact(s). "
+                                    f"Attempt {loop_guard[loop_key]}."
                                 )
-                                state = self._update_runtime_progress(state, started_monotonic=run_started)
-                                state.append_log(f"Processed chunk {item.index}/{len(state.chunks)}")
-                            self.save_state(state)
+                            state = self._update_runtime_progress(state, started_monotonic=run_started)
+                            state.append_log(
+                                f"Processed XTTS batch {batch[0].index}-{batch[-1].index} "
+                                f"({len(rendered_chunks)} chunk(s) fertig)"
+                            )
+                            self._save_runtime_state(state, force=True)
                             loop_guard.clear()
                             if progress:
                                 progress(
@@ -1206,14 +1429,35 @@ class JobManager:
                                 )
                         except Exception as exc:
                             logger.exception("Chunk %s failed", first_chunk.index)
-                            state.chunks[first_chunk.index - 1] = replace(
-                                first_chunk,
-                                status="failed",
-                                error=str(exc),
-                                updated_at=utc_now(),
+                            batch_completed_before = sum(
+                                1 for item in batch if state.chunks[item.index - 1].status == "done"
                             )
+                            state = self._mark_xtts_batch_render_progress(
+                                state,
+                                batch,
+                                started_monotonic=run_started,
+                                logger=logger,
+                                progress=progress,
+                            )
+                            for item in batch:
+                                current = state.chunks[item.index - 1]
+                                if self._xtts_chunk_has_audio(current, defer_mp3=xtts_defer_mp3):
+                                    continue
+                                state.chunks[item.index - 1] = replace(
+                                    current,
+                                    status="failed",
+                                    error=str(exc),
+                                    updated_at=utc_now(),
+                                )
+                                state.append_log(f"Chunk {current.index} failed: {exc}")
                             state.status = "failed"
-                            state.append_log(f"Chunk {first_chunk.index} failed: {exc}")
+                            batch_completed_after = sum(
+                                1 for item in batch if state.chunks[item.index - 1].status == "done"
+                            )
+                            if batch_completed_after == batch_completed_before:
+                                state.append_log(
+                                    "XTTS batch failed before any chunk completion; check runtime, permissions, disk space, or corrupted output directory."
+                                )
                             self.save_state(state)
                             raise
                 finally:
@@ -1270,8 +1514,9 @@ class JobManager:
                             updated_at=utc_now(),
                         )
                         state = self._update_runtime_progress(state, started_monotonic=run_started)
-                        state.append_log(f"Processed chunk {chunk.index}/{len(state.chunks)}")
-                        self.save_state(state)
+                        if chunk.index == len(state.chunks) or chunk.index % 5 == 0:
+                            state.append_log(f"Processed chunk {chunk.index}/{len(state.chunks)}")
+                        self._save_runtime_state(state, min_interval=0.75, force=(chunk.index == len(state.chunks)))
                         if progress:
                             progress(idx, len(state.chunks), f"Chunk {chunk.index} finished")
                     except Exception as exc:
@@ -1452,10 +1697,44 @@ class JobManager:
         return {
             "title": title,
             "album": meta.album or meta.title,
-            "artist": meta.artist or meta.narrator,
-            "album_artist": meta.album_artist or meta.artist or meta.narrator,
-            "performer": meta.narrator or meta.artist,
+            "artist": meta.artist or meta.author or meta.narrator,
+            "album_artist": meta.album_artist or meta.artist or meta.author or meta.narrator,
+            "performer": meta.narrator or meta.artist or meta.author,
             "author": meta.author,
+            "composer": meta.author,
+            "genre": meta.genre,
+            "language": meta.language,
+            "comment": meta.comment,
+            "description": meta.description or meta.comment,
+            "publisher": meta.publisher,
+            "date": str(meta.year) if meta.year else "",
+            "year": str(meta.year) if meta.year else "",
+            "subject": meta.subject,
+            "isbn": meta.isbn,
+            "track": f"{index}/{total}",
+        }
+
+    def _build_chunk_metadata(
+        self,
+        state: JobState,
+        chunk: ChunkRecord,
+        *,
+        index: int,
+        total: int,
+    ) -> dict[str, str]:
+        meta = state.audiobook_metadata
+        chapter_hint = chunk.chapter_title.strip() if chunk.chapter_title else ""
+        title = f"{meta.title} - Segment {index:05d}"
+        if chapter_hint and chapter_hint != "Gesamttext":
+            title = f"{meta.title} - {chapter_hint} - Segment {index:05d}"
+        return {
+            "title": title,
+            "album": meta.album or meta.title,
+            "artist": meta.artist or meta.author or meta.narrator,
+            "album_artist": meta.album_artist or meta.artist or meta.author or meta.narrator,
+            "performer": meta.narrator or meta.artist or meta.author,
+            "author": meta.author,
+            "composer": meta.author,
             "genre": meta.genre,
             "language": meta.language,
             "comment": meta.comment,
@@ -1482,10 +1761,13 @@ class JobManager:
                     "index": chunk.index,
                     "title": f"Abschnitt {chunk.index:03d}",
                     "text_file": chunk.text_file,
+                    "spoken_text_file": chunk.spoken_text_file,
                     "mp3_file": chunk.mp3_file,
                     "audio_file": str(chunk_path),
                     "chapter_index": chunk.chapter_index,
                     "chapter_title": chunk.chapter_title,
+                    "pronunciation_rule_count": chunk.pronunciation_rule_count,
+                    "pronunciation_applied_occurrences": chunk.pronunciation_applied_occurrences,
                     "start_ms": current_ms,
                     "end_ms": current_ms + duration_ms,
                     "duration_seconds": round(duration_seconds, 3),
@@ -1547,6 +1829,9 @@ class JobManager:
             "target_part_minutes": state.target_part_minutes,
             "source_file": state.source_file,
             "audiobook_metadata": state.audiobook_metadata.to_dict(),
+            "xtts_quality_mode": state.xtts_quality_mode,
+            "xtts_inference": state.xtts_inference,
+            "pronunciation_rules": state.pronunciation_rules,
             "outputs": outputs,
             "chunk_count": state.total_chunks,
             "chapter_count": len(chapter_timeline) or len(state.chapters),
@@ -1567,18 +1852,27 @@ class JobManager:
 
     def _finalize_outputs(self, state: JobState, logger: logging.Logger) -> None:
         output_paths = [Path(path) for path in state.final_output_files if Path(path).exists()]
-        if not output_paths:
+        chunk_mp3_paths = [Path(chunk.mp3_file) for chunk in state.chunks if chunk.mp3_file and Path(chunk.mp3_file).exists()]
+        if not output_paths and not chunk_mp3_paths:
             return
         chunk_timeline = self._chunk_timeline(state, logger)
         chapter_timeline = self._chapter_timeline(state, chunk_timeline)
         chapter_by_output = {chapter.output_file: chapter for chapter in state.chapters if chapter.output_file}
         outputs: list[dict[str, object]] = []
+        output_path_keys = {str(path.resolve()) for path in output_paths}
         total = len(output_paths)
         for index, output_path in enumerate(output_paths, start=1):
             chapter = chapter_by_output.get(str(output_path))
             metadata = self._build_output_metadata(state, output_path, index, total, chapter=chapter)
             embedded_chapters = chapter_timeline if state.output_mode == "single_file" and index == 1 else None
-            apply_mp3_metadata_in_place(output_path, metadata, logger=logger, chapters=embedded_chapters)
+            cover_art_file = state.audiobook_metadata.cover_art_file.strip() if state.audiobook_metadata.cover_art_file else None
+            apply_mp3_metadata_in_place(
+                output_path,
+                metadata,
+                logger=logger,
+                chapters=embedded_chapters,
+                cover_art_file=cover_art_file,
+            )
             duration_seconds = probe_media_duration_seconds(output_path, logger=logger)
             output_entry = {
                 "index": index,
@@ -1593,8 +1887,24 @@ class JobManager:
                 output_entry["chapter_index"] = chapter.index
                 output_entry["chapter_title"] = chapter.title
             outputs.append(output_entry)
-        self._write_output_manifests(state, logger, outputs, chunk_timeline, chapter_timeline)
-        state.append_log("Applied MP3 metadata and wrote export manifests")
+        chunk_total = len(chunk_mp3_paths)
+        for chunk in state.chunks:
+            chunk_mp3 = Path(chunk.mp3_file)
+            if not chunk.mp3_file or not chunk_mp3.exists():
+                continue
+            if str(chunk_mp3.resolve()) in output_path_keys:
+                continue
+            apply_mp3_metadata_in_place(
+                chunk_mp3,
+                self._build_chunk_metadata(state, chunk, index=chunk.index, total=chunk_total),
+                logger=logger,
+                cover_art_file=state.audiobook_metadata.cover_art_file.strip() if state.audiobook_metadata.cover_art_file else None,
+            )
+        if output_paths:
+            self._write_output_manifests(state, logger, outputs, chunk_timeline, chapter_timeline)
+            state.append_log("Applied MP3 metadata and wrote export manifests")
+        else:
+            state.append_log("Applied MP3 metadata to existing chunk files")
 
     def _cleanup_intermediate_wavs(self, state: JobState, logger: logging.Logger) -> None:
         for chunk in state.chunks:

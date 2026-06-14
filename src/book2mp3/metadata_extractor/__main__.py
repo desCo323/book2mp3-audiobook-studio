@@ -6,6 +6,12 @@ from pathlib import Path
 
 from .evaluation import evaluate_metadata_extractor
 from .extractor import extract_metadata_from_source
+from .lexicon import (
+    build_pronunciation_rules,
+    load_global_lexicon,
+    scan_books_for_lexicon,
+    validate_global_lexicon,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,6 +27,18 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("root")
     evaluate.add_argument("--offline", action="store_true", help="Disable online providers")
     evaluate.add_argument("--suffix", action="append", default=[], help="Restrict evaluation to one or more suffixes, e.g. --suffix .epub")
+
+    lexicon_validate = sub.add_parser("lexicon-validate", help="Validate the global author/character lexicon")
+    lexicon_validate.add_argument("--path", default="")
+
+    lexicon_scan = sub.add_parser("lexicon-scan", help="Check how well the lexicon matches a local book corpus")
+    lexicon_scan.add_argument("root")
+    lexicon_scan.add_argument("--path", default="")
+    lexicon_scan.add_argument("--suffix", action="append", default=[], help="Restrict scan to one or more suffixes, e.g. --suffix .epub")
+
+    lexicon_rules = sub.add_parser("lexicon-rules", help="Render XTTS pronunciation rules derived from the global lexicon")
+    lexicon_rules.add_argument("--path", default="")
+    lexicon_rules.add_argument("--author", action="append", default=[], help="Restrict rules to one or more authors")
     return parser
 
 
@@ -44,6 +62,27 @@ def main(argv: list[str] | None = None) -> int:
             suffixes=suffixes,
         )
         print(json.dumps(summary, indent=2, ensure_ascii=False))
+        return 0
+    if args.command == "lexicon-validate":
+        report = validate_global_lexicon(Path(args.path).expanduser().resolve() if args.path else None)
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0 if report.get("is_valid") else 1
+    if args.command == "lexicon-scan":
+        suffixes = {suffix if suffix.startswith(".") else f".{suffix}" for suffix in args.suffix} or None
+        report = scan_books_for_lexicon(
+            Path(args.root).expanduser().resolve(),
+            path=(Path(args.path).expanduser().resolve() if args.path else None),
+            suffixes=suffixes,
+        )
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0
+    if args.command == "lexicon-rules":
+        lexicon = load_global_lexicon(Path(args.path).expanduser().resolve() if args.path else None)
+        rules = build_pronunciation_rules(
+            lexicon,
+            authors={author.strip() for author in args.author if author.strip()} or None,
+        )
+        print(json.dumps(rules, indent=2, ensure_ascii=False))
         return 0
     parser.error(f"Unknown command: {args.command}")
     return 2

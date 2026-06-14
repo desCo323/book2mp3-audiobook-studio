@@ -94,6 +94,11 @@ def write_ffmetadata_file(
     return target
 
 
+def _is_image_path(path: Path) -> bool:
+    suffix = path.suffix.lower()
+    return suffix in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+
+
 def apply_mp3_metadata(
     input_path: Path,
     output_path: Path,
@@ -101,24 +106,57 @@ def apply_mp3_metadata(
     *,
     logger: logging.Logger | None = None,
     chapters: list[dict[str, int | str]] | None = None,
+    cover_art_file: str | None = None,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    cover_path = Path(cover_art_file) if cover_art_file else None
+    if cover_path is not None and not cover_path.exists():
+        cover_path = None
+    if cover_path is not None and not _is_image_path(cover_path):
+        cover_path = None
     ffmetadata_file = output_path.parent / f"{output_path.stem}__metadata.txt"
     write_ffmetadata_file(ffmetadata_file, metadata, chapters)
     try:
-        cmd = [
-            ffmpeg_executable(),
-            "-y",
-            "-i",
-            str(input_path),
-            "-i",
-            str(ffmetadata_file),
-            "-map_metadata",
-            "1",
-            "-codec",
-            "copy",
-            str(output_path),
-        ]
+        if cover_path is not None:
+            cmd = [
+                ffmpeg_executable(),
+                "-y",
+                "-i",
+                str(input_path),
+                "-i",
+                str(cover_path),
+                "-i",
+                str(ffmetadata_file),
+                "-map_metadata",
+                "2",
+                "-map",
+                "0:a",
+                "-map",
+                "1:v",
+                "-c:a",
+                "copy",
+                "-c:v",
+                "mjpeg",
+                "-disposition:v:0",
+                "attached_pic",
+                "-id3v2_version",
+                "3",
+                str(output_path),
+            ]
+        else:
+            cmd = [
+                ffmpeg_executable(),
+                "-y",
+                "-i",
+                str(input_path),
+                "-i",
+                str(ffmetadata_file),
+                "-map_metadata",
+                "1",
+                "-codec",
+                "copy",
+                str(output_path),
+            ]
         _run_ffmpeg(cmd, logger=logger, context="Applying MP3 metadata")
     finally:
         if ffmetadata_file.exists():
@@ -131,9 +169,17 @@ def apply_mp3_metadata_in_place(
     *,
     logger: logging.Logger | None = None,
     chapters: list[dict[str, int | str]] | None = None,
+    cover_art_file: str | None = None,
 ) -> None:
     temp_output = path.with_name(f"{path.stem}__tagged{path.suffix}")
-    apply_mp3_metadata(path, temp_output, metadata, logger=logger, chapters=chapters)
+    apply_mp3_metadata(
+        path,
+        temp_output,
+        metadata,
+        logger=logger,
+        chapters=chapters,
+        cover_art_file=cover_art_file,
+    )
     temp_output.replace(path)
 
 

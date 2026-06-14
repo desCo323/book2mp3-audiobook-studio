@@ -108,6 +108,7 @@ Voice selection:
 - if no old XTTS speaker folder is found, you can use `XTTS-Starter` to install example XTTS speaker profiles directly from the upstream `xtts-webui` sample set and curated German `Thorsten-Voice` examples
 - XTTS profile selectors in the main UI and tuning dialog can now play the stored reference sample, so you can hear the source voice before generating a preview
 - there are now also German female XTTS starter profiles that use cross-language cloning with `de` as target language for a faster usable default
+- the main window now includes a direct `Lexikon` entrypoint that jumps straight into the XTTS pronunciation area
 
 Simple workflow:
 
@@ -116,6 +117,27 @@ Simple workflow:
 - move the sliders until it sounds right
 - click `Neue Stelle` if you want to test a different passage
 - save the setting when you are satisfied
+
+### XTTS Lexicon
+
+The XTTS path now has a dedicated pronunciation lexicon.
+
+Use it when:
+
+- author names are spoken incorrectly
+- fantasy or foreign names are unstable
+- a saved XTTS profile should keep reliable name rules
+
+Recommended workflow:
+
+1. fill in `Author` in the main window
+2. click `Lexikon`
+3. review the automatically suggested author and name rules
+4. adjust `Original -> Spoken as`
+5. render a preview
+6. save the profile if the pronunciation is correct
+
+The lexicon does not rewrite the original book text. It only creates a spoken working copy for XTTS.
 
 Recommended voice direction:
 
@@ -154,6 +176,17 @@ The queue is persistent.
 - after a restart, interrupted running jobs go back to the queue
 - completed chunks are not regenerated on resume
 - the queue now shows an approximate remaining duration once enough timing data exists
+
+## Finished Audiobooks
+
+The `Finished Books` area is the post-processing workspace.
+
+There you can:
+
+- open the generated files quickly
+- update MP3 tags after rendering
+- apply metadata search results
+- remove finished projects when they are no longer needed
 
 ## Runtime Estimates
 

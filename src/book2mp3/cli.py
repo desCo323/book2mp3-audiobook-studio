@@ -113,6 +113,8 @@ def _add_metadata_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--genre")
     parser.add_argument("--language")
     parser.add_argument("--comment")
+    parser.add_argument("--cover-url")
+    parser.add_argument("--cover-art-file")
 
 
 def _metadata_from_args(args: argparse.Namespace) -> dict[str, str] | None:
@@ -126,6 +128,8 @@ def _metadata_from_args(args: argparse.Namespace) -> dict[str, str] | None:
         "genre": args.genre,
         "language": args.language,
         "comment": args.comment,
+        "cover_url": args.cover_url,
+        "cover_art_file": args.cover_art_file,
     }
     filtered = {key: value for key, value in metadata.items() if value}
     return filtered or None

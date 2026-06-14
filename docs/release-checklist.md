@@ -52,8 +52,10 @@ python scripts/check_portable_bundle.py /path/to/bundle
 ## 6. Release communication checks
 
 - README matches the real product state
+- GitHub Pages landing page matches the current UI and workflow names
 - portable distribution docs match the real bundle layout
 - XTTS is clearly described as optional
+- XTTS lexicon workflow is documented and reachable from the docs
 - XTTS licensing is not presented as solved
 - compliance docs are shipped with the release
 

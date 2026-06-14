@@ -24,3 +24,18 @@ Danach veroeffentlicht GitHub die Seite aus:
 - Quickstarts
 - Links zur technischen Doku
 - Open-Source- und Release-Hinweise
+- Bedienpfade fuer Profilstudio, Lexikon, Queue und fertige Hoerbuecher
+
+## Automatischer Release-Workflow
+
+Zusätzlich zur GitHub-Page gibt es einen Release-Workflow:
+
+- Datei: `.github/workflows/portable-release.yml`
+- Trigger: Push auf `main` oder manueller Start
+- Ergebnis: rolling Pre-Release mit Linux- und Windows-Portable
+
+Die Pages-Doku und der Release-Workflow sollten inhaltlich zusammenpassen:
+
+- gleiche Produktbeschreibung
+- gleiche Aussage zu `Piper` als Standardpfad
+- gleiche Aussage zu `XTTS` als optionalem Zusatzpfad

@@ -51,10 +51,21 @@ Für den normalen Arbeitsfluss:
 
 - `Neuer Auftrag`
 - `Aufträge`
+- `Fertige Bücher`
 - `Produktionsprofile`
 - `Benchmark-Studio`
 - `XTTS-Profile`
 - `Diagnose`
+
+### XTTS-Lexikon-Workflow
+
+Für XTTS-Namen und Autoren:
+
+1. Autor im Hauptfenster oder bei `Fertige Bücher` eintragen
+2. `Benchmark-Studio` öffnen
+3. `Lexikon` klicken
+4. XTTS-Aussprache-Regeln prüfen oder ergänzen
+5. Preview hören und erst danach das Profil für Produktion nutzen
 
 ### CLI-Modus
 
@@ -101,8 +112,10 @@ Danach sind Jobs, Profile, Diagnose und Quellenanalyse über die lokale REST-API
 - automatische Kapitelanalyse mit klarer Rückmeldung
 - Ausgabe als Gesamtdatei, Kapiteldateien oder Zeitteile
 - lokale Piper-Stimmen und optionaler XTTS-Pfad
+- XTTS-Aussprache-Lexikon mit Autoren-, Figuren- und Namensvorschlägen
 - Benchmarking von Varianten, Geschwindigkeit und Chunk-Größen
 - Queue, Prioritäten und Wiederaufnahme
+- `Fertige Bücher` für Öffnen, Metadatenpflege und Aufräumen
 - `manifest.json` und `chapters.json` für nachvollziehbare Exporte
 - lokaler GUI-, CLI- und API-Betrieb mit gemeinsamem Kern
 

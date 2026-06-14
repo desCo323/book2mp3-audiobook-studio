@@ -32,9 +32,11 @@ must all use the same core job logic.
 - `PySide6`
 - single desktop window with clear workflow tabs
 - `Auftrag` for source + approved production profile only
+- `Fertige Bücher` for completed outputs, retagging and cleanup
 - `Profile` for profile library, runtime stock and studio entrypoints
 - `Betrieb` for queue, stage status, artifacts, logs and diagnostics
 - separate `Profilstudio` for preview, benchmark and profile release
+- direct `Lexikon` entrypoint into the XTTS pronunciation area
 - separate `XTTS-Profilstudio` for speaker profile import and validation
 
 ### Shared core and headless access
@@ -79,11 +81,12 @@ This keeps hardware use predictable and avoids CPU or GPU contention from parall
 1. Import source file into the job folder
 2. Extract normalized text
 3. Split text into sentence-aware chunk files
-4. Synthesize one chunk at a time to WAV
-5. Convert WAV to MP3
-6. Optionally concatenate MP3 segments into one output file
-7. Tag final MP3 outputs and write `manifest.json` plus `chapters.json`
-8. Update `state.json` after every meaningful step
+4. For XTTS, derive a spoken working copy with pronunciation rules
+5. Synthesize one chunk at a time to WAV
+6. Convert WAV to MP3
+7. Optionally concatenate MP3 segments into one output file
+8. Tag final MP3 outputs and write `manifest.json` plus `chapters.json`
+9. Update `state.json` after every meaningful step
 
 ### Debug logging
 
@@ -128,6 +131,17 @@ That separation matters because the user requirement has two distinct needs:
 - optional premium voices and voice cloning
 
 `Piper` is the right default engine for the first category. `XTTS` fits the second, but requires heavier runtime, better speaker samples and more careful packaging.
+
+### Pronunciation and metadata layer
+
+The XTTS path now includes a pronunciation layer between chunk text and synthesis:
+
+- profile-bound pronunciation rules
+- author-aware auto-rules from the global book lexicon
+- spoken-text artifacts per chunk for debugging
+- UI suggestions derived from source excerpts and metadata
+
+This keeps the original book text untouched while making name handling reproducible.
 
 ## Resume model
 

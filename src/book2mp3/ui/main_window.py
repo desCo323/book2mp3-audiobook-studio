@@ -4,8 +4,9 @@ import json
 import shutil
 from collections import Counter
 from pathlib import Path
+import time
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QStringListModel, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QCompleter,
     QFrame,
     QFileDialog,
     QFormLayout,
@@ -46,7 +48,7 @@ from book2mp3.i18n import (
     translate_widget_tree,
     ui_language_choices,
 )
-from book2mp3.models import JobState
+from book2mp3.models import ChunkRecord, JobState
 from book2mp3.pipeline.extract import DocumentStructure
 from book2mp3.pipeline.jobs import JobManager
 from book2mp3.piper_custom import default_config_for_model, import_custom_piper_model
@@ -94,8 +96,22 @@ class MainWindow(QMainWindow):
         self.service = Book2Mp3Service(paths)
         self.worker: JobWorker | None = None
         self.current_job_id: str | None = None
+        self._job_cache: dict[str, JobState] = {}
         self.cached_jobs: list[JobState] = []
         self.cached_active_jobs: list[JobState] = []
+        self._pending_shutdown_close = False
+        self._shutdown_wait_attempts = 0
+        self._pending_progress_update: tuple[int, int, str] | None = None
+        self._last_progress_applied_at: float = 0.0
+        self._progress_update_timer = QTimer(self)
+        self._progress_update_timer.setSingleShot(True)
+        self._progress_update_timer.timeout.connect(self._apply_coalesced_progress)
+        self._pending_selected_job_id: str | None = None
+        self._job_selection_timer = QTimer(self)
+        self._job_selection_timer.setSingleShot(True)
+        self._job_selection_timer.timeout.connect(self._apply_pending_job_selection)
+        self._metadata_completer_models: dict[str, QStringListModel] = {}
+        self._metadata_completers: dict[str, QCompleter] = {}
         self.logger = get_logger("ui")
         self.installed_voice_ids: list[str] = []
         self.selected_source_files: list[Path] = []
@@ -132,6 +148,8 @@ class MainWindow(QMainWindow):
         self.refresh_saved_profiles()
         self.manager.recover_interrupted_jobs()
         self.refresh_jobs()
+        self._setup_metadata_completers()
+        self.refresh_all_metadata_completers()
         self.refresh_diagnostics_summary()
         self.apply_cuda_first_preference()
         self.update_idle_status_from_queue()
@@ -241,11 +259,14 @@ class MainWindow(QMainWindow):
         self.source_edit.setPlaceholderText("Noch keine Quelldateien ausgewählt.")
         browse_button = QPushButton("Dateien wählen")
         browse_button.clicked.connect(self.select_source_files)
+        browse_folder_button = QPushButton("Ordner wählen")
+        browse_folder_button.clicked.connect(self.select_source_folder)
         clear_sources_button = QPushButton("Leeren")
         clear_sources_button.clicked.connect(self.clear_selected_source_files)
         source_row = QHBoxLayout()
         source_row.addWidget(self.source_edit)
         source_row.addWidget(browse_button)
+        source_row.addWidget(browse_folder_button)
         source_row.addWidget(clear_sources_button)
         source_form.addRow("Datei", self._wrap(source_row))
         self.source_count_label = QLabel("0 Quellen ausgewählt.")
@@ -314,6 +335,9 @@ class MainWindow(QMainWindow):
         self.metadata_apply_button = QPushButton("Ausgewählten Treffer übernehmen")
         self.metadata_apply_button.clicked.connect(self.apply_best_metadata_result)
         metadata_actions.addWidget(self.metadata_apply_button)
+        self.metadata_save_job_button = QPushButton("Auftrag aktualisieren")
+        self.metadata_save_job_button.clicked.connect(self.save_selected_job_metadata_from_create_tab)
+        metadata_actions.addWidget(self.metadata_save_job_button)
         metadata_form.addRow("", self._wrap(metadata_actions))
         self.metadata_status_label = QLabel("Noch keine Metadaten geladen.")
         self.metadata_status_label.setWordWrap(True)
@@ -462,7 +486,7 @@ class MainWindow(QMainWindow):
         benchmark_tools_group = QGroupBox("Tests und Vergleich")
         benchmark_tools_layout = QVBoxLayout(benchmark_tools_group)
         benchmark_tools_intro = QLabel(
-            "Öffne das Profilstudio für normale Hörproben oder den geführten Assistenten für eine neue Testreihe."
+            "Öffne das Profilstudio für Hörproben, den Profil-Assistenten und das XTTS-Aussprache-Lexikon."
         )
         benchmark_tools_intro.setWordWrap(True)
         benchmark_tools_intro.setProperty("role", "muted")
@@ -474,10 +498,14 @@ class MainWindow(QMainWindow):
         lab_tools_title.setProperty("role", "hero")
         lab_tools_layout.addWidget(lab_tools_title)
         lab_tools_row = QHBoxLayout()
-        find_best_button = QPushButton("Profilstudio")
-        find_best_button.setToolTip("Öffnet das separate Profilstudio für Hörproben und Feintuning.")
+        find_best_button = QPushButton("Profilstudio & Lexikon")
+        find_best_button.setToolTip("Öffnet das separate Profilstudio für Hörproben, Feintuning und das XTTS-Aussprache-Lexikon.")
         find_best_button.clicked.connect(self.open_find_best_setting)
         lab_tools_row.addWidget(find_best_button)
+        lexicon_button = QPushButton("Lexikon")
+        lexicon_button.setToolTip("Öffnet direkt das XTTS-Aussprache-Lexikon mit Autor- und Titelvorschlägen aus der aktuellen Auswahl.")
+        lexicon_button.clicked.connect(self.open_xtts_lexicon)
+        lab_tools_row.addWidget(lexicon_button)
         voice_test_button = QPushButton("Profil-Assistent")
         voice_test_button.setToolTip("Öffnet direkt den geführten Profil-Assistenten.")
         voice_test_button.clicked.connect(lambda: self.open_find_best_setting(focus_assistant=True))
@@ -655,9 +683,14 @@ class MainWindow(QMainWindow):
         self.voice_lab_button = QPushButton("XTTS-Profilstudio")
         self.voice_lab_button.clicked.connect(self.open_voice_lab)
         xtts_profile_row.addWidget(self.voice_lab_button)
-        backend_group.setVisible(False)
-        piper_group.setVisible(False)
-        profile_save_group.setVisible(False)
+        self.backend_group = backend_group
+        self.piper_group = piper_group
+        self.xtts_group = xtts_group
+        self.profile_save_group = profile_save_group
+        self.backend_group.setVisible(True)
+        self.piper_group.setVisible(False)
+        self.xtts_group.setVisible(False)
+        self.profile_save_group.setVisible(True)
         self.xtts_profiles_tab_index = tabs.addTab(xtts_tab, "XTTS-Profile")
 
         jobs_tab = QWidget()
@@ -1022,6 +1055,40 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         widget.setLayout(layout)
         return widget
+
+    def _metadata_completion_fields(self) -> dict[str, list[QLineEdit]]:
+        return {
+            "title": [self.meta_title_edit, self.finished_meta_title_edit],
+            "author": [self.meta_author_edit, self.finished_meta_author_edit],
+            "narrator": [self.meta_narrator_edit, self.finished_meta_narrator_edit],
+            "publisher": [self.meta_publisher_edit, self.finished_meta_publisher_edit],
+            "subject": [self.meta_subject_edit, self.finished_meta_subject_edit],
+            "genre": [self.meta_genre_edit, self.finished_meta_genre_edit],
+            "language": [self.meta_language_tag_edit, self.finished_meta_language_edit],
+        }
+
+    def _setup_metadata_completers(self) -> None:
+        for field_name, widgets in self._metadata_completion_fields().items():
+            model = QStringListModel(self)
+            completer = QCompleter(model, self)
+            completer.setCaseSensitivity(Qt.CaseInsensitive)
+            completer.setCompletionMode(QCompleter.PopupCompletion)
+            self._metadata_completer_models[field_name] = model
+            self._metadata_completers[field_name] = completer
+            for widget in widgets:
+                widget.setCompleter(completer)
+                widget.textEdited.connect(lambda _text, field=field_name, source=widget: self.refresh_metadata_completer(field, source.text()))
+
+    def refresh_metadata_completer(self, field_name: str, prefix: str = "") -> None:
+        model = self._metadata_completer_models.get(field_name)
+        if model is None:
+            return
+        suggestions = self.service.metadata_history_suggestions(field_name, prefix=prefix)
+        model.setStringList(suggestions)
+
+    def refresh_all_metadata_completers(self) -> None:
+        for field_name in self._metadata_completion_fields():
+            self.refresh_metadata_completer(field_name, "")
 
     def show_benchmark_tab(self, focus_assistant: bool = False) -> None:
         self.main_tabs.setCurrentIndex(self.benchmark_tab_index)
@@ -1450,16 +1517,17 @@ class MainWindow(QMainWindow):
 
     def _metadata_payload_for_source(self, source: Path) -> dict[str, str]:
         title = self.meta_title_edit.text().strip() if len(self.selected_source_files) == 1 else ""
+        author = self.meta_author_edit.text().strip()
         narrator = self.meta_narrator_edit.text().strip()
         year_text = self.meta_year_edit.text().strip()
         year_value = int(year_text) if year_text.isdigit() else 0
         payload = {
             "title": title,
             "album": title,
-            "artist": narrator,
-            "album_artist": narrator,
+            "artist": author or narrator,
+            "album_artist": author or narrator,
             "narrator": narrator,
-            "author": self.meta_author_edit.text().strip(),
+            "author": author,
             "genre": self.meta_genre_edit.text().strip() or "Audiobook",
             "language": self.meta_language_tag_edit.text().strip() or preferred_content_language_code(self.ui_language).split("_", 1)[0],
             "publisher": self.meta_publisher_edit.text().strip(),
@@ -1470,6 +1538,65 @@ class MainWindow(QMainWindow):
             "comment": self.meta_comment_edit.toPlainText().strip(),
         }
         return {key: value for key, value in payload.items() if value}
+
+    def _current_job_metadata_payload(self) -> dict[str, str]:
+        author = self.meta_author_edit.text().strip()
+        narrator = self.meta_narrator_edit.text().strip()
+        year_text = self.meta_year_edit.text().strip()
+        year_value = int(year_text) if year_text.isdigit() else 0
+        payload = {
+            "title": self.meta_title_edit.text().strip(),
+            "album": self.meta_title_edit.text().strip(),
+            "artist": author or narrator,
+            "album_artist": author or narrator,
+            "narrator": narrator,
+            "author": author,
+            "genre": self.meta_genre_edit.text().strip() or "Audiobook",
+            "language": self.meta_language_tag_edit.text().strip() or preferred_content_language_code(self.ui_language).split("_", 1)[0],
+            "publisher": self.meta_publisher_edit.text().strip(),
+            "year": year_value,
+            "subject": self.meta_subject_edit.text().strip(),
+            "isbn": self.meta_isbn_edit.text().strip(),
+            "description": self.meta_comment_edit.toPlainText().strip(),
+            "comment": self.meta_comment_edit.toPlainText().strip(),
+        }
+        return {key: value for key, value in payload.items() if value}
+
+    def _load_job_metadata_into_create_fields(self, job: JobState) -> None:
+        meta = job.audiobook_metadata
+        self.meta_title_edit.setText(meta.title or job.title)
+        self.meta_author_edit.setText(meta.author)
+        self.meta_narrator_edit.setText(meta.narrator)
+        self.meta_genre_edit.setText(meta.genre or "Audiobook")
+        self.meta_language_tag_edit.setText(meta.language)
+        self.meta_publisher_edit.setText(meta.publisher)
+        self.meta_year_edit.setText(str(meta.year) if meta.year else "")
+        self.meta_subject_edit.setText(meta.subject)
+        self.meta_isbn_edit.setText(meta.isbn)
+        self.meta_comment_edit.setPlainText(meta.comment or meta.description)
+
+    def save_selected_job_metadata_from_create_tab(self) -> None:
+        job = self._current_job_state()
+        if job is None:
+            QMessageBox.warning(self, "Kein Auftrag", "Bitte zuerst links einen Auftrag auswählen.")
+            return
+        self.service.update_job_metadata(
+            job.job_id,
+            audiobook_metadata=self._current_job_metadata_payload(),
+            reapply_outputs=True,
+        )
+        updated_state = self.manager.load_state(job.job_id)
+        self.refresh_jobs()
+        self.refresh_all_metadata_completers()
+        self.show_job(updated_state)
+        self.metadata_status_label.setText(
+            {
+                "de": f"Auftrag aktualisiert. Metadaten und vorhandene MP3-Tags wurden neu geschrieben: {updated_state.audiobook_metadata.title}",
+                "en": f"Job updated. Metadata and existing MP3 tags were rewritten: {updated_state.audiobook_metadata.title}",
+                "es": f"Trabajo actualizado. Se reescribieron los metadatos y las etiquetas MP3 existentes: {updated_state.audiobook_metadata.title}",
+                "pt": f"Tarefa atualizada. Os metadados e as tags MP3 existentes foram regravados: {updated_state.audiobook_metadata.title}",
+            }.get(self.ui_language, f"Job updated. Metadata and existing MP3 tags were rewritten: {updated_state.audiobook_metadata.title}")
+        )
 
     def _resolved_output_mode_for_structure(self, requested_mode: str, structure: DocumentStructure) -> str:
         actual_mode = requested_mode or "single_file"
@@ -1648,13 +1775,28 @@ class MainWindow(QMainWindow):
     def refresh_diagnostics_summary_with_probe(self) -> None:
         self.refresh_diagnostics_summary(include_runtime_probe=True)
 
+    def _cache_job(self, state: JobState | None) -> None:
+        if not state:
+            return
+        self._job_cache[state.job_id] = state
+
+    def _find_cached_job(self, job_id: str | None) -> JobState | None:
+        if not job_id:
+            return None
+        cached = self._job_cache.get(job_id)
+        if cached:
+            return cached
+        try:
+            loaded = self.manager.load_state(job_id)
+        except FileNotFoundError:
+            return None
+        self._cache_job(loaded)
+        return loaded
+
     def _current_job_state(self) -> JobState | None:
         if not self.current_job_id:
             return None
-        try:
-            return self.manager.load_state(self.current_job_id)
-        except FileNotFoundError:
-            return None
+        return self._find_cached_job(self.current_job_id)
 
     def _job_output_dir(self, job: JobState) -> Path:
         return Path(job.final_output_file).parent
@@ -1841,6 +1983,7 @@ class MainWindow(QMainWindow):
                 f"Produktionsprofil: {job.saved_profile_name or '-'} ({job.saved_profile_id or '-'})",
                 f"Stimme/Profil: {job.voice_id or job.voice_profile_id or '-'}",
                 f"Output-Modus: {job.output_mode} | Ziel-Minuten: {job.target_part_minutes}",
+                f"XTTS-Qualität: {job.xtts_quality_mode} | Aussprache-Regeln: {len(job.pronunciation_rules)}",
                 f"Gerät/Verarbeitung: {job.device_mode} / {job.processing_mode}",
                 f"Verarbeitungsgrund: {job.processing_mode_reason or '-'}",
                 f"Blockgrund: {job.block_reason or '-'}",
@@ -1910,9 +2053,9 @@ class MainWindow(QMainWindow):
             lines.append("")
             lines.append(f"Ausgewählte Chunks: {', '.join(str(chunk.index) for chunk in chunks)}")
             for chunk in chunks[:5]:
-                text_len = len(Path(chunk.text_file).read_text(encoding="utf-8")) if Path(chunk.text_file).exists() else 0
+                text_len = self._chunk_text_length(chunk)
                 lines.append(
-                    f"- Chunk {chunk.index}: Status {chunk.status}, Kapitel {chunk.chapter_index}, {text_len} Zeichen, Fehler {chunk.error or '-'}"
+                    f"- Chunk {chunk.index}: Status {chunk.status}, Kapitel {chunk.chapter_index}, {text_len} Zeichen, gesprochen {chunk.spoken_text_length or text_len} Zeichen, Regeln {chunk.pronunciation_rule_count}, Fehler {chunk.error or '-'}"
                 )
             if len(chunks) > 5:
                 lines.append(f"- … und {len(chunks) - 5} weitere Chunks")
@@ -1921,6 +2064,7 @@ class MainWindow(QMainWindow):
         self.job_selection_details.setPlainText("\n".join(lines))
 
     def populate_job_detail_lists(self, job: JobState) -> None:
+        chunk_preview_limit = 800
         self.job_stage_list.clear()
         for stage in job.stage_statuses():
             item = QListWidgetItem(f"{stage['label']}: {stage['status']} | {stage['detail']}")
@@ -1942,22 +2086,39 @@ class MainWindow(QMainWindow):
             self.job_chapter_list.addItem("Noch keine Kapitelstruktur für diesen Auftrag.")
 
         self.job_chunk_list.clear()
-        for chunk in job.chunks:
+        for chunk in job.chunks[:chunk_preview_limit]:
             audio_name = "-"
             for candidate in (chunk.mp3_file, chunk.wav_file):
                 if candidate and Path(candidate).exists():
                     audio_name = Path(candidate).name
                     break
             item = QListWidgetItem(
-                f"{chunk.index:05d} | {chunk.status:7s} | Kapitel {chunk.chapter_index} | {len(Path(chunk.text_file).read_text(encoding='utf-8')) if Path(chunk.text_file).exists() else 0} Zeichen | Audio {audio_name}"
+                f"{chunk.index:05d} | {chunk.status:7s} | Kapitel {chunk.chapter_index} | {self._chunk_text_length(chunk)} Zeichen | Audio {audio_name}"
             )
             item.setData(Qt.UserRole, chunk.index)
             item.setToolTip(
-                f"Kapitel: {chunk.chapter_title or '-'}\nText: {chunk.text_file}\nMP3: {chunk.mp3_file}\nWAV: {chunk.wav_file}\nFehler: {chunk.error or '-'}"
+                f"Kapitel: {chunk.chapter_title or '-'}\nText: {chunk.text_file}\nGesprochen: {chunk.spoken_text_file or '-'}\nMP3: {chunk.mp3_file}\nWAV: {chunk.wav_file}\nRegeln: {chunk.pronunciation_rule_count}\nErsetzungen: {chunk.pronunciation_applied_occurrences}\nFehler: {chunk.error or '-'}"
             )
             self.job_chunk_list.addItem(item)
+        if len(job.chunks) > chunk_preview_limit:
+            self.job_chunk_list.addItem(
+                f"... {len(job.chunks) - chunk_preview_limit} weitere Chunks ausgeblendet, damit die UI bei grossen Jobs reaktionsfaehig bleibt."
+            )
         if not job.chunks:
             self.job_chunk_list.addItem("Noch keine Chunks für diesen Auftrag.")
+
+    def _chunk_text_length(self, chunk: ChunkRecord | None) -> int:
+        if chunk is None:
+            return 0
+        if chunk.text_length:
+            return int(chunk.text_length)
+        text_path = Path(chunk.text_file)
+        if text_path.exists():
+            try:
+                return len(text_path.read_text(encoding="utf-8"))
+            except OSError:
+                return 0
+        return 0
 
     def _selected_chunk_indexes(self) -> list[int]:
         indexes: list[int] = []
@@ -2041,7 +2202,7 @@ class MainWindow(QMainWindow):
         self.saved_profile_summary.setText(
             f"{setting.display_name}\n"
             f"Status: {profile_status_label(setting.status, ui_language=self.ui_language)} | Backend: {setting.backend} | Stimme/Profil: {voice_label}\n"
-            f"Preset: {setting.preset_hint} | Ausgabe: {mode_label}{benchmark_text}"
+            f"Preset: {setting.preset_hint} | Ausgabe: {mode_label} | XTTS-Qualität: {setting.xtts_quality_mode} | Aussprache-Regeln: {len(setting.pronunciation_rules)}{benchmark_text}"
         )
         self.job_snapshot_label.setText(
             f"Chunkgröße {setting.max_chars}, Satzpause {setting.sentence_silence:.2f}s, "
@@ -2315,6 +2476,10 @@ class MainWindow(QMainWindow):
 
     def on_backend_changed(self) -> None:
         is_piper = self.backend_combo.currentText() == "piper"
+        self.backend_group.setVisible(True)
+        self.profile_save_group.setVisible(True)
+        self.piper_group.setVisible(is_piper)
+        self.xtts_group.setVisible(not is_piper)
         self.voice_combo.setEnabled(is_piper)
         self.voice_language_combo.setEnabled(is_piper)
         self.voice_profile_combo.setEnabled(not is_piper)
@@ -2337,6 +2502,8 @@ class MainWindow(QMainWindow):
                 fallback_index = self.backend_combo.findText("piper")
                 if fallback_index >= 0:
                     self.backend_combo.setCurrentIndex(fallback_index)
+                    self.piper_group.setVisible(True)
+                    self.xtts_group.setVisible(False)
                 return
             self.backend_combo.setStyleSheet("")
             self.voice_profile_combo.setStyleSheet("")
@@ -2716,6 +2883,7 @@ class MainWindow(QMainWindow):
 
     def refresh_jobs(self) -> None:
         jobs = self.manager.list_jobs()
+        self._job_cache = {job.job_id: job for job in jobs}
         active_jobs = [job for job in jobs if job.status != "completed"]
         self.cached_jobs = list(jobs)
         self.cached_active_jobs = list(active_jobs)
@@ -2901,16 +3069,17 @@ class MainWindow(QMainWindow):
 
     def _finished_metadata_payload(self) -> dict[str, str]:
         title = self.finished_meta_title_edit.text().strip()
+        author = self.finished_meta_author_edit.text().strip()
         narrator = self.finished_meta_narrator_edit.text().strip()
         year_text = self.finished_meta_year_edit.text().strip()
         year_value = int(year_text) if year_text.isdigit() else 0
         payload = {
             "title": title,
             "album": title,
-            "artist": narrator,
-            "album_artist": narrator,
+            "artist": author or narrator,
+            "album_artist": author or narrator,
             "narrator": narrator,
-            "author": self.finished_meta_author_edit.text().strip(),
+            "author": author,
             "genre": self.finished_meta_genre_edit.text().strip() or "Audiobook",
             "language": self.finished_meta_language_edit.text().strip() or preferred_content_language_code(self.ui_language).split("_", 1)[0],
             "publisher": self.finished_meta_publisher_edit.text().strip(),
@@ -3051,6 +3220,7 @@ class MainWindow(QMainWindow):
         )
         updated_state = self.manager.load_state(job.job_id)
         self.refresh_jobs()
+        self.refresh_all_metadata_completers()
         self.refresh_finished_metadata_editor(updated_state)
         self.show_job(updated_state)
         self.status_label.setText(
@@ -3206,6 +3376,57 @@ class MainWindow(QMainWindow):
             self.set_selected_source_files([Path(filename) for filename in filenames])
             self.logger.info("Selected source files %s", filenames)
 
+    def select_source_folder(self) -> None:
+        dialog_title = {
+            "de": "Buchordner auswählen",
+            "en": "Choose source folder",
+            "es": "Elegir carpeta de libros",
+            "pt": "Escolher pasta de livros",
+        }.get(self.ui_language, "Choose source folder")
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            dialog_title,
+            str(self.paths.root),
+        )
+        if not folder:
+            return
+        discovered = self._collect_source_files_in_directory(Path(folder))
+        if not discovered:
+            QMessageBox.information(
+                self,
+                self._text("Keine Dateien"),
+                {
+                    "de": "In diesem Ordner wurden keine unterstützten Dateien gefunden (.txt, .pdf, .epub).",
+                    "en": "No supported files were found in this folder (.txt, .pdf, .epub).",
+                    "es": "No se encontraron archivos compatibles en esta carpeta (.txt, .pdf, .epub).",
+                    "pt": "Nenhum arquivo compatível encontrado nesta pasta (.txt, .pdf, .epub).",
+                }.get(self.ui_language, "No supported files were found in this folder (.txt, .pdf, .epub)."),
+            )
+            return
+        self.set_selected_source_files(discovered)
+        self.logger.info("Selected source folder %s with %s files", folder, len(discovered))
+
+    def _collect_source_files_in_directory(self, folder: Path) -> list[Path]:
+        allowed_suffixes = {".txt", ".pdf", ".epub"}
+        base = Path(folder).expanduser().resolve()
+        if not base.exists():
+            return []
+        if base.is_file():
+            return [base] if base.suffix.lower() in allowed_suffixes else []
+        collected: list[Path] = []
+        for candidate in sorted(base.rglob("*")):
+            if candidate.is_file() and candidate.suffix.lower() in allowed_suffixes:
+                collected.append(candidate.resolve())
+        # preserve deterministic ordering and remove duplicates for directories with symlink loops.
+        deduped: list[Path] = []
+        seen: set[Path] = set()
+        for item in collected:
+            if item in seen:
+                continue
+            seen.add(item)
+            deduped.append(item)
+        return deduped
+
     def create_job(self) -> None:
         if not self.selected_source_files:
             QMessageBox.warning(
@@ -3265,7 +3486,9 @@ class MainWindow(QMainWindow):
             keep_wav=False,
             sentence_silence=setting.sentence_silence,
             length_scale=setting.length_scale,
-            audiobook_metadata=self._metadata_payload_for_source(self.selected_source_files[0]),
+            audiobook_metadata=[
+                self._metadata_payload_for_source(source_path) for source_path in self.selected_source_files
+            ],
         )
         if not jobs:
             QMessageBox.warning(
@@ -3282,6 +3505,7 @@ class MainWindow(QMainWindow):
         self.current_job_id = str(jobs[0]["job_id"])
         self.logger.info("Created %s job(s) from selected sources", len(jobs))
         self.refresh_jobs()
+        self.refresh_all_metadata_completers()
         self.show_job(self.manager.load_state(self.current_job_id))
         self.status_label.setText(
             {
@@ -3298,12 +3522,38 @@ class MainWindow(QMainWindow):
             return
         job_id = item.data(Qt.UserRole)
         self.current_job_id = job_id
+        self._pending_selected_job_id = job_id
         self.finished_books_list.clearSelection()
         self.refresh_finished_metadata_editor(None)
         self.logger.info("Selected job %s", job_id)
-        self.show_job(self.manager.load_state(job_id))
+        if self._job_selection_timer.isActive():
+            self._job_selection_timer.stop()
+        self.status_label.setText(
+            {
+                "de": "Auftragsansicht wird geladen ...",
+                "en": "Loading job details ...",
+                "es": "Cargando detalles del trabajo ...",
+                "pt": "Carregando detalhes da tarefa ...",
+            }.get(self.ui_language, "Loading job details ...")
+        )
+        self._job_selection_timer.start(60)
+
+    def _apply_pending_job_selection(self) -> None:
+        job_id = self._pending_selected_job_id
+        if not job_id:
+            return
+        if self.current_job_id != job_id:
+            return
+        try:
+            job = self.manager.load_state(job_id)
+        except FileNotFoundError:
+            self.logger.warning("Selected job disappeared before detail view could be loaded: %s", job_id)
+            return
+        self.show_job(job)
 
     def show_job(self, job: JobState) -> None:
+        self._cache_job(job)
+        self._load_job_metadata_into_create_fields(job)
         self.status_label.setText(
             f"{job.status} | backend {job.backend} | profil {job.saved_profile_name or '-'} | priority {job.priority} | preset {job.preset_id} | "
             f"output {job.output_mode} | ziel {job.target_part_minutes}m | chunks {job.completed_chunks}/{job.total_chunks} | "
@@ -3345,7 +3595,6 @@ class MainWindow(QMainWindow):
         self.keep_wav_checkbox.setChecked(job.keep_wav)
         self.update_job_transport_buttons(job)
         self.update_output_mode_controls()
-        self.refresh_diagnostics_summary()
         self.logger.debug("Displayed job %s with status %s", job.job_id, job.status)
 
     def update_job_transport_buttons(self, job: JobState | None) -> None:
@@ -3651,12 +3900,54 @@ class MainWindow(QMainWindow):
         profile_dir = self.paths.voice_profiles / profile_id
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(profile_dir)))
 
-    def open_find_best_setting(self, focus_assistant: bool = False) -> None:
-        dialog = FindBestSettingDialog(self.paths, self.manager, self, focus_assistant=focus_assistant, ui_language=self.ui_language)
+    def open_find_best_setting(
+        self,
+        focus_assistant: bool = False,
+        *,
+        focus_lexicon: bool = False,
+        lexicon_seed_terms: list[str] | None = None,
+        initial_source_path: Path | None = None,
+    ) -> None:
+        dialog = FindBestSettingDialog(
+            self.paths,
+            self.manager,
+            self,
+            focus_assistant=focus_assistant,
+            focus_lexicon=focus_lexicon,
+            lexicon_seed_terms=lexicon_seed_terms,
+            initial_source_path=initial_source_path,
+            ui_language=self.ui_language,
+        )
         dialog.exec()
         self.refresh_saved_profiles()
         self.refresh_jobs()
         self.refresh_diagnostics_summary()
+
+    def _lexicon_source_path(self) -> Path | None:
+        source = self._active_metadata_source()
+        if source is not None:
+            return source
+        finished_job = self._selected_finished_job()
+        if finished_job is not None and finished_job.source_file:
+            candidate = Path(finished_job.source_file)
+            if candidate.exists():
+                return candidate
+        return None
+
+    def open_xtts_lexicon(self) -> None:
+        seed_terms: list[str] = []
+        for value in (
+            self.meta_author_edit.text().strip(),
+            self.finished_meta_author_edit.text().strip(),
+        ):
+            cleaned = " ".join(str(value or "").split()).strip()
+            if cleaned and cleaned not in seed_terms:
+                seed_terms.append(cleaned)
+        self.open_find_best_setting(
+            focus_lexicon=True,
+            lexicon_seed_terms=seed_terms,
+            initial_source_path=self._lexicon_source_path(),
+        )
 
     def maybe_start_next_job(self) -> None:
         if self.worker and self.worker.isRunning():
@@ -3703,19 +3994,48 @@ class MainWindow(QMainWindow):
             self.status_label.setText(self._tr("status.ready.no_job"))
 
     def on_progress_changed(self, current: int, total: int, message: str) -> None:
+        self._pending_progress_update = (current, total, message)
+        now = time.monotonic()
+        elapsed = now - self._last_progress_applied_at
+        if elapsed >= 0.2:
+            if self._progress_update_timer.isActive():
+                self._progress_update_timer.stop()
+            self._apply_coalesced_progress()
+            self._last_progress_applied_at = now
+        elif not self._progress_update_timer.isActive():
+            self._progress_update_timer.start(80)
+
+    def _apply_coalesced_progress(self) -> None:
+        update = self._pending_progress_update
+        if update is None:
+            return
+        current, total, message = update
+        self._pending_progress_update = None
+        self._last_progress_applied_at = time.monotonic()
         self.progress_bar.setValue(int((current / total) * 100) if total else 0)
         eta_text = ""
-        if self.current_job_id:
-            try:
-                state = self.manager.load_state(self.current_job_id)
-            except FileNotFoundError:
-                state = None
-            if state and state.estimated_remaining_seconds > 0:
-                eta_text = f" | Rest ca. {state.estimated_remaining_seconds/60:.1f} min"
+        state = self._find_cached_job(self.current_job_id)
+        if state:
+            if state.estimated_total_seconds > 0:
+                current_progress = max(0.0, min(float(current), float(total)))
+                denominator = float(total if total else current_progress)
+                if denominator > 0:
+                    pending_ratio = max(0.0, (float(total) - current_progress) / denominator)
+                else:
+                    pending_ratio = 0.0
+                eta_seconds = state.estimated_total_seconds * pending_ratio
+                if eta_seconds > 0:
+                    eta_text = f" | Rest ca. {eta_seconds/60:.1f} min"
         self.status_label.setText(f"{message}{eta_text}")
         self.logger.debug("Progress update: %s/%s %s", current, total, message)
 
+    def _flush_progress_updates(self) -> None:
+        self._progress_update_timer.stop()
+        if self._pending_progress_update is not None:
+            self._apply_coalesced_progress()
+
     def on_job_finished(self, state: JobState) -> None:
+        self._flush_progress_updates()
         skip_autostart = False
         if self.pause_requested_job_id and state.job_id == self.pause_requested_job_id and state.status == "stopped":
             state = self.manager.enqueue_job(state.job_id)
@@ -3734,6 +4054,7 @@ class MainWindow(QMainWindow):
             self.maybe_start_next_job()
 
     def on_job_failed(self, message: str) -> None:
+        self._flush_progress_updates()
         if self.current_job_id:
             update_preview_job_status(self.paths, self.current_job_id, "failed")
         self.refresh_jobs()
@@ -3749,14 +4070,42 @@ class MainWindow(QMainWindow):
         if worker is not None and hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
-    def handle_about_to_quit(self) -> None:
+    def _wait_for_worker_stop(self, on_idle: callable | None = None) -> None:
+        if self.worker is None:
+            if on_idle is not None:
+                on_idle()
+            return
+        if self.worker.isRunning():
+            self._shutdown_wait_attempts += 1
+            if self._shutdown_wait_attempts == 1:
+                self.logger.info("Waiting for job worker to stop ...")
+            if self._shutdown_wait_attempts > 80:
+                self.logger.warning("Worker shutdown timed out; forcing closure path.")
+                self._shutdown_wait_attempts = 0
+                self.worker.request_stop()
+                if on_idle is not None:
+                    on_idle()
+                return
+            QTimer.singleShot(100, lambda: self._wait_for_worker_stop(on_idle))
+            return
+        self._shutdown_wait_attempts = 0
+        if on_idle is not None:
+            on_idle()
+
+    def _shutdown_current_worker(self) -> None:
         if self.worker and self.worker.isRunning():
-            self.logger.warning("Stopping running worker during app shutdown")
             self.worker.request_stop()
-            self.worker.wait()
+            if self._shutdown_wait_attempts == 0:
+                self.logger.warning("Stopping running worker during shutdown request.")
+
+    def handle_about_to_quit(self) -> None:
+        self._flush_progress_updates()
+        if self.worker and self.worker.isRunning():
+            self._shutdown_current_worker()
+            self._wait_for_worker_stop()
 
     def closeEvent(self, event) -> None:
-        if self.worker and self.worker.isRunning():
+        if not self._pending_shutdown_close and (self.worker and self.worker.isRunning()):
             answer = QMessageBox.question(
                 self,
                 "Auftrag läuft noch",
@@ -3765,6 +4114,15 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
-            self.worker.request_stop()
-            self.worker.wait()
+            event.ignore()
+            self._pending_shutdown_close = True
+            self._shutdown_current_worker()
+            self._wait_for_worker_stop(lambda: self.close())
+            return
+        if self.worker and self.worker.isRunning():
+            # Close guard if closeEvent was called while another close was already in progress.
+            event.ignore()
+            return
+        self._flush_progress_updates()
+        self._pending_shutdown_close = False
         super().closeEvent(event)

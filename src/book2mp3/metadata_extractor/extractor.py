@@ -98,6 +98,13 @@ class BookMetadataExtractor:
 
         extended = self._aggregate_extended_metadata(candidates)
 
+        cover_url = self._pick_cover_url(
+            candidates,
+            fallback=(title.strip() or source.stem),
+            fallback_author=final_author.strip(),
+            online_results=online_results,
+        )
+
         return MetadataExtractionResult(
             source_path=str(source),
             title=final_title,
@@ -110,6 +117,7 @@ class BookMetadataExtractor:
             subjects=extended["subjects"],
             comment=short_text(final_comment),
             confidence=round(final_confidence, 4),
+            cover_url=cover_url,
             title_source=offline["title_source"],
             author_source=offline["author_source"],
             candidates=sorted(candidates, key=lambda item: item.confidence, reverse=True),
@@ -273,6 +281,36 @@ class BookMetadataExtractor:
             "identifiers": identifiers[:8],
             "subjects": subjects[:8],
         }
+
+    def _pick_cover_url(
+        self,
+        candidates: list[MetadataCandidate],
+        *,
+        fallback: str,
+        fallback_author: str,
+        online_results: list[dict[str, Any]],
+    ) -> str:
+        for candidate in sorted(candidates, key=lambda item: item.confidence, reverse=True):
+            value = str(candidate.extra.get("cover_url") or "").strip()
+            if value.startswith("http://") or value.startswith("https://"):
+                return value
+
+        for result in online_results:
+            value = str(result.get("cover_url") or "").strip()
+            if value.startswith("http://") or value.startswith("https://"):
+                return value
+
+        if fallback:
+            lower_title = canonical_text(fallback)
+            lower_author = canonical_text(fallback_author)
+            for result in online_results:
+                title = canonical_text(str(result.get("title") or ""))
+                author = canonical_text(str(result.get("author") or ""))
+                if lower_title and lower_title in title and (not lower_author or lower_author in author):
+                    value = str(result.get("cover_url") or "").strip()
+                    if value.startswith("http://") or value.startswith("https://"):
+                        return value
+        return ""
 
     def _path_candidates(self, path: Path) -> list[MetadataCandidate]:
         candidates: list[MetadataCandidate] = []

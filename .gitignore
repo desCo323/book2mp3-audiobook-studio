@@ -12,6 +12,8 @@ workspace/
 runtime/
 src/python/
 voices/
+/EBOOKS/
+/*.epub
 *.spec
 *.log
 *.egg-info/

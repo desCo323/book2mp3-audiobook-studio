@@ -7,6 +7,8 @@ CLAUSE_BOUNDARY_RE = re.compile(r"(?<=[,;:])\s+|(?<=\s[-–—])\s+")
 
 
 def split_oversized_part(part: str, max_length: int) -> list[str]:
+    if max_length <= 0:
+        max_length = 1
     part = part.strip()
     if not part:
         return []
@@ -27,6 +29,8 @@ def split_oversized_part(part: str, max_length: int) -> list[str]:
 
 
 def pack_chunks(parts: list[str], max_length: int) -> list[str]:
+    if max_length <= 0:
+        max_length = 1
     result: list[str] = []
     current = ""
     for part in parts:
@@ -35,7 +39,7 @@ def pack_chunks(parts: list[str], max_length: int) -> list[str]:
             continue
         if not current:
             if len(part) > max_length:
-                result.append(part)
+                result.extend(split_oversized_part(part, max_length))
             else:
                 current = part
             continue
@@ -45,7 +49,7 @@ def pack_chunks(parts: list[str], max_length: int) -> list[str]:
             continue
         result.append(current)
         if len(part) > max_length:
-            result.append(part)
+            result.extend(split_oversized_part(part, max_length))
             current = ""
         else:
             current = part

@@ -1,0 +1,1821 @@
+{
+  "version": 1,
+  "name": "book2mp3-global-book-lexicon",
+  "updated_at": "2026-06-14",
+  "description": "Globales, editierbares Autoren- und Figurenlexikon fuer Aiken, Harrison und Rowling. Es dient als Wissensbasis fuer spaetere Metadaten-, UI- und XTTS-Integrationen.",
+  "entries": [
+    {
+      "entry_id": "ga_aiken.wolf_diaries_01_gezaehmt",
+      "author": "G. A. Aiken",
+      "author_aliases": [
+        "Aiken, G. A.",
+        "Aiken, G.A.",
+        "G.A. Aiken"
+      ],
+      "author_spoken_as": "G A Eyken",
+      "series": "Wolf Diaries / Magnus Pack",
+      "book_title": "Wolf Diaries.01 - Gezähmt",
+      "book_title_aliases": [
+        "Wolf Diaries.01 - Gezahmt",
+        "Wolf Diaries.01 - Gezähmt",
+        "Gezahmt",
+        "Gezähmt",
+        "Pack Challenge"
+      ],
+      "subjects": [
+        "Shapeshifters",
+        "Paranormal Romance",
+        "Urban Fantasy"
+      ],
+      "characters": [
+        {
+          "name": "Sara Kylie Morrighan",
+          "aliases": [
+            "Sara Morrighan",
+            "Sara"
+          ],
+          "spoken_as": "Sara Morrigan",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Alpha female of the Magnus Pack and central heroine of Pack Challenge.",
+          "sources": [
+            "https://shellylaurenston.com/books/pack-challenge/",
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.01 - Gezahmt - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Zach Sheridan",
+          "aliases": [
+            "Zach"
+          ],
+          "spoken_as": "Zach Sheridan",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Alpha male of the Magnus Pack and Sara's mate.",
+          "sources": [
+            "https://shellylaurenston.com/books/pack-challenge/",
+            "https://shellylaurenston.com/news/pride-world-connections/"
+          ]
+        },
+        {
+          "name": "Miki Marie Kendrick",
+          "aliases": [
+            "Miki Kendrick",
+            "Miki"
+          ],
+          "spoken_as": "Miki Kendrick",
+          "use_for_xtts": false,
+          "role": "major supporting",
+          "notes": "Child prodigy and hacker; close friend of Sara and Angelina.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.01 - Gezahmt - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Angelina Santiago",
+          "aliases": [
+            "Angelina",
+            "Angie"
+          ],
+          "spoken_as": "Angelina Santiago",
+          "use_for_xtts": false,
+          "role": "major supporting",
+          "notes": "Human friend of Sara and Miki; later heroine of Here Kitty, Kitty.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.01 - Gezahmt - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Marrec",
+          "aliases": [],
+          "spoken_as": "Marrec",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Recurring wolf figure observed in the local German EPUB text.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.01 - Gezahmt - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Bruce Morrighan",
+          "aliases": [
+            "Bruce"
+          ],
+          "spoken_as": "Bruce Morrigan",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Sara's father, named in the official world notes and present in the local EPUB.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.01 - Gezahmt - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Lynette Redwolf",
+          "aliases": [
+            "Lynette"
+          ],
+          "spoken_as": "Lynette Redwolf",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Sara's grandmother and guardian figure, confirmed in the local EPUB.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.01 - Gezahmt - Aiken, G. A_.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "ga_aiken.wolf_diaries_02_besiegt",
+      "author": "G. A. Aiken",
+      "series": "Wolf Diaries / Magnus Pack",
+      "book_title": "Wolf Diaries.02 - Besiegt",
+      "book_title_aliases": [
+        "Besiegt",
+        "Go Fetch",
+        "Go Fetch!"
+      ],
+      "subjects": [
+        "Shapeshifters",
+        "Paranormal Romance",
+        "Urban Fantasy"
+      ],
+      "characters": [
+        {
+          "name": "Miki Marie Kendrick",
+          "aliases": [
+            "Miki Kendrick",
+            "Miki"
+          ],
+          "spoken_as": "Miki Kendrick",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Computer expert and central heroine of Go Fetch.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.02 - Besiegt - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Conall Víga-Feilan",
+          "aliases": [
+            "Conall Viga-Feilan",
+            "Conall"
+          ],
+          "rule_aliases": [
+            "Conall",
+            "Víga-Feilan",
+            "Viga-Feilan"
+          ],
+          "spoken_as": "Konnal Wiga Feilan",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Wolf shifter, mate of Miki and major Magnus Pack lead.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.02 - Besiegt - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Sara Kylie Morrighan",
+          "aliases": [
+            "Sara Morrighan",
+            "Sara"
+          ],
+          "spoken_as": "Sara Morrigan",
+          "use_for_xtts": true,
+          "role": "major supporting",
+          "notes": "Recurring Magnus Pack alpha figure.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.02 - Besiegt - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Zach Sheridan",
+          "aliases": [
+            "Zach"
+          ],
+          "spoken_as": "Zach Sheridan",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Sara's mate and alpha male of the Magnus Pack.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/"
+          ]
+        },
+        {
+          "name": "Irene Danielle Conridge",
+          "aliases": [
+            "Irene Conridge",
+            "Irene"
+          ],
+          "spoken_as": "Irene Conridge",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Miki's doctoral advisor and human scholar.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.02 - Besiegt - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Craig",
+          "aliases": [],
+          "spoken_as": "Craig",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Recurring named local supporting figure extracted from the EPUB text.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.02 - Besiegt - Aiken, G. A_.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "ga_aiken.wolf_diaries_03_erlegen",
+      "author": "G. A. Aiken",
+      "series": "Wolf Diaries / Magnus Pack",
+      "book_title": "Wolf Diaries.03 - Erlegen",
+      "book_title_aliases": [
+        "Wolf Diaries.03 - Erlegt",
+        "Erlegen",
+        "Erlegt",
+        "Here Kitty, Kitty",
+        "Here Kitty Kitty"
+      ],
+      "subjects": [
+        "Shapeshifters",
+        "Paranormal Romance",
+        "Urban Fantasy"
+      ],
+      "characters": [
+        {
+          "name": "Angelina Santiago",
+          "aliases": [
+            "Angelina",
+            "Angie"
+          ],
+          "spoken_as": "Angelina Santiago",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Human heroine who lands in the Vorislav tiger orbit.",
+          "sources": [
+            "https://shellylaurenston.com/books/here-kitty-kitty/",
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.03 - Erlegen - aiken.epub"
+          ]
+        },
+        {
+          "name": "Nikolai Vorislav",
+          "aliases": [
+            "Nik",
+            "Nik Vorislav"
+          ],
+          "rule_aliases": [
+            "Nik Vorislav"
+          ],
+          "spoken_as": "Nikolai Worislaw",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Siberian tiger shifter and Angelina's mate.",
+          "sources": [
+            "https://shellylaurenston.com/books/here-kitty-kitty/",
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.03 - Erlegen - aiken.epub"
+          ]
+        },
+        {
+          "name": "Aleksei Vorislav",
+          "aliases": [
+            "Alek",
+            "Aleksei",
+            "Alec"
+          ],
+          "rule_aliases": [
+            "Aleksei"
+          ],
+          "spoken_as": "Aleksei Worislaw",
+          "use_for_xtts": true,
+          "role": "major supporting",
+          "notes": "Nikolai's twin brother from the Vorislav tiger family.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.03 - Erlegen - aiken.epub"
+          ]
+        },
+        {
+          "name": "Bannik Vorislav",
+          "aliases": [
+            "Ban",
+            "Bannik"
+          ],
+          "rule_aliases": [
+            "Bannik"
+          ],
+          "spoken_as": "Bannik Worislaw",
+          "use_for_xtts": true,
+          "role": "supporting",
+          "notes": "Another recurring Vorislav sibling.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.03 - Erlegen - aiken.epub"
+          ]
+        },
+        {
+          "name": "Sara Kylie Morrighan",
+          "aliases": [
+            "Sara Morrighan",
+            "Sara"
+          ],
+          "spoken_as": "Sara Morrigan",
+          "use_for_xtts": true,
+          "role": "major supporting",
+          "notes": "Recurring Magnus Pack alpha figure.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/"
+          ]
+        },
+        {
+          "name": "Miki Marie Kendrick",
+          "aliases": [
+            "Miki Kendrick",
+            "Miki"
+          ],
+          "spoken_as": "Miki Kendrick",
+          "use_for_xtts": false,
+          "role": "major supporting",
+          "notes": "Recurring Magnus Pack heroine and hacker.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/"
+          ]
+        },
+        {
+          "name": "Kisa Vorislav",
+          "aliases": [
+            "Kisa"
+          ],
+          "spoken_as": "Kisa Worislaw",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Nikolai's twin sister in the Vorislav family.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.03 - Erlegen - aiken.epub"
+          ]
+        },
+        {
+          "name": "Reena",
+          "aliases": [],
+          "spoken_as": "Reena",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Vorislav cousin referenced in the local EPUB and wider character network.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.03 - Erlegen - aiken.epub"
+          ]
+        },
+        {
+          "name": "Nessa Sheridan",
+          "aliases": [
+            "Nessa"
+          ],
+          "spoken_as": "Nessa Sheridan",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Zach's sister and a referenced Magnus Pack connection.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wolf Diaries.03 - Erlegen - aiken.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "ga_aiken.lions_wilde_begierde",
+      "author": "G. A. Aiken",
+      "series": "Lions / New York Shape Shifters",
+      "book_title": "Wilde Begierde",
+      "book_title_aliases": [
+        "Wilde Begierde lions4",
+        "Lions - Wilde Begierde",
+        "The Mane Squeeze"
+      ],
+      "subjects": [
+        "Shapeshifters",
+        "Paranormal Romance",
+        "Urban Fantasy"
+      ],
+      "characters": [
+        {
+          "name": "Gwendolyn O'Neill",
+          "aliases": [
+            "Gwen O'Neill",
+            "Gwen"
+          ],
+          "spoken_as": "Gwen O'Neill",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Half lioness, half tigress hybrid from the Philly O'Neill line.",
+          "sources": [
+            "https://www.piper.de/buecher/lions-wilde-begierde-isbn-978-3-492-98689-2-ebook",
+            "https://shellylaurenston.com/books/the-mane-squeeze/",
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wilde Begierde lions4 - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Lachlan MacRyrie",
+          "aliases": [
+            "Lock",
+            "Lock MacRyrie"
+          ],
+          "spoken_as": "Lock Macriri",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Massive grizzly shifter and Gwen's mate.",
+          "sources": [
+            "https://shellylaurenston.com/books/the-mane-squeeze/",
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wilde Begierde lions4 - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Mitchell O'Neill Shaw",
+          "aliases": [
+            "Mitch",
+            "Mitch Shaw"
+          ],
+          "spoken_as": "Mitchell O'Neill Shaw",
+          "use_for_xtts": false,
+          "role": "major supporting",
+          "notes": "Lion shifter related to Gwen through the O'Neill/Shaw family line.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wilde Begierde lions4 - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Ulrich Van Holtz",
+          "aliases": [
+            "Ric",
+            "Ric Van Holtz"
+          ],
+          "spoken_as": "Ulrich Van Holtz",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Wolf shifter chef and recurring New York Pack/Pride figure.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wilde Begierde lions4 - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Jessica Ann Ward",
+          "aliases": [
+            "Jess",
+            "Jess Ward",
+            "Jessie Ann"
+          ],
+          "spoken_as": "Jessica Ann Ward",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Wild dog alpha and business leader tied to Gwen's wider circle.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wilde Begierde lions4 - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Blayne Thorpe",
+          "aliases": [
+            "Blayne"
+          ],
+          "spoken_as": "Blayne Thorpe",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Hybrid shifter and Gwen's close friend.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "https://www.lovelybooks.de/autor/G.-A.-Aiken/reihe/Lions-in-Reihenfolge-1107866489/"
+          ]
+        },
+        {
+          "name": "Roxanne O'Neill",
+          "aliases": [
+            "Roxy",
+            "Roxy O'Neill"
+          ],
+          "spoken_as": "Roxanne O'Neill",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Mother figure from the O'Neill/Shaw line, present in the local EPUB.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wilde Begierde lions4 - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Sissy Mae Smith",
+          "aliases": [
+            "Sissy"
+          ],
+          "spoken_as": "Sissy Mae Smith",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Recurring wolf shifter from the connected New York shape shifter books.",
+          "sources": [
+            "https://shellylaurenston.com/news/pride-world-connections/",
+            "local:/home/codex/Schreibtisch/books/Wilde Begierde lions4 - Aiken, G. A_.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "ga_aiken.dragon_touch_03",
+      "author": "G. A. Aiken",
+      "series": "Dragon Kin",
+      "book_title": "Dragon Touch (3)",
+      "book_title_aliases": [
+        "Dragon Touch",
+        "What a Dragon Should Know"
+      ],
+      "subjects": [
+        "Dragon Shifters",
+        "Epic Fantasy",
+        "Paranormal Romance"
+      ],
+      "characters": [
+        {
+          "name": "Gwenvael the Handsome",
+          "aliases": [
+            "Gwenvael"
+          ],
+          "rule_aliases": [
+            "Gwenvael"
+          ],
+          "spoken_as": "Gwenveil",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Dragon prince and central hero of What a Dragon Should Know.",
+          "sources": [
+            "https://gaaiken.com/series/dragon-kin/",
+            "https://gaaiken.com/dragon-kin-glossary/",
+            "local:/home/codex/Schreibtisch/books/Dragon Touch (3) - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Dagmar Reinholdt",
+          "aliases": [
+            "Dagmar",
+            "The Beast"
+          ],
+          "spoken_as": "Dagmar Reinholdt",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Northland strategist, battle lord and Gwenvael's mate.",
+          "sources": [
+            "https://gaaiken.com/series/dragon-kin/",
+            "https://gaaiken.com/dragon-kin-glossary/",
+            "local:/home/codex/Schreibtisch/books/Dragon Touch (3) - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Annwyl the Bloody",
+          "aliases": [
+            "Annwyl"
+          ],
+          "rule_aliases": [
+            "Annwyl"
+          ],
+          "spoken_as": "Annwil the Bloody",
+          "use_for_xtts": true,
+          "role": "major supporting",
+          "notes": "Human queen of the Southlands and major Dragon Kin power center.",
+          "sources": [
+            "https://gaaiken.com/dragon-kin-glossary/",
+            "local:/home/codex/Schreibtisch/books/Dragon Touch (3) - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Fearghus the Destroyer",
+          "aliases": [
+            "Fearghus"
+          ],
+          "rule_aliases": [
+            "Fearghus"
+          ],
+          "spoken_as": "Fergus the Destroyer",
+          "use_for_xtts": true,
+          "role": "major supporting",
+          "notes": "Dragon royal and mate to Annwyl.",
+          "sources": [
+            "https://gaaiken.com/dragon-kin-glossary/",
+            "local:/home/codex/Schreibtisch/books/Dragon Touch (3) - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Briec the Mighty",
+          "aliases": [
+            "Briec"
+          ],
+          "rule_aliases": [
+            "Briec"
+          ],
+          "spoken_as": "Briek the Mighty",
+          "use_for_xtts": true,
+          "role": "major supporting",
+          "notes": "Dragon royal and father figure in the wider kin network.",
+          "sources": [
+            "https://gaaiken.com/dragon-kin-glossary/",
+            "local:/home/codex/Schreibtisch/books/Dragon Touch (3) - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Talaith",
+          "aliases": [],
+          "rule_aliases": [
+            "Talaith"
+          ],
+          "spoken_as": "Talait",
+          "use_for_xtts": true,
+          "role": "supporting",
+          "notes": "Briec's mate and mother of Izzy.",
+          "sources": [
+            "https://gaaiken.com/dragon-kin-glossary/",
+            "local:/home/codex/Schreibtisch/books/Dragon Touch (3) - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Iseabail the Dangerous",
+          "aliases": [
+            "Iseabail",
+            "Izzy"
+          ],
+          "rule_aliases": [
+            "Iseabail"
+          ],
+          "spoken_as": "Isabehl the Dangerous",
+          "use_for_xtts": true,
+          "role": "supporting",
+          "notes": "Fearless dragon-human daughter in Annwyl's military orbit.",
+          "sources": [
+            "https://gaaiken.com/dragon-kin-glossary/",
+            "local:/home/codex/Schreibtisch/books/Dragon Touch (3) - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Keita the Viper",
+          "aliases": [
+            "Keita"
+          ],
+          "spoken_as": "Keita the Viper",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Dragon royal with a large role across the wider series.",
+          "sources": [
+            "https://gaaiken.com/dragon-kin-glossary/"
+          ]
+        },
+        {
+          "name": "Morfyd the White",
+          "aliases": [
+            "Morfyd"
+          ],
+          "spoken_as": "Morfid the White",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Powerful white witch and royal daughter, strongly present in the local EPUB.",
+          "sources": [
+            "https://gaaiken.com/dragon-kin-glossary/",
+            "local:/home/codex/Schreibtisch/books/Dragon Touch (3) - Aiken, G. A_.epub"
+          ]
+        },
+        {
+          "name": "Bercelak the Great",
+          "aliases": [
+            "Bercelak"
+          ],
+          "spoken_as": "Berselak the Great",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Dragon royal and major family figure in the Dragon Kin world.",
+          "sources": [
+            "https://gaaiken.com/dragon-kin-glossary/",
+            "local:/home/codex/Schreibtisch/books/Dragon Touch (3) - Aiken, G. A_.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "thea_harrison.der_kuss_des_greifen",
+      "author": "Thea Harrison",
+      "author_aliases": [
+        "Harrison, Thea"
+      ],
+      "author_spoken_as": "Thea Harrison",
+      "series": "Die Alten Völker / Elder Races",
+      "book_title": "Der Kuss des Greifen",
+      "book_title_aliases": [
+        "Kuss des Greifen",
+        "Serpent's Kiss",
+        "Serpents Kiss"
+      ],
+      "subjects": [
+        "Paranormal Romance",
+        "Elder Races",
+        "Vampires",
+        "Wyr"
+      ],
+      "characters": [
+        {
+          "name": "Rune Ainissesthai",
+          "aliases": [
+            "Rune"
+          ],
+          "rule_aliases": [
+            "Ainissesthai"
+          ],
+          "spoken_as": "Rune Anissestai",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Wyr sentinel drawn into the crisis of Carling's serpent's kiss.",
+          "sources": [
+            "https://theaharrison.com/books/serpents-kiss/",
+            "local:/home/codex/Schreibtisch/books/Kuss des Greifen, Der - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Carling Rhoswen",
+          "aliases": [
+            "Carling",
+            "Rhoswen"
+          ],
+          "rule_aliases": [
+            "Rhoswen"
+          ],
+          "spoken_as": "Karling Roswen",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Ailing Vampyre Queen whose power has become dangerously erratic.",
+          "sources": [
+            "https://theaharrison.com/books/serpents-kiss/",
+            "local:/home/codex/Schreibtisch/books/Kuss des Greifen, Der - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Dragos Cuelebre",
+          "aliases": [
+            "Dragos"
+          ],
+          "rule_aliases": [
+            "Dragos",
+            "Cuelebre"
+          ],
+          "spoken_as": "Dragos Kuelebre",
+          "use_for_xtts": true,
+          "role": "major supporting",
+          "notes": "Wyr leader and one of the dominant figures of the Elder Races world.",
+          "sources": [
+            "https://theaharrison.com/books/dragon-bound/",
+            "local:/home/codex/Schreibtisch/books/Kuss des Greifen, Der - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Pia Giovanni",
+          "aliases": [
+            "Pia"
+          ],
+          "spoken_as": "Pia Giovanni",
+          "use_for_xtts": false,
+          "role": "major supporting",
+          "notes": "Dragos's partner and one of the emotional centers of the series.",
+          "sources": [
+            "https://theaharrison.com/books/dragon-bound/"
+          ]
+        },
+        {
+          "name": "Aryal",
+          "aliases": [],
+          "rule_aliases": [
+            "Aryal"
+          ],
+          "spoken_as": "Arial",
+          "use_for_xtts": true,
+          "role": "supporting",
+          "notes": "Harpy sentinel recurring throughout the Elder Races world.",
+          "sources": [
+            "https://theaharrison.com/excerpt-2-from-planet-dragos/",
+            "local:/home/codex/Schreibtisch/books/Kuss des Greifen, Der - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Seremela Telemar",
+          "aliases": [
+            "Seremela"
+          ],
+          "spoken_as": "Seremela Telemar",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Medusa ally figure who recurs in the Elder Races world and appears in the local EPUB.",
+          "sources": [
+            "https://theaharrison.com/books/die-augen-der-medusa/",
+            "local:/home/codex/Schreibtisch/books/Kuss des Greifen, Der - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Duncan Turner",
+          "aliases": [
+            "Duncan"
+          ],
+          "spoken_as": "Duncan Turner",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Vampyre tied to Seremela and named in the local EPUB.",
+          "sources": [
+            "https://theaharrison.com/books/die-augen-der-medusa/",
+            "local:/home/codex/Schreibtisch/books/Kuss des Greifen, Der - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Julian",
+          "aliases": [],
+          "spoken_as": "Julian",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Recurring named supporting figure extracted from the local EPUB text.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Kuss des Greifen, Der - Thea Harrison.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "thea_harrison.das_herz_des_wolfes",
+      "author": "Thea Harrison",
+      "series": "Die Alten Völker / Elder Races",
+      "book_title": "Das Herz des Wolfes",
+      "book_title_aliases": [
+        "Herz des Wolfes",
+        "True Colors"
+      ],
+      "subjects": [
+        "Paranormal Romance",
+        "Elder Races",
+        "Mystery"
+      ],
+      "characters": [
+        {
+          "name": "Alice Clark",
+          "aliases": [
+            "Alice"
+          ],
+          "spoken_as": "Alice Clark",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Wyr schoolteacher investigating a chain of murders.",
+          "sources": [
+            "https://theaharrison.com/books/true-colors/",
+            "https://theaharrison.com/books/das-herz-des-wolfes/",
+            "local:/home/codex/Schreibtisch/books/Herz des Wolfes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Gideon Riehl",
+          "aliases": [
+            "Gideon",
+            "Riehl"
+          ],
+          "spoken_as": "Gidion Riel",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Wolf Wyr detective in the Wyr Division of Violent Crime.",
+          "sources": [
+            "https://theaharrison.com/books/true-colors/",
+            "https://theaharrison.com/books/divine-tarot/",
+            "https://theaharrison.com/books/das-herz-des-wolfes/",
+            "local:/home/codex/Schreibtisch/books/Herz des Wolfes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Bayne",
+          "aliases": [],
+          "spoken_as": "Bayne",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Recurring Wyr sentinel appearing in the local German EPUB.",
+          "sources": [
+            "https://theaharrison.com/excerpt-2-from-planet-dragos/",
+            "local:/home/codex/Schreibtisch/books/Herz des Wolfes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Haley",
+          "aliases": [],
+          "spoken_as": "Haley",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named local supporting figure extracted from the True Colors German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Herz des Wolfes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Alex",
+          "aliases": [],
+          "spoken_as": "Alex",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named local supporting figure extracted from the True Colors German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Herz des Wolfes, Das - Thea Harrison.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "thea_harrison.das_feuer_des_daemons",
+      "author": "Thea Harrison",
+      "series": "Die Alten Völker / Elder Races",
+      "book_title": "Das Feuer des Dämons",
+      "book_title_aliases": [
+        "Das Feuer des Daemons",
+        "Feuer des Dämons",
+        "Feuer des Daemons",
+        "Oracle's Moon",
+        "Oracles Moon"
+      ],
+      "subjects": [
+        "Paranormal Romance",
+        "Elder Races",
+        "Oracle"
+      ],
+      "characters": [
+        {
+          "name": "Grace Andreas",
+          "aliases": [
+            "Grace"
+          ],
+          "spoken_as": "Grace Andreas",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Woman from the Oracle line who inherits dangerous responsibility.",
+          "sources": [
+            "https://theaharrison.com/books/das-feuer-des-damons/",
+            "https://theaharrison.com/books/oracles-moon/",
+            "local:/home/codex/Schreibtisch/books/Das Feuer des Daemons - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Khalil",
+          "aliases": [],
+          "rule_aliases": [
+            "Khalil"
+          ],
+          "spoken_as": "Chalil",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Djinn prince of House Marid and Grace's supernatural counterpart.",
+          "sources": [
+            "https://theaharrison.com/books/das-feuer-des-damons/",
+            "https://theaharrison.com/books/oracles-moon/",
+            "https://theaharrison.com/extras/graces-inheritance/",
+            "local:/home/codex/Schreibtisch/books/Das Feuer des Daemons - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Chloe",
+          "aliases": [],
+          "spoken_as": "Chloe",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "One of the children tied to Grace's sudden inheritance.",
+          "sources": [
+            "https://theaharrison.com/extras/graces-inheritance/",
+            "local:/home/codex/Schreibtisch/books/Das Feuer des Daemons - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Petra",
+          "aliases": [],
+          "spoken_as": "Petra",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Grace's sister whose death triggers the plot described on the official page.",
+          "sources": [
+            "https://theaharrison.com/books/oracles-moon/"
+          ]
+        },
+        {
+          "name": "Phaedra",
+          "aliases": [],
+          "spoken_as": "Phaedra",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named local supporting figure extracted from the German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Das Feuer des Daemons - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Therese",
+          "aliases": [],
+          "spoken_as": "Therese",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named local supporting figure extracted from the German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Das Feuer des Daemons - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Soren",
+          "aliases": [],
+          "spoken_as": "Soren",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named local supporting figure extracted from the German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Das Feuer des Daemons - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Max",
+          "aliases": [],
+          "spoken_as": "Max",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Strong recurring local figure name in the German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Das Feuer des Daemons - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Janice",
+          "aliases": [],
+          "spoken_as": "Janice",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named local supporting figure extracted from the German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Das Feuer des Daemons - Thea Harrison.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "thea_harrison.das_versprechen_des_blutes",
+      "author": "Thea Harrison",
+      "series": "Die Alten Völker / Elder Races",
+      "book_title": "Das Versprechen des Blutes",
+      "book_title_aliases": [
+        "Versprechen des Blutes",
+        "Das Versprechen des Blutes - Thea Harrison"
+      ],
+      "subjects": [
+        "Paranormal Romance",
+        "Elder Races",
+        "Political Intrigue"
+      ],
+      "characters": [
+        {
+          "name": "Pia Giovanni",
+          "aliases": [
+            "Pia"
+          ],
+          "spoken_as": "Pia Giovanni",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Pregnant Wyr consort traveling into dangerous political negotiations.",
+          "sources": [
+            "https://theaharrison.com/books/das-versprechen-des-blutes/",
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Dragos Cuelebre",
+          "aliases": [
+            "Dragos"
+          ],
+          "rule_aliases": [
+            "Dragos",
+            "Cuelebre"
+          ],
+          "spoken_as": "Dragos Kuelebre",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Wyr leader and Pia's mate.",
+          "sources": [
+            "https://theaharrison.com/books/das-versprechen-des-blutes/",
+            "https://theaharrison.com/books/dragon-bound/",
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Calondir",
+          "aliases": [],
+          "rule_aliases": [
+            "Calondir"
+          ],
+          "spoken_as": "Kalondir",
+          "use_for_xtts": true,
+          "role": "supporting",
+          "notes": "Elf-linked figure detected in the local EPUB and central to the political thread.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Beluviel",
+          "aliases": [],
+          "rule_aliases": [
+            "Beluviel"
+          ],
+          "spoken_as": "Beluwiel",
+          "use_for_xtts": true,
+          "role": "supporting",
+          "notes": "Important Elder Races character connected to later Shadow's End material.",
+          "sources": [
+            "https://theaharrison.com/books/shadows-end/",
+            "https://theaharrison.com/excerpt-2-from-planet-dragos/",
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Eva",
+          "aliases": [],
+          "spoken_as": "Eva",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Companion figure found repeatedly in the local German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Graydon",
+          "aliases": [],
+          "rule_aliases": [
+            "Graydon"
+          ],
+          "spoken_as": "Greydon",
+          "use_for_xtts": true,
+          "role": "supporting",
+          "notes": "First Sentinel of the Wyr and clear recurring figure in the local EPUB.",
+          "sources": [
+            "https://theaharrison.com/books/shadows-end/",
+            "https://theaharrison.com/excerpt-2-from-planet-dragos/",
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Bayne",
+          "aliases": [],
+          "spoken_as": "Bayne",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Recurring Wyr sentinel who appears in the local EPUB.",
+          "sources": [
+            "https://theaharrison.com/excerpt-2-from-planet-dragos/",
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Peanut",
+          "aliases": [],
+          "spoken_as": "Peanut",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Family nickname tied to Pia and Dragos's child, present in the local EPUB.",
+          "sources": [
+            "https://theaharrison.com/cover-art-blurb-reveal-peanut-goes-school/",
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Gaeleval",
+          "aliases": [],
+          "spoken_as": "Gaeleval",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named local supporting figure extracted from the German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Linwe",
+          "aliases": [],
+          "spoken_as": "Linwe",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named local supporting figure extracted from the German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Ferion",
+          "aliases": [],
+          "spoken_as": "Ferion",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named local supporting figure extracted from the German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Versprechen des Blutes, Das - Thea Harrison.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "thea_harrison.die_stimme_der_jaegerin",
+      "author": "Thea Harrison",
+      "series": "Die Alten Völker / Elder Races",
+      "book_title": "Die Stimme der Jägerin",
+      "book_title_aliases": [
+        "Die Stimme der Jaegerin",
+        "Stimme der Jägerin",
+        "Stimme der Jaegerin",
+        "Natural Evil"
+      ],
+      "subjects": [
+        "Paranormal Romance",
+        "Elder Races",
+        "Road Story"
+      ],
+      "characters": [
+        {
+          "name": "Claudia Hunter",
+          "aliases": [
+            "Claudia"
+          ],
+          "spoken_as": "Claudia Hunter",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Retired soldier who rescues an injured Wyr in the Nevada desert.",
+          "sources": [
+            "https://theaharrison.com/books/natural-evil/",
+            "https://theaharrison.com/books/die-stimme-der-jagerin/",
+            "https://theaharrison.com/books/divine-tarot/",
+            "local:/home/codex/Schreibtisch/books/Die Stimme der Jaegerin - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Luis Alvarez",
+          "aliases": [
+            "Luis"
+          ],
+          "rule_aliases": [
+            "Luis Alvarez"
+          ],
+          "spoken_as": "Luis Alwares",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Injured Wyr whose attack drives the novella's murder plot.",
+          "sources": [
+            "https://theaharrison.com/books/natural-evil/",
+            "https://theaharrison.com/books/die-stimme-der-jagerin/",
+            "https://theaharrison.com/books/divine-tarot/",
+            "local:/home/codex/Schreibtisch/books/Die Stimme der Jaegerin - Thea Harrison.epub"
+          ]
+        },
+        {
+          "name": "Jackson Rodriguez",
+          "aliases": [
+            "Jackson",
+            "Rodriguez"
+          ],
+          "spoken_as": "Jackson Rodriguez",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Recurring named local supporting figure in the German EPUB.",
+          "sources": [
+            "local:/home/codex/Schreibtisch/books/Die Stimme der Jaegerin - Thea Harrison.epub"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "thea_harrison.elder_races_extended",
+      "author": "Thea Harrison",
+      "series": "Die Alten Völker / Elder Races",
+      "book_title": "Elder Races Extended Characters",
+      "book_title_aliases": [
+        "Das Lied der Harpyie",
+        "Kinked",
+        "Das Ende der Schatten",
+        "Shadow's End",
+        "Die Augen der Medusa"
+      ],
+      "subjects": [
+        "Paranormal Romance",
+        "Elder Races",
+        "Extended Character Lexicon"
+      ],
+      "characters": [
+        {
+          "name": "Aryal",
+          "aliases": [],
+          "rule_aliases": [
+            "Aryal"
+          ],
+          "spoken_as": "Arial",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Harpy sentinel and central heroine of Kinked / Das Lied der Harpyie.",
+          "sources": [
+            "https://theaharrison.com/books/kinked/",
+            "https://theaharrison.com/books/das-lied-der-harpyie/",
+            "https://theaharrison.com/excerpt-2-from-planet-dragos/"
+          ]
+        },
+        {
+          "name": "Quentin Caeravorn",
+          "aliases": [
+            "Quentin"
+          ],
+          "rule_aliases": [
+            "Quentin Caeravorn"
+          ],
+          "spoken_as": "Kwentin Keravorn",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "New sentinel whose feud with Aryal drives Kinked.",
+          "sources": [
+            "https://theaharrison.com/books/kinked/",
+            "https://theaharrison.com/books/das-lied-der-harpyie/",
+            "https://theaharrison.com/extras/numenlaur/"
+          ]
+        },
+        {
+          "name": "Graydon",
+          "aliases": [],
+          "rule_aliases": [
+            "Graydon"
+          ],
+          "spoken_as": "Greydon",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Gryphon and First Sentinel of the Wyr, central in Shadow's End.",
+          "sources": [
+            "https://theaharrison.com/books/shadows-end/",
+            "https://theaharrison.com/excerpt-2-from-planet-dragos/"
+          ]
+        },
+        {
+          "name": "Beluviel",
+          "aliases": [],
+          "rule_aliases": [
+            "Beluviel"
+          ],
+          "spoken_as": "Beluwiel",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Consort to the Elven High Lord and key Shadow's End lead.",
+          "sources": [
+            "https://theaharrison.com/books/shadows-end/"
+          ]
+        },
+        {
+          "name": "Seremela Telemar",
+          "aliases": [
+            "Seremela"
+          ],
+          "spoken_as": "Seremela Telemar",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Medusa medical examiner from Die Augen der Medusa.",
+          "sources": [
+            "https://theaharrison.com/books/die-augen-der-medusa/"
+          ]
+        },
+        {
+          "name": "Duncan Turner",
+          "aliases": [
+            "Duncan"
+          ],
+          "spoken_as": "Duncan Turner",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Vampyre counterpart to Seremela in the Medusa novella.",
+          "sources": [
+            "https://theaharrison.com/books/die-augen-der-medusa/",
+            "https://theaharrison.com/excerpt-2-from-planet-dragos/"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "jk_rowling.harry_potter_series",
+      "author": "J.K. Rowling",
+      "author_aliases": [
+        "J. K. Rowling",
+        "Rowling, J.K.",
+        "Rowling, J. K."
+      ],
+      "author_spoken_as": "J K Rowling",
+      "series": "Harry Potter",
+      "book_title": "Harry Potter",
+      "book_title_aliases": [
+        "Harry Potter and the Philosopher's Stone",
+        "Harry Potter and the Chamber of Secrets",
+        "Harry Potter and the Prisoner of Azkaban",
+        "Harry Potter and the Goblet of Fire",
+        "Harry Potter and the Order of the Phoenix",
+        "Harry Potter and the Half-Blood Prince",
+        "Harry Potter and the Deathly Hallows",
+        "Harry Potter and the Cursed Child",
+        "Harry Potter"
+      ],
+      "subjects": [
+        "Fantasy",
+        "Wizarding World",
+        "Coming of Age"
+      ],
+      "characters": [
+        {
+          "name": "Harry Potter",
+          "aliases": [
+            "Harry"
+          ],
+          "spoken_as": "Harry Potter",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "The Boy Who Lived and central hero of the seven-book series.",
+          "sources": [
+            "https://www.harrypotter.com/fact-file/characters-and-pets/harry-potter",
+            "https://en.wikipedia.org/wiki/Harry_Potter"
+          ]
+        },
+        {
+          "name": "Hermione Jean Granger",
+          "aliases": [
+            "Hermione Granger",
+            "Hermione"
+          ],
+          "spoken_as": "Hermione Granger",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Muggle-born witch, Gryffindor and one of the smartest witches of her generation.",
+          "sources": [
+            "https://www.harrypotter.com/fact-file/characters-and-pets/hermione-granger"
+          ]
+        },
+        {
+          "name": "Ronald Bilius Weasley",
+          "aliases": [
+            "Ron Weasley",
+            "Ron"
+          ],
+          "spoken_as": "Ron Weasley",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Harry's loyal best friend and Gryffindor member of the central trio.",
+          "sources": [
+            "https://www.harrypotter.com/fact-file/characters-and-pets/ron-weasley"
+          ]
+        },
+        {
+          "name": "Albus Dumbledore",
+          "aliases": [
+            "Dumbledore"
+          ],
+          "spoken_as": "Albus Dumbledore",
+          "use_for_xtts": false,
+          "role": "major supporting",
+          "notes": "Headmaster and mentor figure across the core series.",
+          "sources": [
+            "https://www.harrypotter.com/fact-file/characters-and-pets/harry-potter",
+            "https://www.harrypotter.com/fact-file/characters-and-pets/newt-scamander"
+          ]
+        },
+        {
+          "name": "Lord Voldemort",
+          "aliases": [
+            "Voldemort",
+            "Tom Riddle"
+          ],
+          "spoken_as": "Lord Voldemort",
+          "use_for_xtts": false,
+          "role": "antagonist",
+          "notes": "Dark wizard and defining antagonist of the Harry Potter arc.",
+          "sources": [
+            "https://www.harrypotter.com/fact-file/characters-and-pets/harry-potter"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "jk_rowling.fantastic_beasts",
+      "author": "J.K. Rowling",
+      "series": "Fantastic Beasts",
+      "book_title": "Fantastic Beasts",
+      "book_title_aliases": [
+        "Fantastic Beasts and Where to Find Them",
+        "Fantastic Beasts: The Crimes of Grindelwald",
+        "Fantastic Beasts: The Secrets of Dumbledore",
+        "Fantastic Beasts"
+      ],
+      "subjects": [
+        "Fantasy",
+        "Wizarding World",
+        "Magizoology"
+      ],
+      "characters": [
+        {
+          "name": "Newt Scamander",
+          "aliases": [
+            "Newt"
+          ],
+          "rule_aliases": [
+            "Newt"
+          ],
+          "spoken_as": "Njut Skamander",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Magizoologist, traveler and author of Fantastic Beasts and Where to Find Them.",
+          "sources": [
+            "https://www.harrypotter.com/fact-file/characters-and-pets/newt-scamander"
+          ]
+        },
+        {
+          "name": "Gellert Grindelwald",
+          "aliases": [
+            "Grindelwald"
+          ],
+          "spoken_as": "Gellert Grindelwald",
+          "use_for_xtts": false,
+          "role": "antagonist",
+          "notes": "Dark wizard active during Newt's 1920s storyline.",
+          "sources": [
+            "https://www.harrypotter.com/fact-file/characters-and-pets/newt-scamander"
+          ]
+        },
+        {
+          "name": "Teddy",
+          "aliases": [],
+          "spoken_as": "Teddy",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Newt's mischievous Niffler companion.",
+          "sources": [
+            "https://www.harrypotter.com/fact-file/characters-and-pets/teddy"
+          ]
+        },
+        {
+          "name": "Pickett",
+          "aliases": [],
+          "spoken_as": "Pickett",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Bowtruckle who often rides in Newt's top pocket.",
+          "sources": [
+            "https://www.harrypotter.com/fact-file/characters-and-pets/pickett"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "jk_rowling.the_ickabog",
+      "author": "J.K. Rowling",
+      "series": "The Ickabog",
+      "book_title": "The Ickabog",
+      "book_title_aliases": [
+        "Ickabog"
+      ],
+      "subjects": [
+        "Fairy Tale",
+        "Children's Fantasy",
+        "Cornucopia"
+      ],
+      "characters": [
+        {
+          "name": "Bert Beamish",
+          "aliases": [
+            "Bert"
+          ],
+          "spoken_as": "Bert Beamish",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "One of the ordinary children elevated into heroism in Cornucopia.",
+          "sources": [
+            "https://stories.jkrowling.com/wp-content/uploads/2021/08/Ickabog-creativity-guide.pdf"
+          ]
+        },
+        {
+          "name": "Daisy Dovetail",
+          "aliases": [
+            "Daisy",
+            "Dovetail"
+          ],
+          "spoken_as": "Daisy Dovetail",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Brave child heroine repeatedly highlighted in the official activity material.",
+          "sources": [
+            "https://stories.jkrowling.com/wp-content/uploads/2021/08/Ickabog-creativity-guide.pdf"
+          ]
+        },
+        {
+          "name": "Mrs. Beamish",
+          "aliases": [
+            "Mrs Beamish"
+          ],
+          "spoken_as": "Mrs Beamish",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Named among the ordinary but heroic figures in the official guide.",
+          "sources": [
+            "https://stories.jkrowling.com/wp-content/uploads/2021/08/Ickabog-creativity-guide.pdf"
+          ]
+        },
+        {
+          "name": "King Fred the Fearless",
+          "aliases": [
+            "King Fred",
+            "Fred the Fearless"
+          ],
+          "spoken_as": "King Fred the Fearless",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Cornucopia's celebrated moustachioed king.",
+          "sources": [
+            "https://stories.jkrowling.com/wp-content/uploads/2021/08/The-Ickabog-Activity-Sheets-TheIckabog.com_.pdf"
+          ]
+        },
+        {
+          "name": "The Ickabog",
+          "aliases": [
+            "Ickabog"
+          ],
+          "rule_aliases": [
+            "Ickabog"
+          ],
+          "spoken_as": "Ickabock",
+          "use_for_xtts": true,
+          "role": "mythic figure",
+          "notes": "Mythical creature at the center of the fairy tale and its fear politics.",
+          "sources": [
+            "https://stories.jkrowling.com/theickabog-2/",
+            "https://stories.jkrowling.com/wp-content/uploads/2021/08/The-Ickabog-Activity-Sheets-TheIckabog.com_.pdf"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "jk_rowling.the_christmas_pig",
+      "author": "J.K. Rowling",
+      "series": "The Christmas Pig",
+      "book_title": "The Christmas Pig",
+      "book_title_aliases": [
+        "Christmas Pig"
+      ],
+      "subjects": [
+        "Children's Fantasy",
+        "Christmas Story",
+        "Land of the Lost"
+      ],
+      "characters": [
+        {
+          "name": "Jack",
+          "aliases": [],
+          "spoken_as": "Jack",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Little boy whose quest drives the story into the Land of the Lost.",
+          "sources": [
+            "https://stories.jkrowling.com/thechristmaspig/"
+          ]
+        },
+        {
+          "name": "Dur Pig",
+          "aliases": [
+            "DP"
+          ],
+          "spoken_as": "Dur Pig",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Jack's beloved original toy pig.",
+          "sources": [
+            "https://stories.jkrowling.com/thechristmaspig/",
+            "https://stories.jkrowling.com/two-illustrations-revealed-from-the-christmas-pig/"
+          ]
+        },
+        {
+          "name": "The Christmas Pig",
+          "aliases": [
+            "Christmas Pig",
+            "CP"
+          ],
+          "spoken_as": "The Christmas Pig",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Replacement toy who guides Jack through the magical quest.",
+          "sources": [
+            "https://stories.jkrowling.com/thechristmaspig/"
+          ]
+        }
+      ]
+    },
+    {
+      "entry_id": "jk_rowling.cormoran_strike",
+      "author": "J.K. Rowling",
+      "series": "Cormoran Strike / Robert Galbraith",
+      "book_title": "Cormoran Strike",
+      "book_title_aliases": [
+        "The Cuckoo's Calling",
+        "The Silkworm",
+        "Career of Evil",
+        "Lethal White",
+        "Troubled Blood",
+        "The Ink Black Heart",
+        "The Running Grave",
+        "The Hallmarked Man",
+        "Cormoran Strike",
+        "Strike"
+      ],
+      "subjects": [
+        "Crime Fiction",
+        "Private Investigation",
+        "Robert Galbraith"
+      ],
+      "characters": [
+        {
+          "name": "Cormoran Strike",
+          "aliases": [
+            "Strike"
+          ],
+          "rule_aliases": [
+            "Cormoran"
+          ],
+          "spoken_as": "Kormoran Streik",
+          "use_for_xtts": true,
+          "role": "protagonist",
+          "notes": "Former soldier turned London private investigator.",
+          "sources": [
+            "https://robert-galbraith.com/strike-characters/",
+            "https://www.jkrowling.com/book/the-running-grave/"
+          ]
+        },
+        {
+          "name": "Robin Ellacott",
+          "aliases": [
+            "Robin"
+          ],
+          "spoken_as": "Robin Ellacott",
+          "use_for_xtts": false,
+          "role": "protagonist",
+          "notes": "Strike's investigative partner with strong psychological insight.",
+          "sources": [
+            "https://robert-galbraith.com/strike-characters/",
+            "https://robert-galbraith.com/strike-characters/robin-ellacott/",
+            "https://www.jkrowling.com/book/the-running-grave/"
+          ]
+        },
+        {
+          "name": "Matthew Cunliffe",
+          "aliases": [
+            "Matthew"
+          ],
+          "spoken_as": "Matthew Cunliffe",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Robin's long-term boyfriend in the early Strike books.",
+          "sources": [
+            "https://robert-galbraith.com/strike-characters/",
+            "https://robert-galbraith.com/strike-characters/robin-ellacott/"
+          ]
+        },
+        {
+          "name": "Charlotte Campbell",
+          "aliases": [
+            "Charlotte"
+          ],
+          "spoken_as": "Charlotte Campbell",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "Strike's volatile ex-fiancée and recurring emotional pressure point.",
+          "sources": [
+            "https://robert-galbraith.com/strike-characters/"
+          ]
+        },
+        {
+          "name": "Will",
+          "aliases": [],
+          "spoken_as": "Will",
+          "use_for_xtts": false,
+          "role": "supporting",
+          "notes": "The worried father's missing son whose case starts The Running Grave.",
+          "sources": [
+            "https://www.jkrowling.com/book/the-running-grave/"
+          ]
+        }
+      ]
+    }
+  ]
+}

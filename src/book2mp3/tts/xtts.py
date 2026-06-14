@@ -510,6 +510,7 @@ class XttsBackend:
         wav_path: Path,
         length_scale: float = 1.0,
         enable_text_splitting: bool = False,
+        inference_options: dict[str, object] | None = None,
     ) -> None:
         self.synthesize_many_to_wavs(
             [text],
@@ -517,6 +518,7 @@ class XttsBackend:
             [wav_path],
             length_scale=length_scale,
             enable_text_splitting=enable_text_splitting,
+            inference_options=inference_options,
         )
 
     def synthesize_many_to_wavs(
@@ -526,6 +528,7 @@ class XttsBackend:
         wav_paths: list[Path],
         length_scale: float = 1.0,
         enable_text_splitting: bool = False,
+        inference_options: dict[str, object] | None = None,
     ) -> None:
         if len(texts) != len(wav_paths):
             raise ValueError("texts and wav_paths must have the same length")
@@ -541,6 +544,8 @@ class XttsBackend:
             "enable_text_splitting": enable_text_splitting,
             "device_mode": self.device_mode,
         }
+        if inference_options:
+            payload["xtts_inference"] = dict(inference_options)
         cache_dir = self.conditioning_cache_dir(profile)
         if cache_dir is not None:
             payload["conditioning_cache_dir"] = str(cache_dir)

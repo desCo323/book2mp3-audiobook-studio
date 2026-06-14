@@ -11,6 +11,7 @@ from book2mp3.presets import get_preset
 from book2mp3.voice_catalog import filter_voice_ids, is_female_voice, voice_language_code
 from book2mp3.voice_lab import VoiceProfile, list_voice_profiles
 from book2mp3.utils.workspace_files import ensure_writable_directory, safe_write_json
+from book2mp3.xtts_options import default_xtts_inference
 
 
 LOGGER = logging.getLogger("book2mp3.voice_test_assistant")
@@ -31,6 +32,9 @@ class VoiceTestCandidate:
     target_part_minutes: int
     sentence_silence: float
     length_scale: float
+    xtts_quality_mode: str = "fast"
+    xtts_inference: dict[str, object] = field(default_factory=dict)
+    pronunciation_rules: list[dict[str, object]] = field(default_factory=list)
     notes: str = ""
     rating: int = 0
     rating_note: str = ""
@@ -135,6 +139,9 @@ def _style_defaults(style: str, backend: str) -> dict[str, object]:
         "target_part_minutes": part_minutes,
         "sentence_silence": sentence_silence,
         "length_scale": length_scale,
+        "xtts_quality_mode": "quality" if backend == "xtts" else "fast",
+        "xtts_inference": default_xtts_inference("quality" if backend == "xtts" else "fast"),
+        "pronunciation_rules": [],
         "notes": preset.description,
     }
 
@@ -314,6 +321,9 @@ def create_refinement_round(paths: AppPaths, run: VoiceTestRun) -> VoiceTestRun:
                 target_part_minutes=base.target_part_minutes,
                 sentence_silence=max(0.08, min(0.40, base.sentence_silence + silence_delta)),
                 length_scale=max(0.90, min(1.12, base.length_scale + length_delta)),
+                xtts_quality_mode=base.xtts_quality_mode,
+                xtts_inference=dict(base.xtts_inference),
+                pronunciation_rules=list(base.pronunciation_rules),
                 notes=f"Verfeinerung aus {base.label}",
             )
         )
@@ -352,6 +362,9 @@ def create_chunk_tuning_round(paths: AppPaths, run: VoiceTestRun) -> VoiceTestRu
             target_part_minutes=base.target_part_minutes,
             sentence_silence=sentence_silence,
             length_scale=length_scale,
+            xtts_quality_mode=base.xtts_quality_mode,
+            xtts_inference=dict(base.xtts_inference),
+            pronunciation_rules=list(base.pronunciation_rules),
             notes=f"Chunk-Tuning aus {base.label}",
         )
         for index, (label, max_chars, sentence_silence, length_scale) in enumerate(variants, start=1)

@@ -52,10 +52,11 @@ Die Software trennt bewusst zwischen Quelle, Kapitelanalyse, Profilen, Testreihe
 1. Quelle wählen
 2. Kapitelanalyse abwarten
 3. freigegebenes Produktionsprofil laden
-4. Ausgabeart festlegen
-5. Auftrag starten oder einreihen
-6. Fortschritt, Kapitel und Chunks in `Aufträge` überwachen
-7. Exportdateien und Metadaten prüfen
+4. Metadaten prüfen und bei XTTS bei Bedarf `Lexikon` öffnen
+5. Ausgabeart festlegen
+6. Auftrag starten oder einreihen
+7. Fortschritt, Kapitel und Chunks in `Aufträge` überwachen
+8. Exportdateien und Metadaten in `Fertige Bücher` prüfen
 
 ## Kernfunktionen
 
@@ -63,10 +64,12 @@ Die Software trennt bewusst zwischen Quelle, Kapitelanalyse, Profilen, Testreihe
 - automatische Kapitelanalyse mit klarer Rückmeldung
 - Ausgabe als Gesamtdatei, Kapiteldateien oder Zeitteile
 - lokale Piper-Stimmen und optionaler XTTS-Pfad
+- XTTS-Aussprache-Lexikon mit Autoren-/Namensregeln und Vorschlägen
 - UI und kuratierte Sprachpfade für Deutsch, Englisch, Spanisch und Portugiesisch
 - Produktionsprofile mit `draft`, `tested`, `approved`, `archived`
 - Benchmarking von Varianten, Geschwindigkeit und Chunk-Größen
 - Queue, Prioritäten und Wiederaufnahme
+- separater Bereich `Fertige Bücher` für Öffnen, Retagging und Löschen
 - `manifest.json` und `chapters.json` für nachvollziehbare Exporte
 - lokaler GUI-, CLI- und API-Betrieb mit gemeinsamem Kern
 
@@ -177,6 +180,7 @@ Portable Builds:
 - Linux- und Windows-Portables werden bei Push auf `main` als rolling Pre-Release gebaut
 - Standardpfad ist `Piper-ready`
 - XTTS bleibt im Release bewusst optional und separat gekennzeichnet
+- Workflow-Datei: [.github/workflows/portable-release.yml](.github/workflows/portable-release.yml)
 
 Details:
 

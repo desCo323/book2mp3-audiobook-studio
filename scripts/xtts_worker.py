@@ -309,6 +309,13 @@ def synthesize_payload(
         gpt_cond_latent, speaker_embedding = get_conditioning_latents(payload, tts, conditioning_cache)
         enable_text_splitting = bool(payload.get("enable_text_splitting", False))
         speed = 1.0 / float(payload.get("length_scale", 1.0))
+        inference_options = payload.get("xtts_inference") or {}
+        temperature = float(inference_options.get("temperature", 0.75))
+        top_p = float(inference_options.get("top_p", 0.85))
+        top_k = int(inference_options.get("top_k", 50))
+        repetition_penalty = float(inference_options.get("repetition_penalty", 10.0))
+        num_beams = int(inference_options.get("num_beams", 1))
+        do_sample = bool(inference_options.get("do_sample", True))
         written_files: list[str] = []
         per_text_timings: list[dict[str, object]] = []
         for index, (text, output_file_value) in enumerate(zip(texts, output_files, strict=True), start=1):
@@ -328,6 +335,12 @@ def synthesize_payload(
                         language=payload["language"],
                         gpt_cond_latent=gpt_cond_latent,
                         speaker_embedding=speaker_embedding,
+                        temperature=temperature,
+                        top_p=top_p,
+                        top_k=top_k,
+                        repetition_penalty=repetition_penalty,
+                        num_beams=num_beams,
+                        do_sample=do_sample,
                         speed=speed,
                         enable_text_splitting=enable_text_splitting,
                     )
@@ -343,6 +356,8 @@ def synthesize_payload(
         worker_log(
             "XTTS request complete "
             f"texts={len(texts)} split={enable_text_splitting} speed={speed:.3f} device_mode={device_mode} "
+            f"temperature={temperature:.2f} top_p={top_p:.2f} top_k={top_k} "
+            f"repetition_penalty={repetition_penalty:.2f} num_beams={num_beams} do_sample={do_sample} "
             f"total={time.perf_counter() - request_started:.2f}s details={json.dumps(per_text_timings, ensure_ascii=False)}"
         )
         return written_files

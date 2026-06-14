@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 import time
 
-from PySide6.QtCore import QThread, Qt, QUrl, Signal
+from PySide6.QtCore import QThread, QTimer, Qt, QUrl, Signal
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -31,14 +31,19 @@ from PySide6.QtWidgets import (
     QSlider,
     QSpinBox,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QListWidget,
+    QListWidgetItem,
 )
 
 from book2mp3.config import AppPaths
 from book2mp3.app_settings import load_app_settings, save_app_settings
 from book2mp3.i18n import apply_text, preferred_content_language_code, resolve_ui_language, translate_widget_tree
+from book2mp3.metadata_extractor import build_author_pronunciation_rules, guess_metadata_from_filename
 from book2mp3.pipeline.audio import concat_mp3_files, wav_to_mp3
 from book2mp3.pipeline.chunking import split_text
 from book2mp3.pipeline.extract import DocumentStructure, analyze_document_structure
@@ -51,6 +56,11 @@ from book2mp3.preview_sessions import (
     update_preview_selection,
 )
 from book2mp3.tts.piper import PiperBackend
+from book2mp3.tts.pronunciation import (
+    apply_pronunciation_rules,
+    suggest_explicit_pronunciation_candidates,
+    suggest_pronunciation_candidates,
+)
 from book2mp3.tts.xtts import XttsBackend
 from book2mp3.presets import QUALITY_PRESETS, get_preset
 from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
@@ -88,6 +98,7 @@ from book2mp3.voice_test_assistant import (
     record_benchmark_result,
     update_candidate_feedback,
 )
+from book2mp3.xtts_options import default_xtts_inference, normalize_pronunciation_rules, normalize_xtts_quality_mode
 
 
 def _compact_xtts_preview_text(text: str, max_chars: int) -> str:
@@ -196,6 +207,9 @@ class LivePreviewWorker(QThread):
         sentence_silence: float,
         length_scale: float,
         xtts_device_mode: str,
+        xtts_quality_mode: str,
+        xtts_inference: dict[str, object],
+        pronunciation_rules: list[dict[str, object]],
     ) -> None:
         super().__init__()
         self.paths = paths
@@ -207,6 +221,9 @@ class LivePreviewWorker(QThread):
         self.sentence_silence = sentence_silence
         self.length_scale = length_scale
         self.xtts_device_mode = xtts_device_mode
+        self.xtts_quality_mode = xtts_quality_mode
+        self.xtts_inference = dict(xtts_inference)
+        self.pronunciation_rules = list(pronunciation_rules)
         self.logger = get_logger("live_preview")
 
     def run(self) -> None:
@@ -259,23 +276,28 @@ class LivePreviewWorker(QThread):
                 else:
                     profile = load_voice_profile(self.paths.voice_profiles, self.voice_profile_id)
                     preview_text = _compact_xtts_preview_text(text, self.max_chars)
+                    spoken_preview = apply_pronunciation_rules(preview_text, self.pronunciation_rules)
                     preview_profile = replace(profile, samples=profile.samples[:1] or profile.samples)
                     final_preview = preview_root / "preview.wav"
                     self.logger.info(
-                        "Live preview start backend=%s source_chars=%s preview_chars=%s max_chars=%s profile_samples=%s device_mode=%s",
+                        "Live preview start backend=%s source_chars=%s preview_chars=%s spoken_chars=%s max_chars=%s profile_samples=%s device_mode=%s quality_mode=%s pronunciation_rules=%s",
                         self.backend,
                         len(text),
                         len(preview_text),
+                        len(spoken_preview.spoken_text),
                         self.max_chars,
                         len(preview_profile.samples),
                         self.xtts_device_mode,
+                        self.xtts_quality_mode,
+                        len(self.pronunciation_rules),
                     )
                     xtts_backend.synthesize_many_to_wavs(
-                        [preview_text],
+                        [spoken_preview.spoken_text],
                         preview_profile,
                         [final_preview],
                         length_scale=self.length_scale,
                         enable_text_splitting=False,
+                        inference_options=self.xtts_inference,
                     )
             perf_event(
                 "preview.render.complete",
@@ -339,6 +361,9 @@ class FindBestSettingDialog(QDialog):
         parent: QWidget | None = None,
         *,
         focus_assistant: bool = False,
+        focus_lexicon: bool = False,
+        lexicon_seed_terms: list[str] | None = None,
+        initial_source_path: Path | None = None,
         ui_language: str | None = None,
     ) -> None:
         super().__init__(parent)
@@ -347,6 +372,13 @@ class FindBestSettingDialog(QDialog):
         self.app_settings = load_app_settings(paths.app_settings_file)
         self.ui_language = resolve_ui_language(ui_language or self.app_settings.ui_language)
         self.focus_assistant = focus_assistant
+        self.focus_lexicon = focus_lexicon
+        self.lexicon_seed_terms = [
+            " ".join(str(item or "").split()).strip()
+            for item in (lexicon_seed_terms or [])
+            if str(item or "").strip()
+        ]
+        self.initial_source_path = Path(initial_source_path) if initial_source_path else None
         self.current_source: Path | None = None
         self.current_session_id: str | None = None
         self.installed_voices: list[str] = []
@@ -369,6 +401,8 @@ class FindBestSettingDialog(QDialog):
         self.current_saved_setting_id = ""
         self.pending_benchmark_candidate_ids: list[str] = []
         self.play_preview_after_render = True
+        self._pending_close = False
+        self._shutdown_wait_attempts = 0
         self.xtts_backend = XttsBackend(paths.runtime, logger=self.logger, device_mode=self.app_settings.xtts_device_mode)
 
         self.player = QMediaPlayer(self)
@@ -389,12 +423,21 @@ class FindBestSettingDialog(QDialog):
         self.apply_cuda_first_preference()
         self.refresh_saved_settings()
         self.restore_last_session()
+        if self.initial_source_path and self.initial_source_path.exists():
+            self.current_source = self.initial_source_path
+            self.source_label.setText(str(self.current_source))
+            self.refresh_source_analysis()
+            self.refresh_pronunciation_suggestions()
         if self.focus_assistant:
             assistant_mode_index = self.test_mode_combo.findData("assistant")
             if assistant_mode_index >= 0:
                 self.test_mode_combo.setCurrentIndex(assistant_mode_index)
             self.studio_tabs.setCurrentWidget(self.test_page)
             self.test_assistant_button.setFocus(Qt.FocusReason.OtherFocusReason)
+        elif self.focus_lexicon:
+            self.studio_tabs.setCurrentWidget(self.backend_page)
+            self.backend_tabs.setCurrentIndex(1)
+            self.xtts_pronunciation_table.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _text(self, text: str) -> str:
         return apply_text(text, self.ui_language)
@@ -522,7 +565,7 @@ class FindBestSettingDialog(QDialog):
 
         xtts_page = QWidget()
         xtts_page_layout = QVBoxLayout(xtts_page)
-        xtts_group = QGroupBox("XTTS testen")
+        xtts_group = QGroupBox("XTTS testen & Aussprache-Lexikon")
         xtts_form = QFormLayout(xtts_group)
         self.voice_profile_combo = QComboBox()
         self.voice_profile_combo.currentIndexChanged.connect(self.refresh_selected_voice_profile)
@@ -536,6 +579,13 @@ class FindBestSettingDialog(QDialog):
         self.xtts_device_combo.setCurrentIndex(device_index if device_index >= 0 else 0)
         self.xtts_device_combo.currentIndexChanged.connect(self.on_xtts_device_mode_changed)
         xtts_form.addRow("XTTS-Geraet", self.xtts_device_combo)
+
+        self.xtts_quality_mode_combo = QComboBox()
+        self.xtts_quality_mode_combo.addItem("Schnell", "fast")
+        self.xtts_quality_mode_combo.addItem("Bessere Qualität", "quality")
+        self.xtts_quality_mode_combo.addItem("Max Qualität", "max_quality")
+        self.xtts_quality_mode_combo.currentIndexChanged.connect(self.update_helper_text)
+        xtts_form.addRow("XTTS-Qualitätsmodus", self.xtts_quality_mode_combo)
 
         self.voice_profile_details = QLabel("")
         self.voice_profile_details.setWordWrap(True)
@@ -560,6 +610,35 @@ class FindBestSettingDialog(QDialog):
         xtts_reload_button.clicked.connect(self.refresh_voice_profiles)
         xtts_import_row.addWidget(xtts_reload_button)
         xtts_form.addRow("Werkzeuge", self._wrap(xtts_import_row))
+        self.xtts_pronunciation_hint = QLabel(
+            "Hier pflegst du das Aussprache-Lexikon für Eigennamen und schwierige Begriffe. "
+            "XTTS nutzt nur eine gesprochene Arbeitskopie, Originaltext und Metadaten bleiben unverändert."
+        )
+        self.xtts_pronunciation_hint.setWordWrap(True)
+        self.xtts_pronunciation_hint.setProperty("role", "muted")
+        xtts_form.addRow("Aussprache-Lexikon", self.xtts_pronunciation_hint)
+        self.xtts_pronunciation_table = QTableWidget(0, 3)
+        self.xtts_pronunciation_table.setHorizontalHeaderLabels(["Aktiv", "Original", "Gesprochen als"])
+        self.xtts_pronunciation_table.verticalHeader().setVisible(False)
+        self.xtts_pronunciation_table.setMinimumHeight(170)
+        xtts_form.addRow("", self.xtts_pronunciation_table)
+        xtts_rule_buttons = QHBoxLayout()
+        add_rule_button = QPushButton("Regel hinzufügen")
+        add_rule_button.clicked.connect(self.add_pronunciation_rule)
+        xtts_rule_buttons.addWidget(add_rule_button)
+        remove_rule_button = QPushButton("Regel entfernen")
+        remove_rule_button.clicked.connect(self.remove_selected_pronunciation_rule)
+        xtts_rule_buttons.addWidget(remove_rule_button)
+        add_suggestion_button = QPushButton("Vorschlag übernehmen")
+        add_suggestion_button.clicked.connect(self.add_selected_pronunciation_suggestion)
+        xtts_rule_buttons.addWidget(add_suggestion_button)
+        refresh_suggestions_button = QPushButton("Vorschläge neu prüfen")
+        refresh_suggestions_button.clicked.connect(self.refresh_pronunciation_suggestions)
+        xtts_rule_buttons.addWidget(refresh_suggestions_button)
+        xtts_form.addRow("", self._wrap(xtts_rule_buttons))
+        self.xtts_pronunciation_suggestions = QListWidget()
+        self.xtts_pronunciation_suggestions.setMinimumHeight(120)
+        xtts_form.addRow("Lexikon-Vorschläge", self.xtts_pronunciation_suggestions)
         xtts_page_layout.addWidget(xtts_group)
         xtts_page_layout.addStretch(1)
         self.backend_tabs.addTab(xtts_page, "XTTS")
@@ -932,6 +1011,173 @@ class FindBestSettingDialog(QDialog):
         self.current_saved_setting_id = self.saved_settings_combo.currentData() or ""
         self.on_saved_setting_changed()
 
+    def current_pronunciation_rules(self) -> list[dict[str, object]]:
+        rules: list[dict[str, object]] = []
+        for row in range(self.xtts_pronunciation_table.rowCount()):
+            enabled_item = self.xtts_pronunciation_table.item(row, 0)
+            match_item = self.xtts_pronunciation_table.item(row, 1)
+            spoken_item = self.xtts_pronunciation_table.item(row, 2)
+            rules.append(
+                {
+                    "enabled": enabled_item.checkState() == Qt.CheckState.Checked if enabled_item is not None else True,
+                    "match": match_item.text().strip() if match_item is not None else "",
+                    "spoken_as": spoken_item.text().strip() if spoken_item is not None else "",
+                    "scope": "whole_phrase",
+                }
+            )
+        return normalize_pronunciation_rules(rules)
+
+    def set_pronunciation_rules(self, rules: list[dict[str, object]] | None) -> None:
+        normalized = normalize_pronunciation_rules(rules)
+        self.xtts_pronunciation_table.setRowCount(0)
+        for rule in normalized:
+            row = self.xtts_pronunciation_table.rowCount()
+            self.xtts_pronunciation_table.insertRow(row)
+            enabled_item = QTableWidgetItem("")
+            enabled_item.setFlags(
+                Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsUserCheckable
+            )
+            enabled_item.setCheckState(Qt.CheckState.Checked if rule.get("enabled", True) else Qt.CheckState.Unchecked)
+            self.xtts_pronunciation_table.setItem(row, 0, enabled_item)
+            self.xtts_pronunciation_table.setItem(row, 1, QTableWidgetItem(str(rule.get("match", ""))))
+            self.xtts_pronunciation_table.setItem(row, 2, QTableWidgetItem(str(rule.get("spoken_as", ""))))
+        self.refresh_pronunciation_suggestions()
+
+    def add_pronunciation_rule(self, match: str = "", spoken_as: str = "") -> None:
+        row = self.xtts_pronunciation_table.rowCount()
+        self.xtts_pronunciation_table.insertRow(row)
+        enabled_item = QTableWidgetItem("")
+        enabled_item.setFlags(
+            Qt.ItemFlag.ItemIsEnabled
+            | Qt.ItemFlag.ItemIsSelectable
+            | Qt.ItemFlag.ItemIsUserCheckable
+        )
+        enabled_item.setCheckState(Qt.CheckState.Checked)
+        self.xtts_pronunciation_table.setItem(row, 0, enabled_item)
+        self.xtts_pronunciation_table.setItem(row, 1, QTableWidgetItem(match))
+        self.xtts_pronunciation_table.setItem(row, 2, QTableWidgetItem(spoken_as or match))
+        self.xtts_pronunciation_table.setCurrentCell(row, 2)
+
+    def remove_selected_pronunciation_rule(self) -> None:
+        row = self.xtts_pronunciation_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Keine Regel", "Bitte zuerst eine Aussprache-Regel auswählen.")
+            return
+        self.xtts_pronunciation_table.removeRow(row)
+        self.refresh_pronunciation_suggestions()
+
+    def refresh_pronunciation_suggestions(self) -> None:
+        existing_rules = self.current_pronunciation_rules()
+        self._ensure_detected_author_rules(existing_rules)
+        existing_rules = self.current_pronunciation_rules()
+        text = self._pronunciation_suggestion_text()
+        suggestions = suggest_explicit_pronunciation_candidates(
+            self._pronunciation_seed_terms(),
+            existing_rules=existing_rules,
+            limit=8,
+            reason="metadata_name",
+        )
+        suggestions.extend(
+            suggest_pronunciation_candidates(
+                text,
+                existing_rules=existing_rules,
+                limit=20,
+            )
+        )
+        self.xtts_pronunciation_suggestions.clear()
+        seen_matches: set[str] = set()
+        for suggestion in suggestions:
+            match = " ".join(str(suggestion.get("match", "") or "").split()).strip()
+            if not match:
+                continue
+            folded = match.casefold()
+            if folded in seen_matches:
+                continue
+            seen_matches.add(folded)
+            label = f"{suggestion['match']} -> {suggestion['spoken_as']}"
+            if suggestion["spoken_as"] == suggestion["match"]:
+                label = suggestion["match"]
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, suggestion)
+            self.xtts_pronunciation_suggestions.addItem(item)
+
+    def _ensure_detected_author_rules(self, existing_rules: list[dict[str, object]] | None = None) -> None:
+        current_matches = {
+            str(rule.get("match", "") or "").strip().casefold()
+            for rule in normalize_pronunciation_rules(existing_rules or self.current_pronunciation_rules())
+        }
+        author_rules = build_author_pronunciation_rules(authors=set(self._pronunciation_author_terms()))
+        for rule in author_rules:
+            match = str(rule.get("match", "") or "").strip()
+            if not match or match.casefold() in current_matches:
+                continue
+            current_matches.add(match.casefold())
+            self.add_pronunciation_rule(match, str(rule.get("spoken_as", "") or match))
+
+    def _pronunciation_seed_terms(self) -> list[str]:
+        terms: list[str] = list(self.lexicon_seed_terms)
+        for author in self._pronunciation_author_terms():
+            if author and author not in terms:
+                terms.append(author)
+        if self.current_source:
+            try:
+                guessed = guess_metadata_from_filename(self.current_source)
+                title = " ".join(str(guessed.get("title", "") or "").split()).strip()
+                if title and title not in terms:
+                    terms.append(title)
+            except Exception:
+                pass
+        return terms
+
+    def _pronunciation_author_terms(self) -> list[str]:
+        authors: list[str] = []
+        for seed in self.lexicon_seed_terms:
+            if seed and seed not in authors:
+                authors.append(seed)
+        if self.current_source:
+            try:
+                guessed = guess_metadata_from_filename(self.current_source)
+                author = " ".join(str(guessed.get("author", "") or "").split()).strip()
+                if author and author not in authors:
+                    authors.append(author)
+            except Exception:
+                pass
+        return authors
+
+    def add_selected_pronunciation_suggestion(self) -> None:
+        item = self.xtts_pronunciation_suggestions.currentItem()
+        if item is None:
+            QMessageBox.warning(self, "Kein Vorschlag", "Bitte zuerst einen Namensvorschlag auswählen.")
+            return
+        suggestion = item.data(Qt.ItemDataRole.UserRole) or {}
+        self.add_pronunciation_rule(
+            str(suggestion.get("match", "")),
+            str(suggestion.get("spoken_as", "")),
+        )
+        self.refresh_pronunciation_suggestions()
+
+    def _pronunciation_suggestion_text(self) -> str:
+        text = self.excerpt_view.toPlainText().strip()
+        if text:
+            return text
+        if self.current_session_id:
+            try:
+                session = {item.session_id: item for item in list_preview_sessions(self.paths)}[self.current_session_id]
+                preview_source = Path(session.preview_source_file)
+                if preview_source.exists():
+                    return preview_source.read_text(encoding="utf-8")
+            except Exception:
+                return ""
+        return ""
+
+    def current_xtts_quality_mode(self) -> str:
+        return normalize_xtts_quality_mode(self.xtts_quality_mode_combo.currentData() or "fast")
+
+    def current_xtts_inference(self) -> dict[str, object]:
+        return default_xtts_inference(self.current_xtts_quality_mode())
+
     def on_saved_setting_changed(self) -> None:
         setting_id = self.saved_settings_combo.currentData() or ""
         if not setting_id:
@@ -949,7 +1195,8 @@ class FindBestSettingDialog(QDialog):
         )
         self.saved_settings_status_label.setText(
             f"{setting.display_name} | Status {profile_status_label(setting.status, ui_language=self.ui_language)} | Backend {setting.backend} | "
-            f"Ausgabe {setting.output_mode}{benchmark_text} | freigegeben {setting.approved_at or '-'} | aktualisiert {setting.updated_at}"
+            f"Ausgabe {setting.output_mode} | XTTS-Modus {setting.xtts_quality_mode} | Regeln {len(setting.pronunciation_rules)}"
+            f"{benchmark_text} | freigegeben {setting.approved_at or '-'} | aktualisiert {setting.updated_at}"
         )
 
     def apply_cuda_first_preference(self) -> None:
@@ -1154,6 +1401,9 @@ class FindBestSettingDialog(QDialog):
         self.voice_language_combo.setEnabled(is_piper)
         self.voice_profile_combo.setEnabled(not is_piper)
         self.xtts_device_combo.setEnabled(not is_piper)
+        self.xtts_quality_mode_combo.setEnabled(not is_piper)
+        self.xtts_pronunciation_table.setEnabled(not is_piper)
+        self.xtts_pronunciation_suggestions.setEnabled(not is_piper)
         if is_piper:
             self.status_label.setText("Piper aktiv: schnell und offline, aber oft synthetischer.")
         else:
@@ -1212,6 +1462,7 @@ class FindBestSettingDialog(QDialog):
         self.source_label.setText(str(self.current_source))
         self.refresh_source_analysis()
         self.excerpt_view.setPlainText(session.preview_excerpt)
+        self.refresh_pronunciation_suggestions()
 
         backend_index = self.backend_combo.findText(session.backend)
         if backend_index >= 0:
@@ -1476,6 +1727,9 @@ class FindBestSettingDialog(QDialog):
             target_part_minutes=self.target_part_minutes_spin.value(),
             sentence_silence=self.sentence_slider.value() / 100,
             length_scale=self.length_slider.value() / 100,
+            xtts_quality_mode=self.current_xtts_quality_mode() if backend == "xtts" else "fast",
+            xtts_inference=self.current_xtts_inference() if backend == "xtts" else default_xtts_inference("fast"),
+            pronunciation_rules=self.current_pronunciation_rules() if backend == "xtts" else [],
             notes="Manuell aus aktuellen Studio-Einstellungen hinzugefügt",
         )
 
@@ -1570,6 +1824,9 @@ class FindBestSettingDialog(QDialog):
         self.target_part_minutes_spin.setValue(candidate.target_part_minutes)
         self.sentence_slider.setValue(int(round(candidate.sentence_silence * 100)))
         self.length_slider.setValue(int(round(candidate.length_scale * 100)))
+        quality_index = self.xtts_quality_mode_combo.findData(candidate.xtts_quality_mode or "fast")
+        self.xtts_quality_mode_combo.setCurrentIndex(quality_index if quality_index >= 0 else 0)
+        self.set_pronunciation_rules(candidate.pronunciation_rules)
         self.assistant_rating_spin.setValue(candidate.rating)
         self.assistant_note.setText(candidate.rating_note)
         self.setting_name.setText(candidate.label)
@@ -1698,9 +1955,11 @@ class FindBestSettingDialog(QDialog):
         self.sentence_label.setText(f"{sentence_silence:.2f}s")
         self.length_label.setText(f"{length_scale:.2f}")
         if self.backend_combo.currentText() == "xtts":
+            quality_mode = self.current_xtts_quality_mode()
             hint = (
                 "XTTS: gute Referenzsamples sind wichtiger als die letzten Regler-Prozent. "
-                f"Geraet: {self.xtts_device_combo.currentData() or 'auto'}."
+                f"Geraet: {self.xtts_device_combo.currentData() or 'auto'} | Qualitätsmodus: {quality_mode} | "
+                f"Aussprache-Regeln: {len(self.current_pronunciation_rules())}."
             )
         elif max_chars >= 240 and sentence_silence >= 0.24 and length_scale >= 1.02:
             hint = "Eher natuerlich und ruhiger."
@@ -1772,6 +2031,8 @@ class FindBestSettingDialog(QDialog):
             voice_id=voice_id,
             voice_profile_id=voice_profile_id,
             max_chars=self.max_chars_spin.value(),
+            xtts_quality_mode=self.current_xtts_quality_mode() if backend == "xtts" else "",
+            pronunciation_rule_count=len(self.current_pronunciation_rules()) if backend == "xtts" else 0,
         )
         update_preview_selection(
             self.paths,
@@ -1790,6 +2051,9 @@ class FindBestSettingDialog(QDialog):
             self.sentence_slider.value() / 100,
             self.length_slider.value() / 100,
             self.xtts_device_combo.currentData() or "auto",
+            self.current_xtts_quality_mode(),
+            self.current_xtts_inference(),
+            self.current_pronunciation_rules(),
         )
         self.preview_worker.preview_finished.connect(self.on_preview_finished)
         self.preview_worker.preview_failed.connect(self.on_preview_failed)
@@ -1892,24 +2156,36 @@ class FindBestSettingDialog(QDialog):
         if worker is not None and hasattr(worker, "deleteLater"):
             worker.deleteLater()
 
-    def wait_for_preview_shutdown(self) -> None:
-        if not self.preview_worker or not self.preview_worker.isRunning():
-            if self.xtts_warmup_worker and self.xtts_warmup_worker.isRunning():
-                self.logger.warning("Waiting for XTTS warmup worker to finish before dialog shutdown")
-                self.status_label.setText("XTTS wird noch vorgewaermt. Warte auf sauberen Abschluss...")
-                self.xtts_warmup_worker.wait()
-                self.cleanup_xtts_warmup_worker()
-            return
-        self.logger.warning("Waiting for live preview worker to finish before dialog shutdown")
-        self.status_label.setText("Preview laeuft noch. Warte auf sauberen Abschluss...")
-        self.preview_worker.wait()
-        self.cleanup_preview_worker()
+    def _wait_for_preview_workers(self, on_idle: callable | None = None) -> None:
+        if self.preview_worker and self.preview_worker.isRunning():
+            self._shutdown_wait_attempts += 1
+            if self._shutdown_wait_attempts > 120:
+                self.logger.warning("Preview worker shutdown timeout while closing dialog.")
+            else:
+                self.status_label.setText("Preview läuft noch. Warte auf sauberen Abschluss...")
+                QTimer.singleShot(120, lambda: self._wait_for_preview_workers(on_idle))
+                return
         if self.xtts_warmup_worker and self.xtts_warmup_worker.isRunning():
-            self.xtts_warmup_worker.wait()
-            self.cleanup_xtts_warmup_worker()
+            self._shutdown_wait_attempts += 1
+            if self._shutdown_wait_attempts > 120:
+                self.logger.warning("XTTS warmup worker shutdown timeout while closing dialog.")
+            else:
+                self.status_label.setText("XTTS wird noch vorgewaermt. Warte auf sauberen Abschluss...")
+                QTimer.singleShot(120, lambda: self._wait_for_preview_workers(on_idle))
+                return
+        self._shutdown_wait_attempts = 0
+        self._pending_close = False
+        if on_idle is not None:
+            on_idle()
+
+    def _shutdown_preview_workers(self, on_idle: callable | None = None) -> None:
+        self._wait_for_preview_workers(on_idle)
 
     def handle_about_to_quit(self) -> None:
-        self.wait_for_preview_shutdown()
+        self._shutdown_preview_workers()
+
+    def _finalize_reject(self) -> None:
+        super().reject()
 
     def reject(self) -> None:
         if self.preview_worker and self.preview_worker.isRunning():
@@ -1924,11 +2200,14 @@ class FindBestSettingDialog(QDialog):
             return
         if self.xtts_warmup_worker and self.xtts_warmup_worker.isRunning():
             self.status_label.setText("XTTS wird noch vorgewaermt. Bitte kurz warten.")
-            self.xtts_warmup_worker.wait()
-            self.cleanup_xtts_warmup_worker()
+            self._shutdown_preview_workers(self._finalize_reject)
+            return
         super().reject()
 
     def closeEvent(self, event) -> None:
+        if self._pending_close:
+            super().closeEvent(event)
+            return
         if self.preview_worker and self.preview_worker.isRunning():
             self.status_label.setText(
                 "Preview laeuft noch. Bitte kurz warten, bis sie fertig ist."
@@ -1939,11 +2218,15 @@ class FindBestSettingDialog(QDialog):
                 "Die Preview wird noch erzeugt. Bitte kurz warten, bis sie fertig ist.",
             )
             event.ignore()
+            self._pending_close = True
+            self._shutdown_preview_workers(lambda: self.close())
             return
         if self.xtts_warmup_worker and self.xtts_warmup_worker.isRunning():
             self.status_label.setText("XTTS wird noch vorgewaermt. Warte auf sauberen Abschluss...")
-            self.xtts_warmup_worker.wait()
-            self.cleanup_xtts_warmup_worker()
+            event.ignore()
+            self._pending_close = True
+            self._shutdown_preview_workers(lambda: self.close())
+            return
         super().closeEvent(event)
 
     def play_last_preview(self) -> None:
@@ -2053,6 +2336,9 @@ class FindBestSettingDialog(QDialog):
             source_session_id=self.current_session_id or "",
             source_run_id=self.voice_test_run.run_id if self.voice_test_run is not None else "",
             source_candidate_id=selected_candidate.candidate_id if selected_candidate is not None else "",
+            xtts_quality_mode=self.current_xtts_quality_mode() if backend == "xtts" else "fast",
+            xtts_inference=self.current_xtts_inference() if backend == "xtts" else default_xtts_inference("fast"),
+            pronunciation_rules=self.current_pronunciation_rules() if backend == "xtts" else [],
             setting_id=None if as_new else self.current_saved_setting_id or None,
             ensure_unique_name=as_new,
         )
@@ -2104,6 +2390,9 @@ class FindBestSettingDialog(QDialog):
         self.target_part_minutes_spin.setValue(setting.target_part_minutes)
         self.sentence_slider.setValue(int(round(setting.sentence_silence * 100)))
         self.length_slider.setValue(int(round(setting.length_scale * 100)))
+        quality_index = self.xtts_quality_mode_combo.findData(setting.xtts_quality_mode)
+        self.xtts_quality_mode_combo.setCurrentIndex(quality_index if quality_index >= 0 else 0)
+        self.set_pronunciation_rules(setting.pronunciation_rules)
         self.setting_name.setText(setting.display_name)
         self.current_saved_setting_id = setting.setting_id
         self.update_helper_text()
