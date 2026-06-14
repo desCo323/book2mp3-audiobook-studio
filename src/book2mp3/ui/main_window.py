@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections import Counter
 from pathlib import Path
 
@@ -36,7 +37,6 @@ from PySide6.QtWidgets import (
 )
 
 from book2mp3.app_settings import AppSettings, load_app_settings, reset_workspace_state, save_app_settings
-from book2mp3.book_metadata import guess_metadata_from_filename
 from book2mp3.config import AppPaths
 from book2mp3.i18n import (
     apply_text,
@@ -292,18 +292,26 @@ class MainWindow(QMainWindow):
         metadata_form.addRow("Genre", self.meta_genre_edit)
         self.meta_language_tag_edit = QLineEdit()
         metadata_form.addRow("Sprachtag", self.meta_language_tag_edit)
+        self.meta_publisher_edit = QLineEdit()
+        metadata_form.addRow("Verlag", self.meta_publisher_edit)
+        self.meta_year_edit = QLineEdit()
+        metadata_form.addRow("Jahr", self.meta_year_edit)
+        self.meta_subject_edit = QLineEdit()
+        metadata_form.addRow("Schlagwörter", self.meta_subject_edit)
+        self.meta_isbn_edit = QLineEdit()
+        metadata_form.addRow("ISBN", self.meta_isbn_edit)
         self.meta_comment_edit = QPlainTextEdit()
         self.meta_comment_edit.setPlaceholderText("Freier Kommentar oder Quelle für die finalen MP3-Tags.")
         self.meta_comment_edit.setMinimumHeight(76)
         metadata_form.addRow("Kommentar", self.meta_comment_edit)
         metadata_actions = QHBoxLayout()
-        self.metadata_guess_button = QPushButton("Aus Dateinamen vorschlagen")
+        self.metadata_guess_button = QPushButton("Automatisch erkennen")
         self.metadata_guess_button.clicked.connect(self.populate_metadata_from_filename)
         metadata_actions.addWidget(self.metadata_guess_button)
-        self.metadata_search_button = QPushButton("Open Library suchen")
+        self.metadata_search_button = QPushButton("Online-Suche verfeinern")
         self.metadata_search_button.clicked.connect(self.search_metadata_online)
         metadata_actions.addWidget(self.metadata_search_button)
-        self.metadata_apply_button = QPushButton("Besten Treffer übernehmen")
+        self.metadata_apply_button = QPushButton("Ausgewählten Treffer übernehmen")
         self.metadata_apply_button.clicked.connect(self.apply_best_metadata_result)
         metadata_actions.addWidget(self.metadata_apply_button)
         metadata_form.addRow("", self._wrap(metadata_actions))
@@ -806,6 +814,18 @@ class MainWindow(QMainWindow):
         queue_actions_form.addRow("", self._wrap(queue_actions_row))
         jobs_layout.addWidget(queue_actions_group)
 
+        finished_tab = QWidget()
+        finished_root_layout = self._make_scroll_tab(finished_tab)
+        finished_title = QLabel("5. Fertige Bücher")
+        finished_title.setProperty("role", "hero")
+        finished_root_layout.addWidget(finished_title)
+        finished_help = QLabel(
+            "Hier öffnest du fertige Hörbücher, löschst abgeschlossene Projekte und ergänzt oder korrigierst die finalen Metadaten vor dem Weitergeben."
+        )
+        finished_help.setWordWrap(True)
+        finished_help.setProperty("role", "hint")
+        finished_root_layout.addWidget(finished_help)
+
         finished_group = QGroupBox("Fertige Hörbücher")
         finished_layout = QVBoxLayout(finished_group)
         self.finished_books_list = QListWidget()
@@ -816,6 +836,9 @@ class MainWindow(QMainWindow):
         open_finished_audio_button = QPushButton("Hörbuch öffnen")
         open_finished_audio_button.clicked.connect(self.open_selected_finished_audio)
         finished_actions.addWidget(open_finished_audio_button)
+        download_finished_audio_button = QPushButton("Hörbuch herunterladen")
+        download_finished_audio_button.clicked.connect(self.download_selected_finished_audio)
+        finished_actions.addWidget(download_finished_audio_button)
         open_finished_folder_button = QPushButton("Ordner öffnen")
         open_finished_folder_button.clicked.connect(self.open_selected_finished_folder)
         finished_actions.addWidget(open_finished_folder_button)
@@ -835,17 +858,25 @@ class MainWindow(QMainWindow):
         finished_meta_form.addRow("Genre", self.finished_meta_genre_edit)
         self.finished_meta_language_edit = QLineEdit()
         finished_meta_form.addRow("Sprachtag", self.finished_meta_language_edit)
+        self.finished_meta_publisher_edit = QLineEdit()
+        finished_meta_form.addRow("Verlag", self.finished_meta_publisher_edit)
+        self.finished_meta_year_edit = QLineEdit()
+        finished_meta_form.addRow("Jahr", self.finished_meta_year_edit)
+        self.finished_meta_subject_edit = QLineEdit()
+        finished_meta_form.addRow("Schlagwörter", self.finished_meta_subject_edit)
+        self.finished_meta_isbn_edit = QLineEdit()
+        finished_meta_form.addRow("ISBN", self.finished_meta_isbn_edit)
         self.finished_meta_comment_edit = QPlainTextEdit()
         self.finished_meta_comment_edit.setMinimumHeight(90)
         finished_meta_form.addRow("Kommentar", self.finished_meta_comment_edit)
         finished_meta_actions = QHBoxLayout()
-        self.finished_metadata_guess_button = QPushButton("Aus Dateinamen vorschlagen")
+        self.finished_metadata_guess_button = QPushButton("Automatisch erkennen")
         self.finished_metadata_guess_button.clicked.connect(self.populate_finished_metadata_from_filename)
         finished_meta_actions.addWidget(self.finished_metadata_guess_button)
-        self.finished_metadata_search_button = QPushButton("Open Library suchen")
+        self.finished_metadata_search_button = QPushButton("Online-Suche verfeinern")
         self.finished_metadata_search_button.clicked.connect(self.search_finished_metadata_online)
         finished_meta_actions.addWidget(self.finished_metadata_search_button)
-        self.finished_metadata_apply_button = QPushButton("Besten Treffer übernehmen")
+        self.finished_metadata_apply_button = QPushButton("Ausgewählten Treffer übernehmen")
         self.finished_metadata_apply_button.clicked.connect(self.apply_finished_metadata_result)
         finished_meta_actions.addWidget(self.finished_metadata_apply_button)
         self.finished_metadata_save_button = QPushButton("Tags speichern")
@@ -860,9 +891,10 @@ class MainWindow(QMainWindow):
         self.finished_metadata_results_list.setMinimumHeight(100)
         finished_meta_form.addRow("Treffer", self.finished_metadata_results_list)
         finished_layout.addWidget(finished_meta_group)
-        jobs_layout.addWidget(finished_group)
+        finished_root_layout.addWidget(finished_group)
 
         tabs.addTab(jobs_tab, "Aufträge")
+        tabs.addTab(finished_tab, "Fertige Bücher")
 
         diagnostics_tab = QWidget()
         diagnostics_layout_root = self._make_scroll_tab(diagnostics_tab)
@@ -1135,12 +1167,136 @@ class MainWindow(QMainWindow):
             self.source_edit.blockSignals(False)
         self.refresh_source_analysis()
         self.refresh_metadata_ui()
+        if len(unique_sources) == 1:
+            self.populate_metadata_from_filename(auto_run=True)
 
     def clear_selected_source_files(self) -> None:
         self.set_selected_source_files([])
 
     def _active_metadata_source(self) -> Path | None:
         return self.selected_source_files[0] if self.selected_source_files else None
+
+    def _apply_metadata_payload_to_create_fields(
+        self,
+        payload: dict[str, object],
+        *,
+        extended: dict[str, object] | None = None,
+        overwrite_title: bool = True,
+    ) -> None:
+        title = str(payload.get("title") or "")
+        if overwrite_title and title:
+            self.meta_title_edit.setText(title)
+        elif overwrite_title and not title and len(self.selected_source_files) == 1 and self.selected_source_files:
+            self.meta_title_edit.setText(self.selected_source_files[0].stem)
+        author = str(payload.get("author") or "")
+        if author:
+            self.meta_author_edit.setText(author)
+        narrator = str(payload.get("narrator") or "")
+        if narrator and not self.meta_narrator_edit.text().strip():
+            self.meta_narrator_edit.setText(narrator)
+        genre = str(payload.get("genre") or "")
+        if genre:
+            self.meta_genre_edit.setText(genre)
+        language = str(payload.get("language") or "")
+        if language:
+            self.meta_language_tag_edit.setText(language)
+        comment = str(payload.get("comment") or "")
+        if comment and not self.meta_comment_edit.toPlainText().strip():
+            self.meta_comment_edit.setPlainText(comment)
+        extended = extended or {}
+        publisher = str(extended.get("publisher") or payload.get("publisher") or "")
+        if publisher:
+            self.meta_publisher_edit.setText(publisher)
+        year = str(extended.get("year") or payload.get("year") or "")
+        if year and year != "0":
+            self.meta_year_edit.setText(year)
+        subjects = extended.get("subjects") or payload.get("subjects") or ""
+        if isinstance(subjects, list):
+            subjects_text = ", ".join(str(item) for item in subjects if item)
+        else:
+            subjects_text = str(subjects or "")
+        if subjects_text:
+            self.meta_subject_edit.setText(subjects_text)
+        identifiers = extended.get("identifiers") or payload.get("identifiers") or []
+        isbn = str(payload.get("isbn") or extended.get("isbn") or "")
+        if not isbn and isinstance(identifiers, list):
+            for identifier in identifiers:
+                identifier_text = str(identifier or "").strip()
+                if identifier_text:
+                    isbn = identifier_text
+                    break
+        if isbn:
+            self.meta_isbn_edit.setText(isbn)
+
+    def _apply_metadata_payload_to_finished_fields(
+        self,
+        payload: dict[str, object],
+        *,
+        extended: dict[str, object] | None = None,
+    ) -> None:
+        title = str(payload.get("title") or "")
+        if title:
+            self.finished_meta_title_edit.setText(title)
+        author = str(payload.get("author") or "")
+        if author:
+            self.finished_meta_author_edit.setText(author)
+        narrator = str(payload.get("narrator") or "")
+        if narrator and not self.finished_meta_narrator_edit.text().strip():
+            self.finished_meta_narrator_edit.setText(narrator)
+        genre = str(payload.get("genre") or "")
+        if genre:
+            self.finished_meta_genre_edit.setText(genre)
+        language = str(payload.get("language") or "")
+        if language:
+            self.finished_meta_language_edit.setText(language)
+        comment = str(payload.get("comment") or "")
+        if comment and not self.finished_meta_comment_edit.toPlainText().strip():
+            self.finished_meta_comment_edit.setPlainText(comment)
+        extended = extended or {}
+        publisher = str(extended.get("publisher") or payload.get("publisher") or "")
+        if publisher:
+            self.finished_meta_publisher_edit.setText(publisher)
+        year = str(extended.get("year") or payload.get("year") or "")
+        if year and year != "0":
+            self.finished_meta_year_edit.setText(year)
+        subjects = extended.get("subjects") or payload.get("subjects") or ""
+        if isinstance(subjects, list):
+            subjects_text = ", ".join(str(item) for item in subjects if item)
+        else:
+            subjects_text = str(subjects or "")
+        if subjects_text:
+            self.finished_meta_subject_edit.setText(subjects_text)
+        identifiers = extended.get("identifiers") or payload.get("identifiers") or []
+        isbn = str(payload.get("isbn") or extended.get("isbn") or "")
+        if not isbn and isinstance(identifiers, list):
+            for identifier in identifiers:
+                identifier_text = str(identifier or "").strip()
+                if identifier_text:
+                    isbn = identifier_text
+                    break
+        if isbn:
+            self.finished_meta_isbn_edit.setText(isbn)
+
+    def _populate_metadata_results_list(self, target: QListWidget, suggestions: list[dict[str, object]]) -> None:
+        target.clear()
+        for entry in suggestions:
+            year = f" ({entry.get('year')})" if entry.get("year") else ""
+            author = str(entry.get("author") or "-")
+            confidence = f"{float(entry.get('confidence') or 0.0):.2f}"
+            source = str(entry.get("source") or "metadata")
+            item = QListWidgetItem(f"{entry.get('title')}{year} | {author} | {source} | {confidence}")
+            item.setData(Qt.UserRole, entry)
+            item.setToolTip(json.dumps(entry, indent=2, ensure_ascii=False))
+            target.addItem(item)
+        if target.count():
+            target.setCurrentRow(0)
+
+    def _metadata_confidence_band(self, confidence: float) -> str:
+        if confidence >= 0.80:
+            return "high"
+        if confidence >= 0.55:
+            return "medium"
+        return "low"
 
     def refresh_metadata_ui(self) -> None:
         source = self._active_metadata_source()
@@ -1158,11 +1314,6 @@ class MainWindow(QMainWindow):
             }.get(self.ui_language, "No source selected yet. After that you can suggest metadata or search online."))
             self.metadata_results_list.clear()
             return
-        guessed = guess_metadata_from_filename(source)
-        if not self.meta_title_edit.text().strip() and single_source:
-            self.meta_title_edit.setText(str(guessed.get("title") or source.stem))
-        if not self.meta_author_edit.text().strip() and guessed.get("author"):
-            self.meta_author_edit.setText(str(guessed.get("author") or ""))
         if not self.meta_language_tag_edit.text().strip():
             structure = self.source_structures.get(str(source))
             language_hint = preferred_content_language_code(self.ui_language).split("_", 1)[0]
@@ -1184,22 +1335,71 @@ class MainWindow(QMainWindow):
             }.get(self.ui_language, "Multiple sources selected. Titles stay individual per file; shared metadata like author, narrator, genre, and comment are applied to all jobs."))
             self.metadata_results_list.clear()
 
-    def populate_metadata_from_filename(self) -> None:
+    def populate_metadata_from_filename(self, auto_run: bool = False) -> None:
         source = self._active_metadata_source()
         if source is None:
             return
-        guessed = guess_metadata_from_filename(source)
-        if len(self.selected_source_files) == 1:
-            self.meta_title_edit.setText(str(guessed.get("title") or source.stem))
-        self.meta_author_edit.setText(str(guessed.get("author") or self.meta_author_edit.text()))
-        if not self.meta_genre_edit.text().strip():
-            self.meta_genre_edit.setText("Audiobook")
-        self.metadata_status_label.setText({
-            "de": "Dateiname analysiert und als Metadatenvorschlag übernommen.",
-            "en": "The file name was analyzed and applied as a metadata suggestion.",
-            "es": "El nombre del archivo se analizó y se aplicó como sugerencia de metadatos.",
-            "pt": "O nome do arquivo foi analisado e aplicado como sugestão de metadados.",
-        }.get(self.ui_language, "The file name was analyzed and applied as a metadata suggestion."))
+        try:
+            suggestions = self.service.metadata_suggestions(source)
+        except Exception as exc:
+            self.metadata_status_label.setText(
+                {
+                    "de": f"Automatische Metadatenerkennung fehlgeschlagen: {exc}",
+                    "en": f"Automatic metadata detection failed: {exc}",
+                    "es": f"La detección automática de metadatos falló: {exc}",
+                    "pt": f"A detecção automática de metadados falhou: {exc}",
+                }.get(self.ui_language, f"Automatic metadata detection failed: {exc}")
+            )
+            return
+        guessed = suggestions.get("guessed") or {}
+        extended = suggestions.get("extended_book_metadata") or {}
+        results = suggestions.get("results") or suggestions.get("candidates") or []
+        if isinstance(results, list):
+            self._populate_metadata_results_list(
+                self.metadata_results_list,
+                [entry for entry in results if isinstance(entry, dict)],
+            )
+        confidence = float(suggestions.get("confidence") or 0.0)
+        title_source = str(suggestions.get("title_source") or "-")
+        author_source = str(suggestions.get("author_source") or "-")
+        confidence_band = self._metadata_confidence_band(confidence)
+        should_apply = confidence_band in {"high", "medium"}
+        if should_apply and isinstance(guessed, dict):
+            self._apply_metadata_payload_to_create_fields(
+                guessed,
+                extended=extended if isinstance(extended, dict) else {},
+                overwrite_title=len(self.selected_source_files) == 1,
+            )
+        if confidence_band == "high":
+            message = {
+                "de": "Metadaten automatisch übernommen",
+                "en": "Metadata applied automatically",
+                "es": "Metadatos aplicados automáticamente",
+                "pt": "Metadados aplicados automaticamente",
+            }.get(self.ui_language, "Metadata applied automatically")
+        elif confidence_band == "medium":
+            message = {
+                "de": "Metadaten automatisch vorgeschlagen. Bitte kurz prüfen.",
+                "en": "Metadata suggested automatically. Please review briefly.",
+                "es": "Metadatos sugeridos automáticamente. Revísalos brevemente.",
+                "pt": "Metadados sugeridos automaticamente. Revise rapidamente.",
+            }.get(self.ui_language, "Metadata suggested automatically. Please review briefly.")
+        else:
+            message = {
+                "de": "Automatik unsicher. Bitte Trefferliste prüfen und manuell übernehmen.",
+                "en": "Automatic detection is unsure. Review the match list and apply one manually.",
+                "es": "La detección automática es incierta. Revisa la lista y aplica un resultado manualmente.",
+                "pt": "A detecção automática é incerta. Revise a lista e aplique um resultado manualmente.",
+            }.get(self.ui_language, "Automatic detection is unsure. Review the match list and apply one manually.")
+        self.metadata_status_label.setText(
+            f"{message}. "
+            + {
+                "de": f"Konfidenz {confidence:.2f}, Titelquelle {title_source}, Autorquelle {author_source}.",
+                "en": f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.",
+                "es": f"Confianza {confidence:.2f}, origen del título {title_source}, origen del autor {author_source}.",
+                "pt": f"Confiança {confidence:.2f}, origem do título {title_source}, origem do autor {author_source}.",
+            }.get(self.ui_language, f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.")
+        )
 
     def search_metadata_online(self) -> None:
         source = self._active_metadata_source()
@@ -1224,22 +1424,13 @@ class MainWindow(QMainWindow):
                 }.get(self.ui_language, f"Metadata search failed: {exc}")
             )
             return
-        self.metadata_results_list.clear()
-        for entry in suggestions:
-            year = f" ({entry.get('year')})" if entry.get("year") else ""
-            author = str(entry.get("author") or "-")
-            item = QListWidgetItem(f"{entry.get('title')}{year} | {author}")
-            item.setData(Qt.UserRole, entry)
-            item.setToolTip(json.dumps(entry, indent=2, ensure_ascii=False))
-            self.metadata_results_list.addItem(item)
+        self._populate_metadata_results_list(self.metadata_results_list, suggestions)
         self.metadata_status_label.setText({
-            "de": f"Open Library Suche abgeschlossen: {len(suggestions)} Treffer.",
-            "en": f"Open Library search finished: {len(suggestions)} result(s).",
-            "es": f"Búsqueda en Open Library completada: {len(suggestions)} resultado(s).",
-            "pt": f"Busca no Open Library concluída: {len(suggestions)} resultado(s).",
-        }.get(self.ui_language, f"Open Library search finished: {len(suggestions)} result(s)."))
-        if self.metadata_results_list.count():
-            self.metadata_results_list.setCurrentRow(0)
+            "de": f"Online-Suche abgeschlossen: {len(suggestions)} Treffer.",
+            "en": f"Online search finished: {len(suggestions)} result(s).",
+            "es": f"Búsqueda online completada: {len(suggestions)} resultado(s).",
+            "pt": f"Busca online concluída: {len(suggestions)} resultado(s).",
+        }.get(self.ui_language, f"Online search finished: {len(suggestions)} result(s)."))
 
     def apply_best_metadata_result(self) -> None:
         item = self.metadata_results_list.currentItem()
@@ -1248,25 +1439,20 @@ class MainWindow(QMainWindow):
         if item is None:
             return
         entry = item.data(Qt.UserRole) or {}
-        if self.meta_title_edit.isEnabled():
-            self.meta_title_edit.setText(str(entry.get("title") or self.meta_title_edit.text()))
-        self.meta_author_edit.setText(str(entry.get("author") or self.meta_author_edit.text()))
-        if entry.get("genre"):
-            self.meta_genre_edit.setText(str(entry.get("genre")))
-        if entry.get("language"):
-            self.meta_language_tag_edit.setText(str(entry.get("language")))
-        if entry.get("comment") and not self.meta_comment_edit.toPlainText().strip():
-            self.meta_comment_edit.setPlainText(str(entry.get("comment")))
+        if isinstance(entry, dict):
+            self._apply_metadata_payload_to_create_fields(entry, extended=entry, overwrite_title=self.meta_title_edit.isEnabled())
         self.metadata_status_label.setText({
-            "de": "Metadaten aus dem ausgewählten Open-Library-Treffer übernommen.",
-            "en": "Metadata from the selected Open Library result has been applied.",
-            "es": "Se aplicaron los metadatos del resultado seleccionado de Open Library.",
-            "pt": "Os metadados do resultado selecionado do Open Library foram aplicados.",
-        }.get(self.ui_language, "Metadata from the selected Open Library result has been applied."))
+            "de": "Metadaten aus dem ausgewählten Treffer übernommen.",
+            "en": "Metadata from the selected result has been applied.",
+            "es": "Se aplicaron los metadatos del resultado seleccionado.",
+            "pt": "Os metadados do resultado selecionado foram aplicados.",
+        }.get(self.ui_language, "Metadata from the selected result has been applied."))
 
     def _metadata_payload_for_source(self, source: Path) -> dict[str, str]:
         title = self.meta_title_edit.text().strip() if len(self.selected_source_files) == 1 else ""
         narrator = self.meta_narrator_edit.text().strip()
+        year_text = self.meta_year_edit.text().strip()
+        year_value = int(year_text) if year_text.isdigit() else 0
         payload = {
             "title": title,
             "album": title,
@@ -1276,6 +1462,11 @@ class MainWindow(QMainWindow):
             "author": self.meta_author_edit.text().strip(),
             "genre": self.meta_genre_edit.text().strip() or "Audiobook",
             "language": self.meta_language_tag_edit.text().strip() or preferred_content_language_code(self.ui_language).split("_", 1)[0],
+            "publisher": self.meta_publisher_edit.text().strip(),
+            "year": year_value,
+            "subject": self.meta_subject_edit.text().strip(),
+            "isbn": self.meta_isbn_edit.text().strip(),
+            "description": self.meta_comment_edit.toPlainText().strip(),
             "comment": self.meta_comment_edit.toPlainText().strip(),
         }
         return {key: value for key, value in payload.items() if value}
@@ -2628,6 +2819,20 @@ class MainWindow(QMainWindow):
             return None
         return self.manager.load_state(job_id)
 
+    def _finished_metadata_needs_enrichment(self, job: JobState) -> bool:
+        title = job.audiobook_metadata.title.strip()
+        author = job.audiobook_metadata.author.strip()
+        genre = job.audiobook_metadata.genre.strip()
+        language = job.audiobook_metadata.language.strip()
+        source_stem = Path(job.source_file).stem.strip()
+        return (
+            not title
+            or not author
+            or not genre
+            or not language
+            or title == source_stem
+        )
+
     def on_finished_book_selected(self) -> None:
         job = self._selected_finished_job()
         if job is None:
@@ -2637,6 +2842,7 @@ class MainWindow(QMainWindow):
         self.jobs_list.clearSelection()
         self.show_job(job)
         self.refresh_finished_metadata_editor(job)
+        self.populate_finished_metadata_from_filename(auto_run=True)
 
     def refresh_finished_metadata_editor(self, job: JobState | None) -> None:
         fields = (
@@ -2645,6 +2851,10 @@ class MainWindow(QMainWindow):
             self.finished_meta_narrator_edit,
             self.finished_meta_genre_edit,
             self.finished_meta_language_edit,
+            self.finished_meta_publisher_edit,
+            self.finished_meta_year_edit,
+            self.finished_meta_subject_edit,
+            self.finished_meta_isbn_edit,
         )
         for field in fields:
             field.setEnabled(job is not None)
@@ -2674,6 +2884,10 @@ class MainWindow(QMainWindow):
         self.finished_meta_narrator_edit.setText(meta.narrator)
         self.finished_meta_genre_edit.setText(meta.genre)
         self.finished_meta_language_edit.setText(meta.language)
+        self.finished_meta_publisher_edit.setText(meta.publisher)
+        self.finished_meta_year_edit.setText(str(meta.year or ""))
+        self.finished_meta_subject_edit.setText(meta.subject)
+        self.finished_meta_isbn_edit.setText(meta.isbn)
         self.finished_meta_comment_edit.setPlainText(meta.comment)
         self.finished_metadata_results_list.clear()
         self.finished_metadata_status_label.setText(
@@ -2688,6 +2902,8 @@ class MainWindow(QMainWindow):
     def _finished_metadata_payload(self) -> dict[str, str]:
         title = self.finished_meta_title_edit.text().strip()
         narrator = self.finished_meta_narrator_edit.text().strip()
+        year_text = self.finished_meta_year_edit.text().strip()
+        year_value = int(year_text) if year_text.isdigit() else 0
         payload = {
             "title": title,
             "album": title,
@@ -2697,26 +2913,82 @@ class MainWindow(QMainWindow):
             "author": self.finished_meta_author_edit.text().strip(),
             "genre": self.finished_meta_genre_edit.text().strip() or "Audiobook",
             "language": self.finished_meta_language_edit.text().strip() or preferred_content_language_code(self.ui_language).split("_", 1)[0],
+            "publisher": self.finished_meta_publisher_edit.text().strip(),
+            "year": year_value,
+            "subject": self.finished_meta_subject_edit.text().strip(),
+            "isbn": self.finished_meta_isbn_edit.text().strip(),
+            "description": self.finished_meta_comment_edit.toPlainText().strip(),
             "comment": self.finished_meta_comment_edit.toPlainText().strip(),
         }
         return {key: value for key, value in payload.items() if value}
 
-    def populate_finished_metadata_from_filename(self) -> None:
+    def populate_finished_metadata_from_filename(self, auto_run: bool = False) -> None:
         job = self._selected_finished_job()
         if job is None:
             return
-        guessed = guess_metadata_from_filename(Path(job.source_file))
-        self.finished_meta_title_edit.setText(str(guessed.get("title") or job.audiobook_metadata.title or Path(job.source_file).stem))
-        self.finished_meta_author_edit.setText(str(guessed.get("author") or self.finished_meta_author_edit.text()))
-        if not self.finished_meta_genre_edit.text().strip():
-            self.finished_meta_genre_edit.setText("Audiobook")
+        try:
+            suggestions = self.service.metadata_suggestions(Path(job.source_file))
+        except Exception as exc:
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Automatische Metadatenerkennung für das fertige Hörbuch fehlgeschlagen: {exc}",
+                    "en": f"Automatic metadata detection for the finished audiobook failed: {exc}",
+                    "es": f"La detección automática de metadatos para el audiolibro terminado falló: {exc}",
+                    "pt": f"A detecção automática de metadados para o audiolivro concluído falhou: {exc}",
+                }.get(self.ui_language, f"Automatic metadata detection for the finished audiobook failed: {exc}")
+            )
+            return
+        guessed = suggestions.get("guessed") or {}
+        extended = suggestions.get("extended_book_metadata") or {}
+        results = suggestions.get("results") or suggestions.get("candidates") or []
+        if isinstance(results, list):
+            self._populate_metadata_results_list(
+                self.finished_metadata_results_list,
+                [entry for entry in results if isinstance(entry, dict)],
+            )
+        confidence = float(suggestions.get("confidence") or 0.0)
+        title_source = str(suggestions.get("title_source") or "-")
+        author_source = str(suggestions.get("author_source") or "-")
+        confidence_band = self._metadata_confidence_band(confidence)
+        metadata_needs_enrichment = self._finished_metadata_needs_enrichment(job)
+        should_apply = metadata_needs_enrichment and confidence_band in {"high", "medium"}
+        if should_apply and isinstance(guessed, dict):
+            self._apply_metadata_payload_to_finished_fields(
+                guessed,
+                extended=extended if isinstance(extended, dict) else {},
+            )
+        if confidence_band == "high":
+            prefix = {
+                "de": "Fertiges Hörbuch automatisch erkannt und übernommen.",
+                "en": "Finished audiobook metadata detected and applied automatically.",
+                "es": "Los metadatos del audiolibro terminado se detectaron y aplicaron automáticamente.",
+                "pt": "Os metadados do audiolivro concluído foram detectados e aplicados automaticamente.",
+            }.get(self.ui_language, "Finished audiobook metadata detected and applied automatically.")
+        elif confidence_band == "medium":
+            prefix = {
+                "de": "Fertiges Hörbuch automatisch analysiert. Bitte kurz prüfen.",
+                "en": "Finished audiobook analyzed automatically. Please review briefly.",
+                "es": "Audiolibro terminado analizado automáticamente. Revísalo brevemente.",
+                "pt": "Audiolivro concluído analisado automaticamente. Revise rapidamente.",
+            }.get(self.ui_language, "Finished audiobook analyzed automatically. Please review briefly.")
+        else:
+            prefix = {
+                "de": "Automatik unsicher. Bitte Trefferliste prüfen und Metadaten manuell übernehmen.",
+                "en": "Automatic detection is unsure. Review the match list and apply metadata manually.",
+                "es": "La detección automática es incierta. Revisa la lista y aplica los metadatos manualmente.",
+                "pt": "A detecção automática é incerta. Revise a lista e aplique os metadados manualmente.",
+            }.get(self.ui_language, "Automatic detection is unsure. Review the match list and apply metadata manually.")
         self.finished_metadata_status_label.setText(
-            {
-                "de": "Der Dateiname des fertigen Hörbuchprojekts wurde analysiert und als Metadatenvorschlag übernommen.",
-                "en": "The file name of the finished audiobook project was analyzed and applied as a metadata suggestion.",
-                "es": "El nombre del archivo del proyecto terminado se analizó y se aplicó como sugerencia de metadatos.",
-                "pt": "O nome do arquivo do projeto concluído foi analisado e aplicado como sugestão de metadados.",
-            }.get(self.ui_language, "The file name of the finished audiobook project was analyzed and applied as a metadata suggestion.")
+            f"{prefix} "
+            + {
+                "de": f"Konfidenz {confidence:.2f}, Titelquelle {title_source}, Autorquelle {author_source}.",
+                "en": f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.",
+                "es": f"Confianza {confidence:.2f}, origen del título {title_source}, origen del autor {author_source}.",
+                "pt": f"Confiança {confidence:.2f}, origem do título {title_source}, origem do autor {author_source}.",
+            }.get(
+                self.ui_language,
+                f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.",
+            )
         )
 
     def search_finished_metadata_online(self) -> None:
@@ -2740,24 +3012,15 @@ class MainWindow(QMainWindow):
                 }.get(self.ui_language, f"Metadata search for the finished audiobook failed: {exc}")
             )
             return
-        self.finished_metadata_results_list.clear()
-        for entry in suggestions:
-            year = f" ({entry.get('year')})" if entry.get("year") else ""
-            author = str(entry.get("author") or "-")
-            item = QListWidgetItem(f"{entry.get('title')}{year} | {author}")
-            item.setData(Qt.UserRole, entry)
-            item.setToolTip(json.dumps(entry, indent=2, ensure_ascii=False))
-            self.finished_metadata_results_list.addItem(item)
+        self._populate_metadata_results_list(self.finished_metadata_results_list, suggestions)
         self.finished_metadata_status_label.setText(
             {
-                "de": f"Open Library Suche für das fertige Hörbuch abgeschlossen: {len(suggestions)} Treffer.",
-                "en": f"Open Library search for the finished audiobook finished: {len(suggestions)} result(s).",
-                "es": f"La búsqueda en Open Library para el audiolibro terminado finalizó: {len(suggestions)} resultado(s).",
-                "pt": f"A busca no Open Library para o audiolivro concluído terminou: {len(suggestions)} resultado(s).",
-            }.get(self.ui_language, f"Open Library search for the finished audiobook finished: {len(suggestions)} result(s).")
+                "de": f"Online-Suche für das fertige Hörbuch abgeschlossen: {len(suggestions)} Treffer.",
+                "en": f"Online search for the finished audiobook finished: {len(suggestions)} result(s).",
+                "es": f"La búsqueda online para el audiolibro terminado finalizó: {len(suggestions)} resultado(s).",
+                "pt": f"A busca online para o audiolivro concluído terminou: {len(suggestions)} resultado(s).",
+            }.get(self.ui_language, f"Online search for the finished audiobook finished: {len(suggestions)} result(s).")
         )
-        if self.finished_metadata_results_list.count():
-            self.finished_metadata_results_list.setCurrentRow(0)
 
     def apply_finished_metadata_result(self) -> None:
         item = self.finished_metadata_results_list.currentItem()
@@ -2766,21 +3029,15 @@ class MainWindow(QMainWindow):
         if item is None:
             return
         entry = item.data(Qt.UserRole) or {}
-        self.finished_meta_title_edit.setText(str(entry.get("title") or self.finished_meta_title_edit.text()))
-        self.finished_meta_author_edit.setText(str(entry.get("author") or self.finished_meta_author_edit.text()))
-        if entry.get("genre"):
-            self.finished_meta_genre_edit.setText(str(entry.get("genre")))
-        if entry.get("language"):
-            self.finished_meta_language_edit.setText(str(entry.get("language")))
-        if entry.get("comment") and not self.finished_meta_comment_edit.toPlainText().strip():
-            self.finished_meta_comment_edit.setPlainText(str(entry.get("comment")))
+        if isinstance(entry, dict):
+            self._apply_metadata_payload_to_finished_fields(entry, extended=entry)
         self.finished_metadata_status_label.setText(
             {
-                "de": "Open-Library-Metadaten wurden auf das fertige Hörbuch übertragen. Speichere jetzt die Tags, um die Enddateien zu aktualisieren.",
-                "en": "Open Library metadata has been copied to the finished audiobook. Save the tags now to update the final files.",
-                "es": "Los metadatos de Open Library se copiaron al audiolibro terminado. Guarda ahora las etiquetas para actualizar los archivos finales.",
-                "pt": "Os metadados do Open Library foram copiados para o audiolivro concluído. Agora salve as tags para atualizar os arquivos finais.",
-            }.get(self.ui_language, "Open Library metadata has been copied to the finished audiobook. Save the tags now to update the final files.")
+                "de": "Die ausgewählten Metadaten wurden auf das fertige Hörbuch übertragen. Speichere jetzt die Tags, um die Enddateien zu aktualisieren.",
+                "en": "The selected metadata has been copied to the finished audiobook. Save the tags now to update the final files.",
+                "es": "Los metadatos seleccionados se copiaron al audiolibro terminado. Guarda ahora las etiquetas para actualizar los archivos finales.",
+                "pt": "Os metadados selecionados foram copiados para o audiolivro concluído. Agora salve as tags para atualizar os arquivos finais.",
+            }.get(self.ui_language, "The selected metadata has been copied to the finished audiobook. Save the tags now to update the final files.")
         )
 
     def save_finished_job_metadata(self) -> None:
@@ -2810,6 +3067,73 @@ class MainWindow(QMainWindow):
         if not job or not job.final_output_files:
             return
         self.open_path(Path(job.final_output_files[0]))
+
+    def _suggest_finished_download_name(self, job: JobState, source_path: Path) -> str:
+        title = (job.audiobook_metadata.title or job.title or source_path.stem).strip()
+        author = (job.audiobook_metadata.author or "").strip()
+        label = f"{author} - {title}" if author else title
+        safe = "".join(character if character not in '<>:"/\\|?*' else "_" for character in label).strip()
+        return safe or source_path.name
+
+    def download_selected_finished_audio(self) -> None:
+        job = self._selected_finished_job()
+        if not job or not job.final_output_files:
+            return
+        output_paths = [Path(path) for path in job.final_output_files if Path(path).exists()]
+        if not output_paths:
+            self.status_label.setText(
+                {
+                    "de": "Keine fertigen Ausgabedateien gefunden.",
+                    "en": "No finished output files were found.",
+                    "es": "No se encontraron archivos finales.",
+                    "pt": "Nenhum arquivo final foi encontrado.",
+                }.get(self.ui_language, "No finished output files were found.")
+            )
+            return
+        if len(output_paths) == 1:
+            source_path = output_paths[0]
+            suggested_name = self._suggest_finished_download_name(job, source_path)
+            target_path, _ = QFileDialog.getSaveFileName(
+                self,
+                self._text("Hörbuch herunterladen"),
+                str(Path.home() / f"{suggested_name}{source_path.suffix}"),
+                "MP3-Dateien (*.mp3);;Alle Dateien (*)",
+            )
+            if not target_path:
+                return
+            shutil.copy2(source_path, Path(target_path))
+            self.status_label.setText(
+                {
+                    "de": f"Fertiges Hörbuch gespeichert: {target_path}",
+                    "en": f"Finished audiobook saved: {target_path}",
+                    "es": f"Audiolibro terminado guardado: {target_path}",
+                    "pt": f"Audiolivro concluído salvo: {target_path}",
+                }.get(self.ui_language, f"Finished audiobook saved: {target_path}")
+            )
+            return
+        target_dir = QFileDialog.getExistingDirectory(
+            self,
+            self._text("Hörbuch herunterladen"),
+            str(Path.home()),
+        )
+        if not target_dir:
+            return
+        export_dir = Path(target_dir) / self._suggest_finished_download_name(job, output_paths[0])
+        export_dir.mkdir(parents=True, exist_ok=True)
+        for source_path in output_paths:
+            shutil.copy2(source_path, export_dir / source_path.name)
+        if job.manifest_file and Path(job.manifest_file).exists():
+            shutil.copy2(Path(job.manifest_file), export_dir / Path(job.manifest_file).name)
+        if job.chapters_file and Path(job.chapters_file).exists():
+            shutil.copy2(Path(job.chapters_file), export_dir / Path(job.chapters_file).name)
+        self.status_label.setText(
+            {
+                "de": f"Fertige Hörbuchdateien exportiert nach: {export_dir}",
+                "en": f"Finished audiobook files exported to: {export_dir}",
+                "es": f"Archivos del audiolibro exportados a: {export_dir}",
+                "pt": f"Arquivos do audiolivro exportados para: {export_dir}",
+            }.get(self.ui_language, f"Finished audiobook files exported to: {export_dir}")
+        )
 
     def open_selected_finished_folder(self) -> None:
         job = self._selected_finished_job()

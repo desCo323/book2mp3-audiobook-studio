@@ -7,12 +7,8 @@ import subprocess
 from typing import Any
 
 from book2mp3.app_settings import AppSettings, load_app_settings, reset_workspace_state, save_app_settings
-from book2mp3.book_metadata import (
-    choose_best_metadata_result,
-    guess_metadata_from_filename,
-    search_open_library_metadata,
-)
 from book2mp3.config import AppPaths
+from book2mp3.metadata_extractor import extract_metadata_from_source, guess_metadata_from_filename, search_online_book_metadata
 from book2mp3.models import AudiobookMetadata, JobState, default_audiobook_metadata
 from book2mp3.pipeline.extract import DocumentStructure, analyze_document_structure
 from book2mp3.pipeline.jobs import JobManager
@@ -80,29 +76,45 @@ class Book2Mp3Service:
 
     def metadata_suggestions(self, source_path: str | Path) -> dict[str, Any]:
         source = Path(source_path).expanduser().resolve()
-        guessed = guess_metadata_from_filename(source)
-        search_error = ""
         try:
-            results = search_open_library_metadata(
-                query=str(guessed.get("search_query") or ""),
-                title=str(guessed.get("title") or ""),
-                author=str(guessed.get("author") or ""),
-                limit=5,
+            result = extract_metadata_from_source(
+                source,
+                allow_online=True,
+                cache_path=self.paths.workspace / "statistics" / "metadata_online_cache.json",
             )
         except Exception as exc:
-            results = []
-            search_error = str(exc)
-        best = choose_best_metadata_result(
-            results,
-            guessed_title=str(guessed.get("title") or ""),
-            guessed_author=str(guessed.get("author") or ""),
-        )
+            guessed = guess_metadata_from_filename(source)
+            return {
+                "source": str(source),
+                "guessed": guessed,
+                "results": [],
+                "best_result": None,
+                "search_error": str(exc),
+                "confidence": 0.0,
+                "title_source": "error",
+                "author_source": "error",
+                "candidates": [],
+                "online_results": [],
+                "online_errors": [str(exc)],
+                "extended_book_metadata": {},
+                "mp3_transfer": {"core_metadata": guessed, "ffmetadata_tags": {}, "extended_book_metadata": {}},
+            }
+        candidates = [item.to_dict() for item in result.candidates]
+        best = candidates[0] if candidates else None
         return {
             "source": str(source),
-            "guessed": guessed,
-            "results": results,
+            "guessed": result.guessed_metadata(),
+            "results": candidates,
             "best_result": best,
-            "search_error": search_error,
+            "search_error": " | ".join(result.online_errors),
+            "confidence": result.confidence,
+            "title_source": result.title_source,
+            "author_source": result.author_source,
+            "candidates": candidates,
+            "online_results": result.online_results,
+            "online_errors": result.online_errors,
+            "extended_book_metadata": result.extended_book_metadata(),
+            "mp3_transfer": result.mp3_transfer_payload(),
         }
 
     def search_book_metadata(
@@ -113,7 +125,14 @@ class Book2Mp3Service:
         author: str = "",
         limit: int = 5,
     ) -> list[dict[str, Any]]:
-        return search_open_library_metadata(query=query, title=title, author=author, limit=limit)
+        results, _errors = search_online_book_metadata(
+            query=query,
+            title=title,
+            author=author,
+            limit=limit,
+            cache_path=self.paths.workspace / "statistics" / "metadata_online_cache.json",
+        )
+        return results
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         return self.serialize_job(self.manager.load_state(job_id))
@@ -179,6 +198,7 @@ class Book2Mp3Service:
 
         resolved_output_mode = self._resolve_output_mode_for_source(source, output_mode or preset.output_mode)
         metadata = self._resolve_metadata(
+            source_path=source,
             title=source.stem,
             backend=backend,
             voice_id=voice_id,
@@ -568,6 +588,7 @@ class Book2Mp3Service:
     def _resolve_metadata(
         self,
         *,
+        source_path: Path | None,
         title: str,
         backend: str,
         voice_id: str,
@@ -591,7 +612,35 @@ class Book2Mp3Service:
             narrator=narrator,
             language=language,
         )
-        return AudiobookMetadata.from_dict(overrides, fallback=fallback)
+        suggested_payload: dict[str, Any] = {}
+        if source_path is not None:
+            needs_suggestion = not overrides or any(
+                not str(overrides.get(key) or "").strip()
+                for key in ("title", "author", "genre", "language", "comment", "publisher", "subject", "isbn")
+            )
+            if needs_suggestion:
+                try:
+                    result = extract_metadata_from_source(
+                        source_path,
+                        allow_online=True,
+                        cache_path=self.paths.workspace / "statistics" / "metadata_online_cache.json",
+                    )
+                    transfer = result.mp3_transfer_payload(narrator=narrator)
+                    suggested_payload = {
+                        **transfer.get("core_metadata", {}),
+                        "publisher": str(transfer.get("ffmetadata_tags", {}).get("publisher") or ""),
+                        "year": int(str(transfer.get("ffmetadata_tags", {}).get("year") or "0") or 0),
+                        "subject": str(transfer.get("ffmetadata_tags", {}).get("subject") or ""),
+                        "isbn": str(transfer.get("ffmetadata_tags", {}).get("isbn") or ""),
+                        "description": str(transfer.get("ffmetadata_tags", {}).get("description") or ""),
+                    }
+                    suggested_payload.pop("artist", None)
+                    suggested_payload.pop("album_artist", None)
+                    suggested_payload.pop("narrator", None)
+                except Exception:
+                    suggested_payload = {}
+        resolved = AudiobookMetadata.from_dict(suggested_payload or None, fallback=fallback)
+        return AudiobookMetadata.from_dict(overrides, fallback=resolved)
 
     def _resolve_output_mode_for_source(self, source: Path, requested_output_mode: str) -> str:
         if requested_output_mode != "chapter_files":

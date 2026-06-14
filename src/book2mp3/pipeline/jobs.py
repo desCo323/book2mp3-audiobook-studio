@@ -345,6 +345,94 @@ class JobManager:
         cpu_count = os.cpu_count() or 1
         return 2 if cpu_count >= 8 else 1
 
+    def _mark_xtts_batch_render_progress(
+        self,
+        state: JobState,
+        batch: list[ChunkRecord],
+        *,
+        started_monotonic: float,
+        logger: logging.Logger,
+        progress: callable | None = None,
+    ) -> JobState:
+        rendered_indexes: list[int] = []
+        updated_chunks = list(state.chunks)
+        changed = False
+        for item in batch:
+            wav_exists = Path(item.wav_file).exists()
+            mp3_exists = Path(item.mp3_file).exists()
+            if not wav_exists and not mp3_exists:
+                continue
+            current = updated_chunks[item.index - 1]
+            rendered_indexes.append(item.index)
+            if current.status == "done":
+                continue
+            updated_chunks[item.index - 1] = replace(
+                current,
+                status="done",
+                error="",
+                updated_at=utc_now(),
+            )
+            changed = True
+        if not changed:
+            return state
+        state.chunks = updated_chunks
+        state = self._update_runtime_progress(state, started_monotonic=started_monotonic)
+        self.save_state(state)
+        if progress and rendered_indexes:
+            progress(
+                max(rendered_indexes),
+                len(state.chunks),
+                f"XTTS rendered chunk(s) {min(rendered_indexes)}-{max(rendered_indexes)}",
+            )
+        logger.debug(
+            "Saved live XTTS render progress for batch %s-%s (%s rendered chunk(s) visible)",
+            batch[0].index,
+            batch[-1].index,
+            len(rendered_indexes),
+        )
+        return state
+
+    def _run_xtts_batch_with_live_progress(
+        self,
+        backend: XttsBackend,
+        texts: list[str],
+        xtts_profile,
+        wav_paths: list[Path],
+        *,
+        state: JobState,
+        batch: list[ChunkRecord],
+        started_monotonic: float,
+        logger: logging.Logger,
+        progress: callable | None = None,
+    ) -> JobState:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="xtts-synth") as executor:
+            future = executor.submit(
+                backend.synthesize_many_to_wavs,
+                texts,
+                xtts_profile,
+                wav_paths,
+                length_scale=state.length_scale,
+            )
+            while True:
+                try:
+                    future.result(timeout=1.0)
+                    break
+                except concurrent.futures.TimeoutError:
+                    state = self._mark_xtts_batch_render_progress(
+                        state,
+                        batch,
+                        started_monotonic=started_monotonic,
+                        logger=logger,
+                        progress=progress,
+                    )
+        return self._mark_xtts_batch_render_progress(
+            state,
+            batch,
+            started_monotonic=started_monotonic,
+            logger=logger,
+            progress=progress,
+        )
+
     def _convert_xtts_batch_to_mp3(
         self,
         batch: list[ChunkRecord],
@@ -1069,11 +1157,16 @@ class JobManager:
                                 first_chunk.index,
                                 len(batch),
                             )
-                            backend.synthesize_many_to_wavs(
+                            state = self._run_xtts_batch_with_live_progress(
+                                backend,
                                 texts,
                                 xtts_profile,
                                 wav_paths,
-                                length_scale=state.length_scale,
+                                state=state,
+                                batch=batch,
+                                started_monotonic=run_started,
+                                logger=logger,
+                                progress=progress,
                             )
                             if xtts_parallel_postprocess and postprocess_executor is not None:
                                 logger.info(
@@ -1366,6 +1459,12 @@ class JobManager:
             "genre": meta.genre,
             "language": meta.language,
             "comment": meta.comment,
+            "description": meta.description or meta.comment,
+            "publisher": meta.publisher,
+            "date": str(meta.year) if meta.year else "",
+            "year": str(meta.year) if meta.year else "",
+            "subject": meta.subject,
+            "isbn": meta.isbn,
             "track": f"{index}/{total}",
         }
 

@@ -435,6 +435,7 @@ TEXT_TRANSLATIONS: dict[str, dict[str, str]] = {
     "Tags speichern": {"en": "Save tags", "es": "Guardar etiquetas", "pt": "Salvar tags"},
     "Aus Auswahl laden": {"en": "Load from selection", "es": "Cargar desde la selección", "pt": "Carregar da seleção"},
     "Hörbuch öffnen": {"en": "Open audiobook", "es": "Abrir audiolibro", "pt": "Abrir audiolivro"},
+    "Hörbuch herunterladen": {"en": "Download audiobook", "es": "Descargar audiolibro", "pt": "Baixar audiolivro"},
     "Ordner öffnen": {"en": "Open folder", "es": "Abrir carpeta", "pt": "Abrir pasta"},
     "Projekt löschen": {"en": "Delete project", "es": "Eliminar proyecto", "pt": "Excluir projeto"},
     "Nächsten Queue-Job starten": {"en": "Start next queued job", "es": "Iniciar el siguiente trabajo en cola", "pt": "Iniciar a próxima tarefa da fila"},
@@ -500,6 +501,14 @@ TEXT_TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "Preview": {"en": "Preview", "es": "Vista previa", "pt": "Prévia"},
     "Noch keine Preview gerendert.": {"en": "No preview rendered yet.", "es": "Aún no se ha renderizado ninguna vista previa.", "pt": "Nenhuma prévia foi renderizada ainda."},
+    "5. Fertige Bücher": {"en": "5. Finished books", "es": "5. Libros terminados", "pt": "5. Livros concluídos"},
+    "Fertige Bücher": {"en": "Finished books", "es": "Libros terminados", "pt": "Livros concluídos"},
+    "Automatisch erkennen": {"en": "Detect automatically", "es": "Detectar automáticamente", "pt": "Detectar automaticamente"},
+    "Online-Suche verfeinern": {"en": "Refine online search", "es": "Refinar búsqueda online", "pt": "Refinar busca online"},
+    "Ausgewählten Treffer übernehmen": {"en": "Apply selected result", "es": "Aplicar resultado seleccionado", "pt": "Aplicar resultado selecionado"},
+    "Verlag": {"en": "Publisher", "es": "Editorial", "pt": "Editora"},
+    "Jahr": {"en": "Year", "es": "Año", "pt": "Ano"},
+    "Schlagwörter": {"en": "Keywords", "es": "Palabras clave", "pt": "Palavras-chave"},
 }
 
 

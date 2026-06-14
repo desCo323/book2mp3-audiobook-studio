@@ -8,7 +8,6 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from book2mp3.app_settings import AppSettings, save_app_settings
-from book2mp3.book_metadata import guess_metadata_from_filename
 from book2mp3.config import AppPaths
 from book2mp3.service import Book2Mp3Service
 from book2mp3.ui.main_window import MainWindow
@@ -27,7 +26,7 @@ def ensure_fixture_link(app_root: Path, name: str) -> None:
 
 def main() -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    with tempfile.TemporaryDirectory(prefix="book2mp3-smoke-i18n-meta-") as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="book2mp3-smoke-i18n-meta-", dir="/home/codex") as tmp_dir:
         app_root = Path(tmp_dir) / "src"
         app_root.mkdir(parents=True, exist_ok=True)
         ensure_fixture_link(app_root, "runtime")
@@ -43,7 +42,6 @@ def main() -> int:
 
         source = app_root / "Jane Austen - Pride and Prejudice.txt"
         source.write_text(("It is a truth universally acknowledged. " * 40).strip(), encoding="utf-8")
-        guessed = guess_metadata_from_filename(source)
 
         service = Book2Mp3Service(paths)
         created = service.create_job(
@@ -51,7 +49,6 @@ def main() -> int:
             backend="piper",
             voice_id="en_US-lessac-medium",
             preset_id="balanced",
-            audiobook_metadata=guessed,
         )
         finished = service.run_job(str(created["job_id"]))
 
@@ -70,6 +67,8 @@ def main() -> int:
             raise AssertionError(f"Completed jobs must not stay in active jobs list: {window.jobs_list.count()}")
         if window.finished_books_list.count() < 1:
             raise AssertionError("Finished books overview stayed empty")
+        if not any(window.main_tabs.tabText(index) == "Finished books" for index in range(window.main_tabs.count())):
+            raise AssertionError("Finished books tab missing in English UI")
 
         first_item = window.finished_books_list.item(0)
         if "Pride and Prejudice" not in first_item.text():
@@ -78,6 +77,10 @@ def main() -> int:
         app.processEvents()
         if window.finished_meta_title_edit.text() != "Pride and Prejudice":
             raise AssertionError(f"Finished metadata editor did not load title: {window.finished_meta_title_edit.text()!r}")
+        if window.finished_meta_author_edit.text() != "Jane Austen":
+            raise AssertionError(f"Finished metadata editor did not load author: {window.finished_meta_author_edit.text()!r}")
+        if window.finished_metadata_results_list.count() < 1:
+            raise AssertionError("Finished metadata suggestions list stayed empty")
         window.finished_meta_comment_edit.setPlainText("Test comment for final MP3 tags")
         window.save_finished_job_metadata()
         app.processEvents()

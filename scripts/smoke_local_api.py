@@ -32,7 +32,7 @@ def api_json(method: str, url: str, payload: dict[str, object] | None = None) ->
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix="book2mp3-smoke-api-") as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="book2mp3-smoke-api-", dir="/home/codex") as tmp_dir:
         app_root = Path(tmp_dir) / "app"
         app_root.mkdir(parents=True, exist_ok=True)
         ensure_fixture_link(app_root, "runtime")
