@@ -39,6 +39,7 @@ from book2mp3.xtts_options import (
     normalize_pronunciation_rules,
     normalize_xtts_inference,
     normalize_xtts_quality_mode,
+    safe_xtts_chunk_chars,
 )
 
 
@@ -461,16 +462,13 @@ class JobManager:
 
     def _xtts_effective_max_chars(self, state: JobState) -> int:
         requested = max(1, int(state.max_chars or 0))
-        app_settings = load_app_settings(self.paths.app_settings_file)
-        device = self._resolved_xtts_device_mode(app_settings.xtts_device_mode)
-        # XTTS is most stable with shorter chunks on CPU and still fast enough on CUDA.
-        if state.xtts_quality_mode == "max_quality":
-            return min(requested, 420 if device == "cuda" else 360)
-        if state.xtts_quality_mode == "quality":
-            return min(requested, 340 if device == "cuda" else 280)
-        if device == "cuda":
-            return min(requested, 280)
-        return min(requested, 220)
+        language_code = "de"
+        if state.voice_profile_id:
+            try:
+                language_code = load_voice_profile(self.paths.voice_profiles, state.voice_profile_id).target_language
+            except Exception as exc:
+                self.logger.debug("Could not load XTTS voice profile language for %s: %s", state.voice_profile_id, exc)
+        return safe_xtts_chunk_chars(requested, language_code)
 
     def _xtts_batch_parameters(self, state: JobState) -> tuple[int, int]:
         app_settings = load_app_settings(self.paths.app_settings_file)
@@ -1055,6 +1053,15 @@ class JobManager:
         return selected[:batch_limit] or pending_chunks[:1]
 
     def _xtts_chunk_too_large(self, chunk: ChunkRecord, max_chars: int) -> bool:
+        if chunk.spoken_text_length > max_chars:
+            return True
+        spoken_path = Path(chunk.spoken_text_file) if chunk.spoken_text_file else None
+        if spoken_path and spoken_path.exists():
+            try:
+                if len(spoken_path.read_text(encoding="utf-8")) > max_chars:
+                    return True
+            except OSError:
+                pass
         if chunk.text_length > 0:
             return chunk.text_length > max_chars
         text_path = Path(chunk.text_file)

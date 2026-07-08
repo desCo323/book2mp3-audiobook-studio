@@ -86,15 +86,14 @@ def trim_wav_silence_in_place(
     threshold_db: float = -45.0,
     window_ms: int = 20,
     keep_leading_ms: int = 120,
-    keep_internal_ms: int = 900,
     keep_trailing_ms: int = 650,
     min_removed_ms: int = 1000,
     logger: logging.Logger | None = None,
 ) -> bool:
-    """Compress excessive silence from a PCM WAV file.
+    """Trim excessive leading/trailing silence from a PCM WAV file.
 
-    XTTS can emit long silent gaps or tails for short chunks. This keeps short
-    natural pauses but removes generated dead air before MP3 conversion or concat.
+    XTTS can emit long silent heads or tails for chunks. This keeps the inside
+    of the generated speech untouched to avoid cutting transitions or quiet words.
     """
     if not wav_path.exists():
         return False
@@ -138,46 +137,18 @@ def trim_wav_silence_in_place(
     if not loud_windows:
         return False
 
-    first_loud_start, _ = loud_windows[0]
-    _, last_loud_end = loud_windows[-1]
-    keep_internal_frames = max(0, int(params.framerate * keep_internal_ms / 1000))
+    first_loud_start = loud_windows[0][0]
+    last_loud_end = loud_windows[-1][1]
+    trim_start = max(0, first_loud_start - keep_leading_frames)
+    trim_end = min(frame_count, last_loud_end + keep_trailing_frames)
 
-    kept = array.array("h")
-    kept_frames = 0
-    index = 0
-    while index < len(windows):
-        run_start_frame, run_end_frame, run_is_loud = windows[index]
-        index += 1
-        while index < len(windows) and windows[index][2] == run_is_loud:
-            run_end_frame = windows[index][1]
-            index += 1
-
-        keep_start = run_start_frame
-        keep_end = run_end_frame
-        if not run_is_loud:
-            run_frames = run_end_frame - run_start_frame
-            if run_end_frame <= first_loud_start:
-                keep_frames = min(run_frames, keep_leading_frames)
-                keep_start = run_end_frame - keep_frames
-            elif run_start_frame >= last_loud_end:
-                keep_frames = min(run_frames, keep_trailing_frames)
-                keep_end = run_start_frame + keep_frames
-            else:
-                keep_frames = min(run_frames, keep_internal_frames)
-                keep_end = run_start_frame + keep_frames
-
-        if keep_end <= keep_start:
-            continue
-        kept.extend(samples[keep_start * channels : keep_end * channels])
-        kept_frames += keep_end - keep_start
-
-    removed_frames = frame_count - kept_frames
+    removed_frames = trim_start + (frame_count - trim_end)
     if removed_frames < min_removed_frames:
         return False
-    if kept_frames >= frame_count:
+    if trim_start <= 0 and trim_end >= frame_count:
         return False
 
-    trimmed_samples = kept
+    trimmed_samples = samples[trim_start * channels : trim_end * channels]
     if sys.byteorder != "little":
         trimmed_samples.byteswap()
     temp_path = wav_path.with_name(f".{wav_path.name}.trimmed")
@@ -195,9 +166,9 @@ def trim_wav_silence_in_place(
 
     if logger:
         original_seconds = frame_count / params.framerate
-        trimmed_seconds = kept_frames / params.framerate
+        trimmed_seconds = (trim_end - trim_start) / params.framerate
         logger.info(
-            "Compressed XTTS WAV silence: %s %.2fs -> %.2fs (removed %.2fs)",
+            "Trimmed XTTS WAV edge silence: %s %.2fs -> %.2fs (removed %.2fs)",
             wav_path.name,
             original_seconds,
             trimmed_seconds,

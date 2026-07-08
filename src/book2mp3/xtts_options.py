@@ -10,6 +10,10 @@ XTTS_QUALITY_MODES = {
     XTTS_QUALITY_QUALITY,
     XTTS_QUALITY_MAX,
 }
+XTTS_SAFE_CHUNK_CHARS = 220
+_XTTS_LANGUAGE_CHAR_LIMITS = {
+    "de": 253,
+}
 
 _QUALITY_DEFAULTS: dict[str, dict[str, Any]] = {
     XTTS_QUALITY_FAST: {
@@ -75,6 +79,19 @@ def normalize_xtts_quality_mode(mode: str | None) -> str:
 
 def default_xtts_inference(mode: str | None) -> dict[str, Any]:
     return dict(_QUALITY_DEFAULTS[normalize_xtts_quality_mode(mode)])
+
+
+def safe_xtts_chunk_chars(requested: int, language_code: str | None = "de") -> int:
+    """Clamp XTTS text chunks below the model's per-language warning limit."""
+    try:
+        value = int(requested)
+    except (TypeError, ValueError):
+        value = XTTS_SAFE_CHUNK_CHARS
+    value = max(1, value)
+    code = str(language_code or "de").strip().lower().replace("-", "_").split("_", 1)[0]
+    hard_limit = _XTTS_LANGUAGE_CHAR_LIMITS.get(code, XTTS_SAFE_CHUNK_CHARS + 10)
+    safe_limit = max(80, min(XTTS_SAFE_CHUNK_CHARS, hard_limit - 13))
+    return min(value, safe_limit)
 
 
 def normalize_xtts_inference(

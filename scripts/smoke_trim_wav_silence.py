@@ -11,8 +11,9 @@ from book2mp3.pipeline.audio import probe_media_duration_seconds, trim_wav_silen
 def write_tone_and_silence_wav(path: Path) -> None:
     sample_rate = 24000
     segments = [
+        ("silence", 1.20),
         ("tone", 0.60),
-        ("silence", 2.40),
+        ("silence", 1.00),
         ("tone", 0.55),
         ("silence", 2.20),
     ]
@@ -50,8 +51,8 @@ def main() -> int:
         changed = trim_wav_silence_in_place(noisy)
         after = probe_media_duration_seconds(noisy)
         if not changed:
-            raise AssertionError("Expected long-silence WAV to be compressed")
-        if before < 5.5 or after > 3.4:
+            raise AssertionError("Expected long edge-silence WAV to be trimmed")
+        if before < 5.5 or not 2.8 <= after <= 3.5:
             raise AssertionError(f"Unexpected trim duration before={before:.3f}s after={after:.3f}s")
 
         silent = root / "silent.wav"

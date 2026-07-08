@@ -11,7 +11,7 @@ from book2mp3.presets import get_preset
 from book2mp3.voice_catalog import filter_voice_ids, is_female_voice, voice_language_code
 from book2mp3.voice_lab import VoiceProfile, list_voice_profiles
 from book2mp3.utils.workspace_files import ensure_writable_directory, safe_write_json
-from book2mp3.xtts_options import default_xtts_inference
+from book2mp3.xtts_options import XTTS_SAFE_CHUNK_CHARS, default_xtts_inference, safe_xtts_chunk_chars
 
 
 LOGGER = logging.getLogger("book2mp3.voice_test_assistant")
@@ -128,7 +128,7 @@ def _style_defaults(style: str, backend: str) -> dict[str, object]:
     )
     if backend == "xtts":
         preset_id = "premium_natural"
-        max_chars = max(max_chars, 260)
+        max_chars = 120
         sentence_silence = 0.22
         length_scale = 1.0
     preset = get_preset(preset_id)
@@ -144,6 +144,12 @@ def _style_defaults(style: str, backend: str) -> dict[str, object]:
         "pronunciation_rules": [],
         "notes": preset.description,
     }
+
+
+def _candidate_max_chars(candidate: VoiceTestCandidate, requested: int) -> int:
+    if candidate.backend == "xtts":
+        return max(100, safe_xtts_chunk_chars(requested, candidate.language_code))
+    return max(100, min(450, requested))
 
 
 def _piper_candidates(
@@ -316,7 +322,7 @@ def create_refinement_round(paths: AppPaths, run: VoiceTestRun) -> VoiceTestRun:
                 voice_id=base.voice_id,
                 voice_profile_id=base.voice_profile_id,
                 preset_id=base.preset_id,
-                max_chars=max(140, min(420, base.max_chars + chars_delta)),
+                max_chars=_candidate_max_chars(base, base.max_chars + chars_delta),
                 output_mode=base.output_mode,
                 target_part_minutes=base.target_part_minutes,
                 sentence_silence=max(0.08, min(0.40, base.sentence_silence + silence_delta)),
@@ -339,12 +345,20 @@ def create_chunk_tuning_round(paths: AppPaths, run: VoiceTestRun) -> VoiceTestRu
     run.selected_backend = base.backend
     run.workflow_step = "chunk_tuning"
     run.winner_candidate_id = base.candidate_id
-    variants = [
-        ("Chunk kompakt", max(140, base.max_chars - 80), max(0.10, base.sentence_silence - 0.04), max(0.94, base.length_scale - 0.02)),
-        ("Chunk ausgewogen", max(160, base.max_chars - 20), base.sentence_silence, base.length_scale),
-        ("Chunk gross", min(420, base.max_chars + 40), min(0.36, base.sentence_silence + 0.02), min(1.08, base.length_scale + 0.01)),
-        ("Chunk maximal", min(450, base.max_chars + 100), min(0.38, base.sentence_silence + 0.04), min(1.10, base.length_scale + 0.02)),
-    ]
+    if base.backend == "xtts":
+        variants = [
+            ("Chunk stabil", _candidate_max_chars(base, 100), max(0.10, base.sentence_silence - 0.04), max(0.94, base.length_scale - 0.02)),
+            ("Chunk ausgewogen", _candidate_max_chars(base, 120), base.sentence_silence, base.length_scale),
+            ("Chunk gross", _candidate_max_chars(base, 160), min(0.36, base.sentence_silence + 0.02), min(1.08, base.length_scale + 0.01)),
+            ("Chunk maximal", _candidate_max_chars(base, XTTS_SAFE_CHUNK_CHARS), min(0.38, base.sentence_silence + 0.04), min(1.10, base.length_scale + 0.02)),
+        ]
+    else:
+        variants = [
+            ("Chunk kompakt", _candidate_max_chars(base, base.max_chars - 80), max(0.10, base.sentence_silence - 0.04), max(0.94, base.length_scale - 0.02)),
+            ("Chunk ausgewogen", _candidate_max_chars(base, base.max_chars - 20), base.sentence_silence, base.length_scale),
+            ("Chunk gross", _candidate_max_chars(base, base.max_chars + 40), min(0.36, base.sentence_silence + 0.02), min(1.08, base.length_scale + 0.01)),
+            ("Chunk maximal", _candidate_max_chars(base, base.max_chars + 80), min(0.38, base.sentence_silence + 0.04), min(1.10, base.length_scale + 0.02)),
+        ]
     run.refinement_round += 1
     run.mode = "chunk_tuning"
     run.candidates = [

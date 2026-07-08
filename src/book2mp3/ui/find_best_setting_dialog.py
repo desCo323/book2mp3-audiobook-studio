@@ -100,7 +100,12 @@ from book2mp3.voice_test_assistant import (
     record_benchmark_result,
     update_candidate_feedback,
 )
-from book2mp3.xtts_options import default_xtts_inference, normalize_pronunciation_rules, normalize_xtts_quality_mode
+from book2mp3.xtts_options import (
+    default_xtts_inference,
+    normalize_pronunciation_rules,
+    normalize_xtts_quality_mode,
+    safe_xtts_chunk_chars,
+)
 
 
 _XTTS_PREVIEW_HARD_LIMIT = 2400
@@ -315,19 +320,21 @@ class LivePreviewWorker(QThread):
                     preview_text = _paragraph_preview_text(text)
                     spoken_preview = apply_pronunciation_rules(preview_text, self.pronunciation_rules)
                     spoken_text = _normalize_xtts_dialog_text(spoken_preview.spoken_text)
-                    xtts_chunks = split_text(spoken_text, self.max_chars)
+                    xtts_max_chars = safe_xtts_chunk_chars(self.max_chars, profile.target_language)
+                    xtts_chunks = split_text(spoken_text, xtts_max_chars)
                     if not xtts_chunks:
                         raise RuntimeError("XTTS preview text is empty after normalization")
                     preview_profile = replace(profile, samples=profile.samples[:1] or profile.samples)
                     wav_paths = [wav_root / f"{index:03d}.wav" for index in range(1, len(xtts_chunks) + 1)]
                     final_preview = preview_root / "preview.mp3"
                     self.logger.info(
-                        "Live preview start backend=%s source_chars=%s preview_chars=%s spoken_chars=%s chunk_count=%s max_chars=%s profile_samples=%s device_mode=%s quality_mode=%s pronunciation_rules=%s",
+                        "Live preview start backend=%s source_chars=%s preview_chars=%s spoken_chars=%s chunk_count=%s max_chars=%s requested_max_chars=%s profile_samples=%s device_mode=%s quality_mode=%s pronunciation_rules=%s",
                         self.backend,
                         len(text),
                         len(preview_text),
                         len(spoken_text),
                         len(xtts_chunks),
+                        xtts_max_chars,
                         self.max_chars,
                         len(preview_profile.samples),
                         self.xtts_device_mode,
@@ -2157,10 +2164,12 @@ class FindBestSettingDialog(QDialog):
         self.length_label.setText(f"{length_scale:.2f}")
         if self.backend_combo.currentText() == "xtts":
             quality_mode = self.current_xtts_quality_mode()
+            xtts_effective_chars = safe_xtts_chunk_chars(max_chars, "de")
             hint = (
                 "XTTS: gute Referenzsamples sind wichtiger als die letzten Regler-Prozent. "
                 f"Geraet: {self.xtts_device_combo.currentData() or 'auto'} | Qualitätsmodus: {quality_mode} | "
-                f"Aussprache-Regeln: {len(self.current_pronunciation_rules())}."
+                f"Aussprache-Regeln: {len(self.current_pronunciation_rules())}. "
+                f"Deutsch wird intern sicher auf {xtts_effective_chars} Zeichen begrenzt."
             )
         elif max_chars >= 240 and sentence_silence >= 0.24 and length_scale >= 1.02:
             hint = "Eher natuerlich und ruhiger."

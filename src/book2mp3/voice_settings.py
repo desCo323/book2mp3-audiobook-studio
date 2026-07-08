@@ -54,6 +54,20 @@ _DEFAULT_RAMONA_FALLBACK_RULES = [
     {"match": "Newt Scamander", "spoken_as": "Njut Skamander", "scope": "whole_phrase", "enabled": True},
     {"match": "Cormoran Strike", "spoken_as": "Kormoran Streik", "scope": "whole_phrase", "enabled": True},
 ]
+_DEFAULT_RAMONA_EXTRA_RULES = [
+    {"match": "VgDDK", "spoken_as": "Verteidigung gegen die dunklen Künste", "scope": "whole_phrase", "enabled": True},
+    {"match": "Rowena Ravenclaw", "spoken_as": "Rowena Räwenklo", "scope": "whole_phrase", "enabled": True},
+    {"match": "Godric Gryffindor", "spoken_as": "Godrik Griffindor", "scope": "whole_phrase", "enabled": True},
+    {"match": "Helga Hufflepuff", "spoken_as": "Helga Huffelpaff", "scope": "whole_phrase", "enabled": True},
+    {"match": "Salazar Slytherin", "spoken_as": "Salazar Slisserin", "scope": "whole_phrase", "enabled": True},
+    {"match": "Ariani ä Iriel", "spoken_as": "Ariani eh Iriel", "scope": "whole_phrase", "enabled": True},
+    {"match": "Amelia Gryffindor", "spoken_as": "Amelia Griffindor", "scope": "whole_phrase", "enabled": True},
+    {"match": "Rei Ishii", "spoken_as": "Rei Ischii", "scope": "whole_phrase", "enabled": True},
+    {"match": "Talwyn", "spoken_as": "Talwin", "scope": "whole_phrase", "enabled": True},
+    {"match": "Talan", "spoken_as": "Talan", "scope": "whole_phrase", "enabled": True},
+    {"match": "Éibhear", "spoken_as": "Eber", "scope": "whole_phrase", "enabled": True},
+    {"match": "Eibhear", "spoken_as": "Eber", "scope": "whole_phrase", "enabled": True},
+]
 
 
 def normalize_profile_status(status: str | None) -> str:
@@ -346,13 +360,13 @@ def seed_default_voice_settings(root: Path, voice_profiles_root: Path) -> list[V
             voice_id="de_DE-ramona-low",
             voice_profile_id=DEFAULT_RAMONA_VOICE_PROFILE_ID,
             preset_hint="premium_natural",
-            max_chars=420,
+            max_chars=120,
             output_mode="chapter_files",
             target_part_minutes=20,
             sentence_silence=0.24,
             length_scale=1.03,
             notes=(
-                "Approved Ramona live profile with max-quality XTTS settings, longer chunks "
+                "Approved Ramona live profile with max-quality XTTS settings, stable short XTTS clauses "
                 "and automatic fantasy-name pronunciation rules."
             ),
             status=PROFILE_STATUS_APPROVED,
@@ -379,6 +393,7 @@ def _default_ramona_pronunciation_rules() -> list[dict[str, Any]]:
         rules = build_pronunciation_rules(authors=_DEFAULT_RAMONA_LEXICON_AUTHORS)
     except Exception:
         rules = _DEFAULT_RAMONA_FALLBACK_RULES
+    rules = [*rules, *_DEFAULT_RAMONA_EXTRA_RULES]
     return normalize_pronunciation_rules(
         rule
         for rule in rules

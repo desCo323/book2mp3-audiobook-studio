@@ -16,6 +16,7 @@ from book2mp3.tts.xtts import XttsBackend
 from book2mp3.ui.find_best_setting_dialog import FindBestSettingDialog
 from book2mp3.ui.main_window import MainWindow
 from book2mp3.voice_lab import create_voice_profile
+from book2mp3.xtts_options import XTTS_SAFE_CHUNK_CHARS
 
 
 ROOT = Path("/home/codex/repo/book2mp3")
@@ -154,7 +155,7 @@ def main() -> int:
             )
             Path(session.preview_source_file).write_text(dialogue_excerpt, encoding="utf-8")
             dialog.excerpt_view.setPlainText(dialogue_excerpt)
-            dialog.max_chars_spin.setValue(220)
+            dialog.max_chars_spin.setValue(450)
 
             dialog.setting_name.setText("XTTS Smoke UI Voice")
             dialog.save_setting()
@@ -175,6 +176,9 @@ def main() -> int:
                 raise AssertionError(f"Expected concatenated MP3 preview, got: {preview_output}")
             if len(CAPTURED_XTTS_TEXTS) < 2:
                 raise AssertionError(f"Expected multi-chunk XTTS preview, got {CAPTURED_XTTS_TEXTS}")
+            oversized_chunks = [item for item in CAPTURED_XTTS_TEXTS if len(item) > XTTS_SAFE_CHUNK_CHARS]
+            if oversized_chunks:
+                raise AssertionError(f"Expected XTTS-safe preview chunks, got: {oversized_chunks}")
             joined_preview = " ".join(CAPTURED_XTTS_TEXTS)
             if "«" in joined_preview or "»" in joined_preview:
                 raise AssertionError(f"Expected guillemets to be removed before XTTS, got: {joined_preview!r}")
