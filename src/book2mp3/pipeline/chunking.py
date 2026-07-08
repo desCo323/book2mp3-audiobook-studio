@@ -4,6 +4,7 @@ import re
 
 
 CLAUSE_BOUNDARY_RE = re.compile(r"(?<=[,;:])\s+|(?<=\s[-–—])\s+")
+SENTENCE_RE = re.compile(r"[^.!?]+[.!?]+[\"'«»“”‘’„‚]*|[^.!?]+$")
 
 
 def split_oversized_part(part: str, max_length: int) -> list[str]:
@@ -62,7 +63,7 @@ def split_text(text: str, max_length: int) -> list[str]:
     normalized = re.sub(r"\s+", " ", text).strip()
     if not normalized:
         return []
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", normalized) if s.strip()]
+    sentences = [match.group(0).strip() for match in SENTENCE_RE.finditer(normalized) if match.group(0).strip()]
     sentence_parts: list[str] = []
     for sentence in sentences:
         if len(sentence) > max_length:

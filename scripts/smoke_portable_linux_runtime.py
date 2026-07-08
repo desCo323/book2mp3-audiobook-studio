@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -14,7 +15,7 @@ def main() -> int:
         bundle = Path(tmp) / "bundle"
         subprocess.run(
             [
-                "python3",
+                sys.executable,
                 str(ROOT / "scripts" / "build_portable_bundle.py"),
                 str(bundle),
                 "--clean",
@@ -24,7 +25,7 @@ def main() -> int:
         )
         subprocess.run(
             [
-                "python3",
+                sys.executable,
                 str(ROOT / "scripts" / "populate_bundle_python_linux.py"),
                 str(bundle / "src"),
             ],

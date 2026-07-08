@@ -195,6 +195,18 @@ def refresh_preview_excerpt(paths: AppPaths, session_id: str) -> PreviewSession:
     return session
 
 
+def update_preview_excerpt_text(paths: AppPaths, session_id: str, excerpt: str) -> PreviewSession:
+    session = _load_session(paths, session_id)
+    normalized_excerpt = str(excerpt or "").strip()
+    safe_write_text(Path(session.preview_source_file), normalized_excerpt, logger=LOGGER)
+    session.preview_excerpt = normalized_excerpt
+    session.last_preview_job_id = ""
+    session.last_preview_output = ""
+    session.last_preview_status = "idle"
+    _save_session(paths, session)
+    return session
+
+
 def attach_preview_job(
     paths: AppPaths,
     session_id: str,

@@ -44,7 +44,7 @@ from book2mp3.config import AppPaths
 from book2mp3.app_settings import load_app_settings, save_app_settings
 from book2mp3.i18n import apply_text, preferred_content_language_code, resolve_ui_language, translate_widget_tree
 from book2mp3.metadata_extractor import build_author_pronunciation_rules, guess_metadata_from_filename
-from book2mp3.pipeline.audio import concat_mp3_files, wav_to_mp3
+from book2mp3.pipeline.audio import concat_audio_files_to_mp3, concat_mp3_files, wav_to_mp3
 from book2mp3.pipeline.chunking import split_text
 from book2mp3.pipeline.extract import DocumentStructure, analyze_document_structure
 from book2mp3.preview_sessions import (
@@ -53,6 +53,7 @@ from book2mp3.preview_sessions import (
     link_saved_setting,
     list_preview_sessions,
     refresh_preview_excerpt,
+    update_preview_excerpt_text,
     update_preview_selection,
 )
 from book2mp3.tts.piper import PiperBackend
@@ -102,40 +103,75 @@ from book2mp3.voice_test_assistant import (
 from book2mp3.xtts_options import default_xtts_inference, normalize_pronunciation_rules, normalize_xtts_quality_mode
 
 
-def _compact_xtts_preview_text(text: str, max_chars: int) -> str:
-    normalized = " ".join(text.split())
-    if not normalized:
-        return ""
+_XTTS_PREVIEW_HARD_LIMIT = 2400
+_XTTS_DIALOG_TRANSLATION = str.maketrans(
+    {
+        "«": "",
+        "»": "",
+        "„": "",
+        "“": "",
+        "”": "",
+        "‚": "",
+        "‘": "",
+        "’": "'",
+    }
+)
 
-    soft_limit = max(120, min(180, max_chars))
-    hard_limit = soft_limit + 20
-    if len(normalized) <= soft_limit:
+
+def _normalize_xtts_dialog_text(text: str) -> str:
+    normalized = str(text or "").translate(_XTTS_DIALOG_TRANSLATION)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"^\s*[\"']+\s*", "", normalized)
+    normalized = re.sub(r"\s*[\"']+\s*$", "", normalized)
+    return normalized
+
+
+def _xtts_preview_sentences(text: str) -> list[str]:
+    normalized = _normalize_xtts_dialog_text(text)
+    if not normalized:
+        return []
+    return [
+        match.group(0).strip()
+        for match in re.finditer(r"[^.!?]+[.!?]+[\"']*|[^.!?]+$", normalized)
+        if match.group(0).strip()
+    ]
+
+
+def _paragraph_preview_text(text: str, hard_limit: int = _XTTS_PREVIEW_HARD_LIMIT) -> str:
+    normalized = _normalize_xtts_dialog_text(text)
+    if len(normalized) <= hard_limit:
         return normalized
 
-    sentences = [segment.strip() for segment in re.split(r"(?<=[.!?])\s+", normalized) if segment.strip()]
+    paragraphs = []
+    for paragraph in re.split(r"\n\s*\n+", str(text or "")):
+        normalized_paragraph = _normalize_xtts_dialog_text(paragraph)
+        if normalized_paragraph:
+            paragraphs.append(normalized_paragraph)
+    chosen: list[str] = []
+    total = 0
+    for paragraph in paragraphs:
+        extra = len(paragraph) + (2 if chosen else 0)
+        if chosen and total + extra > hard_limit:
+            break
+        if extra > hard_limit and not chosen:
+            break
+        chosen.append(paragraph)
+        total += extra
+    if chosen:
+        return "\n\n".join(chosen).strip()
+
+    sentences = _xtts_preview_sentences(normalized)
     chosen: list[str] = []
     total = 0
     for sentence in sentences:
         extra = len(sentence) + (1 if chosen else 0)
-        if chosen and total >= 110 and total + extra > hard_limit:
-            break
-        if total + extra > hard_limit:
+        if chosen and total + extra > hard_limit:
             break
         chosen.append(sentence)
         total += extra
-        if total >= soft_limit:
-            break
     if chosen:
-        preview = " ".join(chosen).strip()
-        if len(preview) >= 90:
-            return preview
-
-    shortened = normalized[:hard_limit].strip()
-    for marker in [". ", "! ", "? ", "; ", ": ", ", "]:
-        pos = shortened.rfind(marker, 70)
-        if pos >= 80:
-            return shortened[: pos + 1].strip()
-    return shortened
+        return " ".join(chosen).strip()
+    return normalized[:hard_limit].strip()
 
 
 def _assistant_language_label(code: str, ui_language: str = "en") -> str:
@@ -276,16 +312,22 @@ class LivePreviewWorker(QThread):
                     concat_mp3_files(mp3_files, final_preview, logger=self.logger)
                 else:
                     profile = load_voice_profile(self.paths.voice_profiles, self.voice_profile_id)
-                    preview_text = _compact_xtts_preview_text(text, self.max_chars)
+                    preview_text = _paragraph_preview_text(text)
                     spoken_preview = apply_pronunciation_rules(preview_text, self.pronunciation_rules)
+                    spoken_text = _normalize_xtts_dialog_text(spoken_preview.spoken_text)
+                    xtts_chunks = split_text(spoken_text, self.max_chars)
+                    if not xtts_chunks:
+                        raise RuntimeError("XTTS preview text is empty after normalization")
                     preview_profile = replace(profile, samples=profile.samples[:1] or profile.samples)
-                    final_preview = preview_root / "preview.wav"
+                    wav_paths = [wav_root / f"{index:03d}.wav" for index in range(1, len(xtts_chunks) + 1)]
+                    final_preview = preview_root / "preview.mp3"
                     self.logger.info(
-                        "Live preview start backend=%s source_chars=%s preview_chars=%s spoken_chars=%s max_chars=%s profile_samples=%s device_mode=%s quality_mode=%s pronunciation_rules=%s",
+                        "Live preview start backend=%s source_chars=%s preview_chars=%s spoken_chars=%s chunk_count=%s max_chars=%s profile_samples=%s device_mode=%s quality_mode=%s pronunciation_rules=%s",
                         self.backend,
                         len(text),
                         len(preview_text),
-                        len(spoken_preview.spoken_text),
+                        len(spoken_text),
+                        len(xtts_chunks),
                         self.max_chars,
                         len(preview_profile.samples),
                         self.xtts_device_mode,
@@ -293,13 +335,14 @@ class LivePreviewWorker(QThread):
                         len(self.pronunciation_rules),
                     )
                     xtts_backend.synthesize_many_to_wavs(
-                        [spoken_preview.spoken_text],
+                        xtts_chunks,
                         preview_profile,
-                        [final_preview],
+                        wav_paths,
                         length_scale=self.length_scale,
-                        enable_text_splitting=False,
+                        enable_text_splitting=bool(self.xtts_inference.get("enable_text_splitting", False)),
                         inference_options=self.xtts_inference,
                     )
+                    concat_audio_files_to_mp3(wav_paths, final_preview, logger=self.logger)
             perf_event(
                 "preview.render.complete",
                 category="preview",
@@ -409,6 +452,8 @@ class FindBestSettingDialog(QDialog):
         self.current_saved_setting_id = ""
         self.pending_benchmark_candidate_ids: list[str] = []
         self.play_preview_after_render = True
+        self._xtts_inference_override: dict[str, object] = {}
+        self._xtts_inference_override_key = ""
         self._pending_close = False
         self._shutdown_wait_attempts = 0
         self._voice_lab_dialog: VoiceLabDialog | None = None
@@ -1218,8 +1263,31 @@ class FindBestSettingDialog(QDialog):
     def current_xtts_quality_mode(self) -> str:
         return normalize_xtts_quality_mode(self.xtts_quality_mode_combo.currentData() or "fast")
 
+    def _current_xtts_inference_key(self, quality_mode: str | None = None) -> str:
+        normalized_mode = normalize_xtts_quality_mode(quality_mode or self.current_xtts_quality_mode())
+        return "::".join(
+            [
+                self.backend_combo.currentText().strip(),
+                self.voice_profile_combo.currentData() or "",
+                normalized_mode,
+            ]
+        )
+
+    def _set_xtts_inference_override(self, inference_options: dict[str, object], quality_mode: str) -> None:
+        if not inference_options:
+            self._xtts_inference_override = {}
+            self._xtts_inference_override_key = ""
+            return
+        normalized_mode = normalize_xtts_quality_mode(quality_mode or "fast")
+        self._xtts_inference_override = dict(inference_options)
+        self._xtts_inference_override_key = self._current_xtts_inference_key(normalized_mode)
+
     def current_xtts_inference(self) -> dict[str, object]:
-        return default_xtts_inference(self.current_xtts_quality_mode())
+        quality_mode = self.current_xtts_quality_mode()
+        override_key = self._current_xtts_inference_key(quality_mode)
+        if self._xtts_inference_override and self._xtts_inference_override_key == override_key:
+            return dict(self._xtts_inference_override)
+        return default_xtts_inference(quality_mode)
 
     def on_saved_setting_changed(self) -> None:
         setting_id = self.saved_settings_combo.currentData() or ""
@@ -1956,6 +2024,7 @@ class FindBestSettingDialog(QDialog):
         self.length_slider.setValue(int(round(candidate.length_scale * 100)))
         quality_index = self.xtts_quality_mode_combo.findData(candidate.xtts_quality_mode or "fast")
         self.xtts_quality_mode_combo.setCurrentIndex(quality_index if quality_index >= 0 else 0)
+        self._set_xtts_inference_override(candidate.xtts_inference, candidate.xtts_quality_mode or "fast")
         self.set_pronunciation_rules(candidate.pronunciation_rules)
         self.assistant_rating_spin.setValue(candidate.rating)
         self.assistant_note.setText(candidate.rating_note)
@@ -2146,8 +2215,12 @@ class FindBestSettingDialog(QDialog):
                 )
                 return
 
+        current_excerpt = self.excerpt_view.toPlainText().strip()
+        if current_excerpt:
+            update_preview_excerpt_text(self.paths, self.current_session_id, current_excerpt)
+
         self.status_label.setText(
-            "Preview wird direkt erzeugt. XTTS nutzt hier den Schnelltest mit kurzem Ausschnitt. "
+            "Preview wird direkt erzeugt. XTTS rendert den aktuellen Absatz in mehreren sauberen Chunks. "
             "Bitte den Dialog waehrenddessen nicht schliessen."
         )
         self.play_now_button.setEnabled(False)
@@ -2442,6 +2515,7 @@ class FindBestSettingDialog(QDialog):
             return
 
         display_name = self.setting_name.text().strip() or f"{(voice_id or voice_profile_id)}_live"
+        current_excerpt = self.excerpt_view.toPlainText().strip()
         selected_candidate = self._selected_candidate_for_profile_save()
         benchmark_average_ms = average_render_duration_ms(selected_candidate) if selected_candidate is not None else 0.0
         last_benchmark_ms = selected_candidate.render_duration_ms if selected_candidate is not None else 0.0
@@ -2475,6 +2549,8 @@ class FindBestSettingDialog(QDialog):
         self.current_saved_setting_id = setting.setting_id
         self.refresh_saved_settings()
         if self.current_session_id:
+            if current_excerpt:
+                update_preview_excerpt_text(self.paths, self.current_session_id, current_excerpt)
             update_preview_selection(
                 self.paths,
                 self.current_session_id,
@@ -2522,6 +2598,7 @@ class FindBestSettingDialog(QDialog):
         self.length_slider.setValue(int(round(setting.length_scale * 100)))
         quality_index = self.xtts_quality_mode_combo.findData(setting.xtts_quality_mode)
         self.xtts_quality_mode_combo.setCurrentIndex(quality_index if quality_index >= 0 else 0)
+        self._set_xtts_inference_override(setting.xtts_inference, setting.xtts_quality_mode)
         self.set_pronunciation_rules(setting.pronunciation_rules)
         self.setting_name.setText(setting.display_name)
         self.current_saved_setting_id = setting.setting_id

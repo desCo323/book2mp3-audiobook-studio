@@ -27,6 +27,16 @@ def copy_tree(source: Path, target: Path) -> None:
     shutil.copytree(source, target, dirs_exist_ok=True)
 
 
+def merge_tree(source: Path, target: Path) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    for item in source.iterdir():
+        item_target = target / item.name
+        if item.is_dir():
+            shutil.copytree(item, item_target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, item_target)
+
+
 def replace_file(source: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     temp_target = target.with_name(f".{target.name}.tmp")
@@ -60,10 +70,19 @@ def main() -> int:
 
     copied_sources: list[str] = []
 
-    purelib = Path(sysconfig.get_path("purelib")).resolve()
-    if purelib.exists():
-        copy_tree(purelib, dist_target)
-        copied_sources.append(str(purelib))
+    package_sources = [
+        Path(sysconfig.get_path("purelib")).resolve(),
+        Path(sysconfig.get_path("platlib")).resolve(),
+        Path(sys.prefix).resolve() / "lib" / py_version / "dist-packages",
+        Path(sys.prefix).resolve() / "lib" / py_version / "site-packages",
+    ]
+    seen_package_sources: set[Path] = set()
+    for package_source in package_sources:
+        if package_source in seen_package_sources or not package_source.exists():
+            continue
+        seen_package_sources.add(package_source)
+        merge_tree(package_source, dist_target)
+        copied_sources.append(str(package_source))
 
     user_site = Path(site.getusersitepackages()).resolve()
     if user_site.exists():

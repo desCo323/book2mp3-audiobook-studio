@@ -51,9 +51,13 @@ def synthesize_dummy_wav(
     wav_path: Path,
     length_scale: float = 1.0,
     enable_text_splitting: bool = False,
+    inference_options: dict[str, object] | None = None,
 ) -> None:
-    del self, text, profile, length_scale, enable_text_splitting
+    del self, text, profile, length_scale, enable_text_splitting, inference_options
     create_dummy_wav(wav_path, seconds=2)
+
+
+CAPTURED_XTTS_TEXTS: list[str] = []
 
 
 def synthesize_dummy_wavs(
@@ -63,14 +67,26 @@ def synthesize_dummy_wavs(
     wav_paths: list[Path],
     length_scale: float = 1.0,
     enable_text_splitting: bool = False,
+    inference_options: dict[str, object] | None = None,
 ) -> None:
-    del self, texts, profile, length_scale, enable_text_splitting
+    del self, profile, length_scale, enable_text_splitting, inference_options
+    CAPTURED_XTTS_TEXTS.clear()
+    CAPTURED_XTTS_TEXTS.extend(texts)
     for wav_path in wav_paths:
         create_dummy_wav(wav_path, seconds=2)
 
 
 def warmup_noop(self: XttsBackend, profile, *, speaker_sample_limit: int = 1) -> None:
     del self, profile, speaker_sample_limit
+
+
+def pump_events_until(app: QApplication, predicate, timeout_seconds: float) -> bool:
+    deadline = time.time() + timeout_seconds
+    while not predicate() and time.time() < deadline:
+        app.processEvents()
+        time.sleep(0.05)
+    app.processEvents()
+    return bool(predicate())
 
 
 def main() -> int:
@@ -111,7 +127,7 @@ def main() -> int:
             dialog = FindBestSettingDialog(paths, window.manager, window)
             dialog.current_source = ROOT / "test.epub"
             dialog.create_session()
-            if not dialog.current_session_id:
+            if not pump_events_until(app, lambda: bool(dialog.current_session_id), 20):
                 raise AssertionError("Preview session was not created")
 
             backend_index = dialog.backend_combo.findText("xtts")
@@ -128,30 +144,49 @@ def main() -> int:
             dialog.voice_profile_combo.setCurrentIndex(profile_index)
 
             session = {item.session_id: item for item in list_preview_sessions(paths)}[dialog.current_session_id]
-            Path(session.preview_source_file).write_text(session.preview_excerpt[:220], encoding="utf-8")
+            dialogue_excerpt = (
+                "« »Wirst du uns überhaupt nicht vermissen?« Talwyn sackte ein wenig in sich zusammen. "
+                "»Darum geht es nicht, und das weißt du auch.« »Ich weiß nur, dass wir gemeinsam am stärksten sind.« "
+                "»Und ich weiß nur, dass wir in den letzten fünf Jahren nur stagniert haben. "
+                "Wir haben unsere Fähigkeiten nicht weiterentwickelt.« »Unsere Fähigkeiten oder unsere Macht?« "
+                "»Beides.« »Was ist los, Schwester? Willst du Drachenkönigin und Südlandkönigin werden?« "
+                "»Nein. Ich will diese Blutlinie auch noch für die nächsten Jahrtausende blühen und gedeihen sehen.«"
+            )
+            Path(session.preview_source_file).write_text(dialogue_excerpt, encoding="utf-8")
+            dialog.excerpt_view.setPlainText(dialogue_excerpt)
+            dialog.max_chars_spin.setValue(220)
 
             dialog.setting_name.setText("XTTS Smoke UI Voice")
             dialog.save_setting()
             dialog.render_and_play_preview()
 
-            deadline = time.time() + 60
-            while dialog.preview_worker and dialog.preview_worker.isRunning() and time.time() < deadline:
-                app.processEvents()
-                time.sleep(0.1)
-
-            if dialog.preview_worker and dialog.preview_worker.isRunning():
+            if not pump_events_until(
+                app,
+                lambda: dialog.preview_worker is None or not dialog.preview_worker.isRunning(),
+                60,
+            ):
                 raise AssertionError("XTTS live preview worker did not finish in time")
 
             updated_session = {item.session_id: item for item in list_preview_sessions(paths)}[dialog.current_session_id]
             preview_output = Path(updated_session.last_preview_output) if updated_session.last_preview_output else None
             if not preview_output or not preview_output.exists():
                 raise AssertionError(f"Expected XTTS preview output, got: {updated_session.last_preview_output}")
+            if preview_output.suffix.lower() != ".mp3":
+                raise AssertionError(f"Expected concatenated MP3 preview, got: {preview_output}")
+            if len(CAPTURED_XTTS_TEXTS) < 2:
+                raise AssertionError(f"Expected multi-chunk XTTS preview, got {CAPTURED_XTTS_TEXTS}")
+            joined_preview = " ".join(CAPTURED_XTTS_TEXTS)
+            if "«" in joined_preview or "»" in joined_preview:
+                raise AssertionError(f"Expected guillemets to be removed before XTTS, got: {joined_preview!r}")
+            if "Drachenkönigin" not in joined_preview:
+                raise AssertionError(f"Expected later paragraph text in preview, got: {joined_preview!r}")
 
             summary = {
                 "backend": updated_session.backend,
                 "voice_profile_id": updated_session.voice_profile_id,
                 "preview_status": updated_session.last_preview_status,
                 "preview_output": str(preview_output),
+                "xtts_chunk_count": len(CAPTURED_XTTS_TEXTS),
             }
             print(json.dumps(summary, indent=2))
             window.close()
