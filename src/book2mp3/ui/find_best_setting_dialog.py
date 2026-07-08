@@ -44,7 +44,7 @@ from book2mp3.config import AppPaths
 from book2mp3.app_settings import load_app_settings, save_app_settings
 from book2mp3.i18n import apply_text, preferred_content_language_code, resolve_ui_language, translate_widget_tree
 from book2mp3.metadata_extractor import build_author_pronunciation_rules, guess_metadata_from_filename
-from book2mp3.pipeline.audio import concat_audio_files_to_mp3, concat_mp3_files, wav_to_mp3
+from book2mp3.pipeline.audio import concat_audio_files_to_mp3, concat_mp3_files, trim_wav_silence_in_place, wav_to_mp3
 from book2mp3.pipeline.chunking import split_text
 from book2mp3.pipeline.extract import DocumentStructure, analyze_document_structure
 from book2mp3.preview_sessions import (
@@ -342,6 +342,8 @@ class LivePreviewWorker(QThread):
                         enable_text_splitting=bool(self.xtts_inference.get("enable_text_splitting", False)),
                         inference_options=self.xtts_inference,
                     )
+                    for wav_path in wav_paths:
+                        trim_wav_silence_in_place(wav_path, logger=self.logger)
                     concat_audio_files_to_mp3(wav_paths, final_preview, logger=self.logger)
             perf_event(
                 "preview.render.complete",

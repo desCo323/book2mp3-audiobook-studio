@@ -30,13 +30,14 @@ class FakeXttsBackend:
         wav_paths: list[Path],
         length_scale: float = 1.0,
         enable_text_splitting: bool = False,
+        inference_options: dict[str, object] | None = None,
     ) -> None:
-        del texts, profile, length_scale, enable_text_splitting
+        del texts, profile, length_scale, enable_text_splitting, inference_options
         batch = [path.stem for path in wav_paths]
         self.calls.append(batch)
         for wav_path in wav_paths:
             wav_path.parent.mkdir(parents=True, exist_ok=True)
-            wav_path.write_bytes(b"RIFFfakeWAVEdata")
+            wav_path.write_bytes(b"RIFFfakeWAVEdata" * 16)
 
 
 def make_source_text() -> str:
@@ -51,7 +52,7 @@ def make_source_text() -> str:
 def fake_wav_to_mp3(wav_path: Path, mp3_path: Path, logger=None) -> None:
     del logger
     mp3_path.parent.mkdir(parents=True, exist_ok=True)
-    mp3_path.write_bytes(b"ID3fake-mp3-data")
+    mp3_path.write_bytes(b"ID3fake-mp3-data" * 16)
 
 
 def fake_concat_mp3_files(inputs: list[Path], output_file: Path, logger=None) -> None:
@@ -115,12 +116,19 @@ def main() -> int:
             jobs_module.concat_mp3_files = original_concat_mp3_files
 
         assert state.status == "completed", state.status
-        processed_indexes = [
-            int(line.split("Processed chunk ", 1)[1].split("/", 1)[0])
+        processed_ranges = [
+            line.split("Processed XTTS batch ", 1)[1].split(" ", 1)[0]
             for line in state.logs
-            if "Processed chunk " in line
+            if "Processed XTTS batch " in line
         ]
-        assert processed_indexes, "No processed chunk logs captured"
+        processed_indexes: list[int] = []
+        for processed_range in processed_ranges:
+            if "-" in processed_range:
+                start, end = (int(value) for value in processed_range.split("-", 1))
+                processed_indexes.extend(range(start, end + 1))
+            else:
+                processed_indexes.append(int(processed_range))
+        assert processed_indexes, "No processed XTTS batch logs captured"
         assert len(processed_indexes) == len(state.chunks), (len(processed_indexes), len(state.chunks))
         assert len(set(processed_indexes)) == len(state.chunks), processed_indexes
         assert all(chunk.status == "done" for chunk in state.chunks)

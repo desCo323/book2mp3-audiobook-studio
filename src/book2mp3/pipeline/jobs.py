@@ -22,6 +22,7 @@ from book2mp3.pipeline.audio import (
     concat_mp3_files,
     probe_media_duration_seconds,
     segment_mp3_file,
+    trim_wav_silence_in_place,
     wav_to_mp3,
 )
 from book2mp3.pipeline.chunking import split_text
@@ -372,7 +373,8 @@ class JobManager:
         self._last_runtime_state_save[state.job_id] = now
 
     def recover_interrupted_jobs(self) -> None:
-        for job in self.list_jobs():
+        for job_summary in self.list_jobs():
+            job = self.load_state(job_summary.job_id)
             logger = self.job_logger(job)
             if job.chunks:
                 job = self._reconcile_chunk_artifacts(
@@ -619,6 +621,15 @@ class JobManager:
         except OSError:
             return False
 
+    def _trim_xtts_wav_file(self, wav_path: Path, *, logger: logging.Logger) -> None:
+        if not self._audio_file_has_content(wav_path):
+            return
+        trim_wav_silence_in_place(wav_path, logger=logger)
+
+    def _trim_xtts_batch_wavs(self, wav_paths: list[Path], *, logger: logging.Logger) -> None:
+        for wav_path in wav_paths:
+            self._trim_xtts_wav_file(wav_path, logger=logger)
+
     def _run_xtts_batch_with_live_progress(
         self,
         backend: XttsBackend,
@@ -653,6 +664,7 @@ class JobManager:
                         logger=logger,
                         progress=progress,
                     )
+        self._trim_xtts_batch_wavs(wav_paths, logger=logger)
         return self._mark_xtts_batch_render_progress(
             state,
             batch,
@@ -673,6 +685,7 @@ class JobManager:
             mp3_path = Path(item.mp3_file)
             if not self._audio_file_has_content(wav_path):
                 continue
+            self._trim_xtts_wav_file(wav_path, logger=logger)
             wav_to_mp3(wav_path, mp3_path, logger=logger)
             if not self._audio_file_has_content(mp3_path):
                 logger.warning("MP3 conversion produced no usable output for chunk %s", item.index)
@@ -941,6 +954,7 @@ class JobManager:
                 "Found text-bearing XTTS chunk with WAV but missing MP3; catching up deferred postprocess for chunk %s",
                 chunk.index,
             )
+            self._trim_xtts_wav_file(wav_path, logger=logger)
             wav_to_mp3(wav_path, mp3_path, logger=logger)
             if not state.keep_wav and wav_path.exists():
                 wav_path.unlink()
@@ -1779,6 +1793,7 @@ class JobManager:
                                 )
                             if not xtts_defer_mp3:
                                 for item in batch:
+                                    self._trim_xtts_wav_file(Path(item.wav_file), logger=logger)
                                     wav_to_mp3(Path(item.wav_file), Path(item.mp3_file), logger=logger)
                                     if not self._audio_file_has_content(Path(item.mp3_file)):
                                         raise RuntimeError(f"Missing MP3 output after XTTS conversion for chunk {item.index}")

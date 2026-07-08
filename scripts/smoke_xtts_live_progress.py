@@ -26,12 +26,13 @@ class SlowFakeXttsBackend:
         wav_paths: list[Path],
         length_scale: float = 1.0,
         enable_text_splitting: bool = False,
+        inference_options: dict[str, object] | None = None,
     ) -> None:
-        del texts, profile, length_scale, enable_text_splitting
+        del texts, profile, length_scale, enable_text_splitting, inference_options
         for wav_path in wav_paths:
             wav_path.parent.mkdir(parents=True, exist_ok=True)
             time.sleep(1.2)
-            wav_path.write_bytes(b"RIFFfakeWAVEdata")
+            wav_path.write_bytes(b"RIFFfakeWAVEdata" * 16)
 
 
 def make_source_text() -> str:
@@ -46,7 +47,7 @@ def make_source_text() -> str:
 def fake_wav_to_mp3(wav_path: Path, mp3_path: Path, logger=None) -> None:
     del logger
     mp3_path.parent.mkdir(parents=True, exist_ok=True)
-    mp3_path.write_bytes(b"ID3fake-mp3-data")
+    mp3_path.write_bytes(b"ID3fake-mp3-data" * 16)
 
 
 def fake_concat_mp3_files(inputs: list[Path], output_file: Path, logger=None) -> None:

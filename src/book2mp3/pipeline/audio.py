@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import array
 import re
 import subprocess
+import sys
+import wave
 from pathlib import Path
 import logging
 
@@ -69,6 +72,138 @@ def probe_media_duration_seconds(path: Path, logger: logging.Logger | None = Non
         if logger:
             logger.debug("Probed media duration for %s: %.3fs", path, duration)
         return duration
+
+
+def _wav_rms(samples: array.array) -> float:
+    if not samples:
+        return 0.0
+    return (sum(sample * sample for sample in samples) / len(samples)) ** 0.5
+
+
+def trim_wav_silence_in_place(
+    wav_path: Path,
+    *,
+    threshold_db: float = -38.0,
+    window_ms: int = 20,
+    keep_leading_ms: int = 40,
+    keep_internal_ms: int = 280,
+    keep_trailing_ms: int = 220,
+    min_removed_ms: int = 300,
+    logger: logging.Logger | None = None,
+) -> bool:
+    """Compress excessive silence from a PCM WAV file.
+
+    XTTS can emit long silent gaps or tails for short chunks. This keeps short
+    natural pauses but removes generated dead air before MP3 conversion or concat.
+    """
+    if not wav_path.exists():
+        return False
+    try:
+        with wave.open(str(wav_path), "rb") as wav_file:
+            params = wav_file.getparams()
+            raw_frames = wav_file.readframes(params.nframes)
+    except (wave.Error, OSError):
+        return False
+
+    if params.nframes <= 0 or params.sampwidth != 2:
+        return False
+
+    samples = array.array("h")
+    samples.frombytes(raw_frames)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    if not samples:
+        return False
+
+    channels = max(1, params.nchannels)
+    frame_count = min(params.nframes, len(samples) // channels)
+    if frame_count <= 0:
+        return False
+
+    threshold = max(1, int(32767 * (10 ** (threshold_db / 20))))
+    window_frames = max(1, int(params.framerate * window_ms / 1000))
+    keep_leading_frames = max(0, int(params.framerate * keep_leading_ms / 1000))
+    keep_trailing_frames = max(0, int(params.framerate * keep_trailing_ms / 1000))
+    min_removed_frames = max(0, int(params.framerate * min_removed_ms / 1000))
+
+    windows: list[tuple[int, int, bool]] = []
+    for start_frame in range(0, frame_count, window_frames):
+        end_frame = min(frame_count, start_frame + window_frames)
+        start_sample = start_frame * channels
+        end_sample = end_frame * channels
+        is_loud = _wav_rms(samples[start_sample:end_sample]) > threshold
+        windows.append((start_frame, end_frame, is_loud))
+
+    loud_windows = [(start, end) for start, end, is_loud in windows if is_loud]
+    if not loud_windows:
+        return False
+
+    first_loud_start, _ = loud_windows[0]
+    _, last_loud_end = loud_windows[-1]
+    keep_internal_frames = max(0, int(params.framerate * keep_internal_ms / 1000))
+
+    kept = array.array("h")
+    kept_frames = 0
+    index = 0
+    while index < len(windows):
+        run_start_frame, run_end_frame, run_is_loud = windows[index]
+        index += 1
+        while index < len(windows) and windows[index][2] == run_is_loud:
+            run_end_frame = windows[index][1]
+            index += 1
+
+        keep_start = run_start_frame
+        keep_end = run_end_frame
+        if not run_is_loud:
+            run_frames = run_end_frame - run_start_frame
+            if run_end_frame <= first_loud_start:
+                keep_frames = min(run_frames, keep_leading_frames)
+                keep_start = run_end_frame - keep_frames
+            elif run_start_frame >= last_loud_end:
+                keep_frames = min(run_frames, keep_trailing_frames)
+                keep_end = run_start_frame + keep_frames
+            else:
+                keep_frames = min(run_frames, keep_internal_frames)
+                keep_end = run_start_frame + keep_frames
+
+        if keep_end <= keep_start:
+            continue
+        kept.extend(samples[keep_start * channels : keep_end * channels])
+        kept_frames += keep_end - keep_start
+
+    removed_frames = frame_count - kept_frames
+    if removed_frames < min_removed_frames:
+        return False
+    if kept_frames >= frame_count:
+        return False
+
+    trimmed_samples = kept
+    if sys.byteorder != "little":
+        trimmed_samples.byteswap()
+    temp_path = wav_path.with_name(f".{wav_path.name}.trimmed")
+    try:
+        with wave.open(str(temp_path), "wb") as trimmed_file:
+            trimmed_file.setnchannels(params.nchannels)
+            trimmed_file.setsampwidth(params.sampwidth)
+            trimmed_file.setframerate(params.framerate)
+            trimmed_file.setcomptype(params.comptype, params.compname)
+            trimmed_file.writeframes(trimmed_samples.tobytes())
+        temp_path.replace(wav_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+    if logger:
+        original_seconds = frame_count / params.framerate
+        trimmed_seconds = kept_frames / params.framerate
+        logger.info(
+            "Compressed XTTS WAV silence: %s %.2fs -> %.2fs (removed %.2fs)",
+            wav_path.name,
+            original_seconds,
+            trimmed_seconds,
+            original_seconds - trimmed_seconds,
+        )
+    return True
 
 
 def write_ffmetadata_file(

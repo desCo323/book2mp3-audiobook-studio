@@ -27,12 +27,13 @@ class FakeXttsBackend:
         wav_paths: list[Path],
         length_scale: float = 1.0,
         enable_text_splitting: bool = False,
+        inference_options: dict[str, object] | None = None,
     ) -> None:
-        del texts, profile, length_scale, enable_text_splitting
+        del texts, profile, length_scale, enable_text_splitting, inference_options
         self.calls.append([path.stem for path in wav_paths])
         for wav_path in wav_paths:
             wav_path.parent.mkdir(parents=True, exist_ok=True)
-            wav_path.write_bytes(b"RIFFfakeWAVEdata")
+            wav_path.write_bytes(b"RIFFfakeWAVEdata" * 16)
 
 
 def make_source_text() -> str:
@@ -47,7 +48,7 @@ def make_source_text() -> str:
 def fake_wav_to_mp3(wav_path: Path, mp3_path: Path, logger=None) -> None:
     del logger
     mp3_path.parent.mkdir(parents=True, exist_ok=True)
-    mp3_path.write_bytes(b"ID3recovered-mp3-data")
+    mp3_path.write_bytes(b"ID3recovered-mp3-data" * 16)
 
 
 def fake_concat_mp3_files(inputs: list[Path], output_file: Path, logger=None) -> None:
@@ -71,6 +72,7 @@ def main() -> int:
         original_batch_parameters = manager._xtts_batch_parameters
         original_parallel = manager._xtts_should_parallel_postprocess
         original_workers = manager._xtts_postprocess_workers
+        original_rechunk = manager._rechunk_xtts_job_chunks_if_needed
         original_load_voice_profile = jobs_module.load_voice_profile
         original_wav_to_mp3 = jobs_module.wav_to_mp3
         original_concat_mp3_files = jobs_module.concat_mp3_files
@@ -81,6 +83,7 @@ def main() -> int:
             manager._xtts_batch_parameters = lambda state: (2, 10_000)  # type: ignore[method-assign]
             manager._xtts_should_parallel_postprocess = lambda state: False  # type: ignore[method-assign]
             manager._xtts_postprocess_workers = lambda: 1  # type: ignore[method-assign]
+            manager._rechunk_xtts_job_chunks_if_needed = lambda state, logger: state  # type: ignore[method-assign]
             manager._finalize_outputs = lambda state, logger: None  # type: ignore[method-assign]
             jobs_module.load_voice_profile = lambda *args, **kwargs: object()
             jobs_module.wav_to_mp3 = fake_wav_to_mp3
@@ -107,11 +110,11 @@ def main() -> int:
             for index, chunk in enumerate(state.chunks[:4], start=1):
                 mp3_path = Path(chunk.mp3_file)
                 mp3_path.parent.mkdir(parents=True, exist_ok=True)
-                mp3_path.write_bytes(f"fake-{index}".encode("utf-8"))
+                mp3_path.write_bytes(f"fake-{index}".encode("utf-8") * 32)
             wav_only_chunk = state.chunks[4]
             wav_only_path = Path(wav_only_chunk.wav_file)
             wav_only_path.parent.mkdir(parents=True, exist_ok=True)
-            wav_only_path.write_bytes(b"wav-only")
+            wav_only_path.write_bytes(b"wav-only" * 32)
 
             state.chunks[0].status = "pending"
             state.chunks[1].status = "failed"
@@ -125,7 +128,8 @@ def main() -> int:
             manager.recover_interrupted_jobs()
             recovered = manager.load_state(state.job_id)
             assert recovered.status == "queued", recovered.status
-            assert [chunk.status for chunk in recovered.chunks[:5]] == ["done", "done", "done", "done", "done"]
+            first_statuses = [chunk.status for chunk in recovered.chunks[:5]]
+            assert first_statuses == ["done", "done", "done", "done", "done"], first_statuses
             assert Path(recovered.chunks[4].mp3_file).exists(), recovered.chunks[4].mp3_file
             assert not Path(recovered.chunks[4].wav_file).exists(), recovered.chunks[4].wav_file
             assert all(chunk.status == "pending" for chunk in recovered.chunks[5:])
@@ -136,6 +140,7 @@ def main() -> int:
             manager._xtts_batch_parameters = original_batch_parameters  # type: ignore[method-assign]
             manager._xtts_should_parallel_postprocess = original_parallel  # type: ignore[method-assign]
             manager._xtts_postprocess_workers = original_workers  # type: ignore[method-assign]
+            manager._rechunk_xtts_job_chunks_if_needed = original_rechunk  # type: ignore[method-assign]
             manager._finalize_outputs = original_finalize_outputs  # type: ignore[method-assign]
             jobs_module.load_voice_profile = original_load_voice_profile
             jobs_module.wav_to_mp3 = original_wav_to_mp3
