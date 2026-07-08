@@ -187,6 +187,7 @@ def speaker_cache_key(payload: dict[str, object]) -> str:
         sample_paths = [sample_paths]
     digest = hashlib.sha256()
     digest.update(str(payload.get("model_name", "")).encode("utf-8"))
+    digest.update(json.dumps(conditioning_options_from_payload(payload), sort_keys=True).encode("utf-8"))
     for sample_path in sample_paths:
         path = Path(str(sample_path))
         digest.update(str(path.resolve()).encode("utf-8"))
@@ -197,6 +198,63 @@ def speaker_cache_key(payload: dict[str, object]) -> str:
         except FileNotFoundError:
             digest.update(b"missing")
     return digest.hexdigest()
+
+
+def inference_options_from_payload(payload: dict[str, object]) -> dict[str, object]:
+    raw_options = payload.get("xtts_inference") or {}
+    if not isinstance(raw_options, dict):
+        return {}
+    return raw_options
+
+
+def _as_bool(value: object, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return default
+        return normalized not in {"0", "false", "no", "off"}
+    return bool(value)
+
+
+def _as_int(value: object, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(minimum, min(maximum, number))
+
+
+def _as_float(value: object, default: float, *, minimum: float, maximum: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(minimum, min(maximum, number))
+
+
+def _optional_float(value: object, *, minimum: float, maximum: float) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(minimum, min(maximum, number))
+
+
+def conditioning_options_from_payload(payload: dict[str, object]) -> dict[str, object]:
+    options = inference_options_from_payload(payload)
+    gpt_cond_len = _as_int(options.get("gpt_cond_len"), 30, minimum=1, maximum=30)
+    gpt_cond_chunk_len = _as_int(options.get("gpt_cond_chunk_len"), 4, minimum=1, maximum=gpt_cond_len)
+    return {
+        "gpt_cond_len": gpt_cond_len,
+        "gpt_cond_chunk_len": gpt_cond_chunk_len,
+        "max_ref_length": _as_int(options.get("max_ref_length"), 30, minimum=1, maximum=60),
+        "sound_norm_refs": _as_bool(options.get("sound_norm_refs"), default=False),
+        "librosa_trim_db": _optional_float(options.get("librosa_trim_db"), minimum=1.0, maximum=80.0),
+    }
 
 
 def conditioning_cache_path(payload: dict[str, object]) -> Path | None:
@@ -238,20 +296,27 @@ def get_conditioning_latents(
             return latents
 
     config = tts.synthesizer.tts_config
+    conditioning_options = conditioning_options_from_payload(payload)
     started = time.perf_counter()
     with perf_scope(
         "xtts.conditioning_compute",
         category="xtts",
         key=cache_key[:12],
         sample_count=len(payload.get("speaker_wav") or []),
+        gpt_cond_len=conditioning_options["gpt_cond_len"],
+        gpt_cond_chunk_len=conditioning_options["gpt_cond_chunk_len"],
+        max_ref_length=conditioning_options["max_ref_length"],
+        sound_norm_refs=conditioning_options["sound_norm_refs"],
+        librosa_trim_db=conditioning_options["librosa_trim_db"],
     ):
         with contextlib.redirect_stdout(sys.stderr), torch.inference_mode():
             latents = model.get_conditioning_latents(
                 audio_path=payload["speaker_wav"],
-                gpt_cond_len=config.gpt_cond_len,
-                gpt_cond_chunk_len=config.gpt_cond_chunk_len,
-                max_ref_length=config.max_ref_len,
-                sound_norm_refs=config.sound_norm_refs,
+                gpt_cond_len=conditioning_options["gpt_cond_len"],
+                gpt_cond_chunk_len=conditioning_options["gpt_cond_chunk_len"],
+                max_ref_length=conditioning_options["max_ref_length"],
+                sound_norm_refs=conditioning_options["sound_norm_refs"],
+                librosa_trim_db=conditioning_options["librosa_trim_db"],
             )
     conditioning_cache[cache_key] = latents
     if cache_path is not None:
@@ -266,7 +331,13 @@ def get_conditioning_latents(
         except OSError as exc:
             worker_log(f"XTTS conditioning cache save failed key={cache_key[:12]} error={exc}")
     worker_log(
-        f"XTTS conditioning cache miss key={cache_key[:12]} computed_in={time.perf_counter() - started:.2f}s"
+        "XTTS conditioning cache miss "
+        f"key={cache_key[:12]} options={json.dumps(conditioning_options, ensure_ascii=False, sort_keys=True)} "
+        f"computed_in={time.perf_counter() - started:.2f}s config_defaults="
+        f"gpt_cond_len={getattr(config, 'gpt_cond_len', '')} "
+        f"gpt_cond_chunk_len={getattr(config, 'gpt_cond_chunk_len', '')} "
+        f"max_ref_len={getattr(config, 'max_ref_len', '')} "
+        f"sound_norm_refs={getattr(config, 'sound_norm_refs', '')}"
     )
     return latents
 
@@ -307,15 +378,19 @@ def synthesize_payload(
         tts = get_tts(tts_cache, str(payload["model_name"]), device_mode)
         model = tts.synthesizer.tts_model
         gpt_cond_latent, speaker_embedding = get_conditioning_latents(payload, tts, conditioning_cache)
-        enable_text_splitting = bool(payload.get("enable_text_splitting", False))
+        inference_options = inference_options_from_payload(payload)
+        enable_text_splitting = _as_bool(
+            inference_options.get("enable_text_splitting", payload.get("enable_text_splitting", False)),
+            default=False,
+        )
         speed = 1.0 / float(payload.get("length_scale", 1.0))
-        inference_options = payload.get("xtts_inference") or {}
-        temperature = float(inference_options.get("temperature", 0.75))
-        top_p = float(inference_options.get("top_p", 0.85))
-        top_k = int(inference_options.get("top_k", 50))
-        repetition_penalty = float(inference_options.get("repetition_penalty", 10.0))
-        num_beams = int(inference_options.get("num_beams", 1))
-        do_sample = bool(inference_options.get("do_sample", True))
+        temperature = _as_float(inference_options.get("temperature"), 0.75, minimum=0.01, maximum=2.0)
+        top_p = _as_float(inference_options.get("top_p"), 0.85, minimum=0.01, maximum=1.0)
+        top_k = _as_int(inference_options.get("top_k"), 50, minimum=0, maximum=200)
+        repetition_penalty = _as_float(inference_options.get("repetition_penalty"), 10.0, minimum=0.1, maximum=20.0)
+        length_penalty = _as_float(inference_options.get("length_penalty"), 1.0, minimum=0.1, maximum=5.0)
+        num_beams = _as_int(inference_options.get("num_beams"), 1, minimum=1, maximum=8)
+        do_sample = _as_bool(inference_options.get("do_sample"), default=True)
         written_files: list[str] = []
         per_text_timings: list[dict[str, object]] = []
         for index, (text, output_file_value) in enumerate(zip(texts, output_files, strict=True), start=1):
@@ -338,6 +413,7 @@ def synthesize_payload(
                         temperature=temperature,
                         top_p=top_p,
                         top_k=top_k,
+                        length_penalty=length_penalty,
                         repetition_penalty=repetition_penalty,
                         num_beams=num_beams,
                         do_sample=do_sample,
@@ -357,7 +433,9 @@ def synthesize_payload(
             "XTTS request complete "
             f"texts={len(texts)} split={enable_text_splitting} speed={speed:.3f} device_mode={device_mode} "
             f"temperature={temperature:.2f} top_p={top_p:.2f} top_k={top_k} "
-            f"repetition_penalty={repetition_penalty:.2f} num_beams={num_beams} do_sample={do_sample} "
+            f"repetition_penalty={repetition_penalty:.2f} length_penalty={length_penalty:.2f} "
+            f"num_beams={num_beams} do_sample={do_sample} "
+            f"conditioning={json.dumps(conditioning_options_from_payload(payload), ensure_ascii=False, sort_keys=True)} "
             f"total={time.perf_counter() - request_started:.2f}s details={json.dumps(per_text_timings, ensure_ascii=False)}"
         )
         return written_files

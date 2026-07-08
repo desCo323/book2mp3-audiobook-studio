@@ -17,26 +17,53 @@ _QUALITY_DEFAULTS: dict[str, dict[str, Any]] = {
         "top_p": 0.85,
         "top_k": 50,
         "repetition_penalty": 10.0,
+        "length_penalty": 1.0,
         "num_beams": 1,
         "do_sample": True,
+        "enable_text_splitting": False,
+        "gpt_cond_len": 30,
+        "gpt_cond_chunk_len": 4,
+        "max_ref_length": 30,
+        "sound_norm_refs": False,
+        "librosa_trim_db": None,
     },
     XTTS_QUALITY_QUALITY: {
         "temperature": 0.65,
         "top_p": 0.85,
         "top_k": 50,
         "repetition_penalty": 5.0,
+        "length_penalty": 1.0,
         "num_beams": 2,
         "do_sample": True,
+        "enable_text_splitting": False,
+        "gpt_cond_len": 30,
+        "gpt_cond_chunk_len": 4,
+        "max_ref_length": 30,
+        "sound_norm_refs": False,
+        "librosa_trim_db": None,
     },
     XTTS_QUALITY_MAX: {
         "temperature": 0.60,
         "top_p": 0.85,
         "top_k": 50,
         "repetition_penalty": 5.0,
+        "length_penalty": 1.0,
         "num_beams": 2,
         "do_sample": True,
+        "enable_text_splitting": False,
+        "gpt_cond_len": 30,
+        "gpt_cond_chunk_len": 4,
+        "max_ref_length": 30,
+        "sound_norm_refs": False,
+        "librosa_trim_db": None,
     },
 }
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
 
 
 def normalize_xtts_quality_mode(mode: str | None) -> str:
@@ -59,8 +86,8 @@ def normalize_xtts_inference(
     if not payload:
         return base
     normalized = dict(base)
-    float_keys = ("temperature", "top_p", "repetition_penalty")
-    int_keys = ("top_k", "num_beams")
+    float_keys = ("temperature", "top_p", "repetition_penalty", "length_penalty")
+    int_keys = ("top_k", "num_beams", "gpt_cond_len", "gpt_cond_chunk_len", "max_ref_length")
     for key in float_keys:
         if key in payload and payload[key] is not None:
             try:
@@ -74,12 +101,31 @@ def normalize_xtts_inference(
             except (TypeError, ValueError):
                 continue
     if "do_sample" in payload:
-        normalized["do_sample"] = bool(payload["do_sample"])
+        normalized["do_sample"] = _coerce_bool(payload["do_sample"])
+    if "enable_text_splitting" in payload:
+        normalized["enable_text_splitting"] = _coerce_bool(payload["enable_text_splitting"])
+    if "sound_norm_refs" in payload:
+        normalized["sound_norm_refs"] = _coerce_bool(payload["sound_norm_refs"])
+    if "librosa_trim_db" in payload:
+        librosa_trim_db = payload["librosa_trim_db"]
+        if librosa_trim_db is None or librosa_trim_db == "":
+            normalized["librosa_trim_db"] = None
+        else:
+            try:
+                normalized["librosa_trim_db"] = float(librosa_trim_db)
+            except (TypeError, ValueError):
+                normalized["librosa_trim_db"] = None
     normalized["num_beams"] = max(1, int(normalized["num_beams"]))
     normalized["top_k"] = max(0, int(normalized["top_k"]))
     normalized["temperature"] = max(0.01, float(normalized["temperature"]))
     normalized["top_p"] = min(1.0, max(0.01, float(normalized["top_p"])))
     normalized["repetition_penalty"] = max(0.1, float(normalized["repetition_penalty"]))
+    normalized["length_penalty"] = max(0.1, float(normalized["length_penalty"]))
+    normalized["gpt_cond_len"] = max(1, min(30, int(normalized["gpt_cond_len"])))
+    normalized["gpt_cond_chunk_len"] = max(1, min(int(normalized["gpt_cond_len"]), int(normalized["gpt_cond_chunk_len"])))
+    normalized["max_ref_length"] = max(1, min(60, int(normalized["max_ref_length"])))
+    if normalized["librosa_trim_db"] is not None:
+        normalized["librosa_trim_db"] = max(1.0, min(80.0, float(normalized["librosa_trim_db"])))
     return normalized
 
 
