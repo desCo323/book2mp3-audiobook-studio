@@ -83,12 +83,12 @@ def _wav_rms(samples: array.array) -> float:
 def trim_wav_silence_in_place(
     wav_path: Path,
     *,
-    threshold_db: float = -38.0,
+    threshold_db: float = -45.0,
     window_ms: int = 20,
-    keep_leading_ms: int = 40,
-    keep_internal_ms: int = 280,
-    keep_trailing_ms: int = 220,
-    min_removed_ms: int = 300,
+    keep_leading_ms: int = 120,
+    keep_internal_ms: int = 900,
+    keep_trailing_ms: int = 650,
+    min_removed_ms: int = 1000,
     logger: logging.Logger | None = None,
 ) -> bool:
     """Compress excessive silence from a PCM WAV file.

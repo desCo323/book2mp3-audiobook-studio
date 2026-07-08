@@ -51,7 +51,7 @@ def main() -> int:
         after = probe_media_duration_seconds(noisy)
         if not changed:
             raise AssertionError("Expected long-silence WAV to be compressed")
-        if before < 5.5 or after > 2.2:
+        if before < 5.5 or after > 3.4:
             raise AssertionError(f"Unexpected trim duration before={before:.3f}s after={after:.3f}s")
 
         silent = root / "silent.wav"
