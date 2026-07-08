@@ -3,6 +3,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import os
+import stat
 import re
 import shutil
 import time
@@ -27,7 +28,7 @@ from book2mp3.pipeline.chunking import split_text
 from book2mp3.pipeline.extract import extract_document
 from book2mp3.presets import get_preset
 from book2mp3.runtime_stats import estimate_runtime, preferred_processing_mode, record_runtime_stat
-from book2mp3.tts.pronunciation import apply_pronunciation_rules
+from book2mp3.tts.pronunciation import apply_pronunciation_rules, suggest_document_pronunciation_rules
 from book2mp3.tts.piper import PiperBackend
 from book2mp3.tts.xtts import XttsBackend
 from book2mp3.utils.logging_utils import attach_job_file_logger, get_logger
@@ -50,6 +51,16 @@ def _safe_file_component(value: str) -> str:
     return cleaned or "chapter"
 
 
+def _safe_final_book_name(value: str) -> str:
+    name = (value or "").strip().strip(". ")
+    name = re.sub(r"[\\/:*?\"<>|]+", "_", name)
+    name = re.sub(r"\s+", " ", name)
+    name = re.sub(r"[._ -]+", " ", name).strip("._ -")
+    if not name:
+        return "Audiobook"
+    return name[:100] or "Audiobook"
+
+
 class JobManager:
     def __init__(self, paths: AppPaths) -> None:
         self.paths = paths
@@ -65,6 +76,157 @@ class JobManager:
             debug_enabled=app_settings.debug_logging,
         )
         return logger
+
+    def _job_final_books_dir_name(self, title: str) -> str:
+        safe_title = _safe_final_book_name(title or "")
+        return safe_title or "Audiobook"
+
+    def _job_final_books_dir(self, state: JobState) -> Path:
+        title = (state.audiobook_metadata.title or state.title or "").strip()
+        source_stem = ""
+        if state.source_file:
+            source_stem = Path(state.source_file).stem.strip()
+        return self.paths.final_books / self._job_final_books_dir_name(title or source_stem or "Audiobook")
+
+    def _remove_file_path(self, path: Path, logger: logging.Logger | None = None) -> None:
+        try:
+            path.unlink()
+        except PermissionError as exc:
+            if logger:
+                logger.warning("Could not remove final-books file %s: %s", path, exc)
+            self._rmtree_on_permission_error(path.unlink, path, exc)
+
+    def _clear_final_books_output(self, state: JobState, logger: logging.Logger | None = None) -> None:
+        target_dir = self._job_final_books_dir(state)
+        self._clear_final_books_output_path(target_dir, logger=logger)
+
+    def _copy_to_final_books(
+        self,
+        state: JobState,
+        source_path: Path,
+        target_files: set[str],
+        logger: logging.Logger,
+    ) -> None:
+        source_path = source_path.resolve()
+        if not source_path.exists():
+            return
+        target_dir = self._job_final_books_dir(state)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / source_path.name
+        try:
+            shutil.copy2(source_path, target_path)
+            target_files.add(target_path.name)
+            logger.debug("Copied finished output to final-books path: %s", target_path)
+        except OSError as exc:
+            logger.warning("Failed to copy %s to final-books output %s: %s", source_path, target_path, exc)
+
+    def _sync_final_books_outputs(self, state: JobState, logger: logging.Logger, *, previous_dir: Path | None = None) -> None:
+        primary_dir = self._job_final_books_dir(state)
+        source_output_paths = [Path(path) for path in state.final_output_files if Path(path).exists()]
+        source_manifest = Path(state.manifest_file)
+        source_chapters = Path(state.chapters_file)
+        if previous_dir and previous_dir != primary_dir and previous_dir.exists():
+            try:
+                if not primary_dir.exists():
+                    previous_dir.replace(primary_dir)
+                else:
+                    for path in previous_dir.rglob("*"):
+                        relative = path.relative_to(previous_dir)
+                        destination = primary_dir / relative
+                        if path.is_dir():
+                            destination.mkdir(parents=True, exist_ok=True)
+                        else:
+                            destination.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(path, destination)
+                    self._clear_final_books_output_path(previous_dir, logger=logger)
+            except OSError as exc:
+                logger.warning(
+                    "Could not move previous final-books folder %s to %s: %s",
+                    previous_dir,
+                    primary_dir,
+                    exc,
+                )
+                if previous_dir.exists():
+                    self._clear_final_books_output_path(previous_dir, logger=logger)
+        if not source_output_paths and not source_manifest.exists() and not source_chapters.exists():
+            return
+        if not primary_dir.exists():
+            primary_dir.mkdir(parents=True, exist_ok=True)
+
+        expected_files: set[str] = set()
+        for source_path in source_output_paths:
+            self._copy_to_final_books(state, source_path, expected_files, logger)
+
+        if source_manifest.exists():
+            self._copy_to_final_books(state, source_manifest, expected_files, logger)
+        if source_chapters.exists():
+            self._copy_to_final_books(state, source_chapters, expected_files, logger)
+
+        for existing in primary_dir.iterdir():
+            if existing.name not in expected_files:
+                if existing.is_dir():
+                    continue
+                self._remove_file_path(existing, logger=logger)
+        logger.debug("Synchronized final-books outputs for job %s in %s", state.job_id, primary_dir)
+
+    def _clear_final_books_output_path(self, target_dir: Path, logger: logging.Logger | None = None) -> None:
+        if not target_dir.exists():
+            return
+        for entry in target_dir.iterdir():
+            if entry.is_dir():
+                shutil.rmtree(
+                    entry,
+                    onexc=self._rmtree_on_permission_error,
+                )
+            else:
+                self._remove_file_path(entry, logger=logger)
+        if target_dir.exists():
+            try:
+                target_dir.rmdir()
+            except OSError as exc:
+                if logger:
+                    logger.debug("Could not remove empty final-books directory %s: %s", target_dir, exc)
+
+    def final_output_candidates(self, state: JobState) -> list[Path]:
+        final_dir = self._job_final_books_dir(state)
+        mirrored: list[Path] = []
+        workspace_outputs: list[Path] = []
+        for source_path_str in state.final_output_files:
+            source_path = Path(source_path_str)
+            candidate = final_dir / source_path.name
+            if candidate.exists():
+                mirrored.append(candidate)
+            elif source_path.exists():
+                workspace_outputs.append(source_path)
+        return mirrored or workspace_outputs
+
+    def final_books_directory(self, state: JobState) -> Path:
+        return self._job_final_books_dir(state)
+
+    def _rmtree_on_permission_error(self, func, path, exc_info) -> None:
+        if isinstance(exc_info, PermissionError):
+            modes = (
+                stat.S_IWRITE | stat.S_IREAD | stat.S_IXUSR,
+                0o700,
+            )
+            for mode in modes:
+                try:
+                    os.chmod(path, mode)
+                except OSError:
+                    pass
+            try:
+                func(path)
+            except PermissionError:
+                raise exc_info
+            except OSError:
+                raise
+        else:
+            raise exc_info
+
+    def _job_workspace_writable(self, state: JobState) -> bool:
+        job_dir = state.job_dir(self.paths.jobs)
+        probe = job_dir if job_dir.exists() else job_dir.parent
+        return os.access(probe, os.W_OK)
 
     def create_job(
         self,
@@ -300,16 +462,22 @@ class JobManager:
         app_settings = load_app_settings(self.paths.app_settings_file)
         device = self._resolved_xtts_device_mode(app_settings.xtts_device_mode)
         # XTTS is most stable with shorter chunks on CPU and still fast enough on CUDA.
+        if state.xtts_quality_mode == "max_quality":
+            return min(requested, 420 if device == "cuda" else 360)
+        if state.xtts_quality_mode == "quality":
+            return min(requested, 340 if device == "cuda" else 280)
         if device == "cuda":
             return min(requested, 280)
         return min(requested, 220)
 
     def _xtts_batch_parameters(self, state: JobState) -> tuple[int, int]:
-        del state
         app_settings = load_app_settings(self.paths.app_settings_file)
-        if self._resolved_xtts_device_mode(app_settings.xtts_device_mode) == "cuda":
-            return 12, 3600
-        return 8, 2200
+        device = self._resolved_xtts_device_mode(app_settings.xtts_device_mode)
+        if state.xtts_quality_mode == "max_quality":
+            return (10, 4200) if device == "cuda" else (6, 2160)
+        if state.xtts_quality_mode == "quality":
+            return (10, 3400) if device == "cuda" else (7, 1960)
+        return (12, 3600) if device == "cuda" else (8, 2200)
 
     def _xtts_should_defer_mp3(self, state: JobState) -> bool:
         return state.backend == "xtts" and state.output_mode in {"single_file", "chapter_files", "timed_parts"}
@@ -563,6 +731,7 @@ class JobManager:
     ) -> JobState:
         if state.backend != "xtts" or not state.chunks:
             return state
+        state = self._augment_xtts_pronunciation_rules(state, logger=logger)
         spoken_dir = state.job_dir(self.paths.jobs) / "spoken_chunks"
         spoken_dir.mkdir(parents=True, exist_ok=True)
         updated_chunks: list[ChunkRecord] = []
@@ -613,6 +782,140 @@ class JobManager:
             applied_occurrences,
         )
         return state
+
+    def _augment_xtts_pronunciation_rules(self, state: JobState, *, logger: logging.Logger) -> JobState:
+        source_text = self._xtts_pronunciation_detection_text(state)
+        if not source_text.strip():
+            return state
+        merged = list(normalize_pronunciation_rules(state.pronunciation_rules))
+        added_from_lexicon = self._append_unique_pronunciation_rules(
+            merged,
+            self._xtts_matching_global_lexicon_rules(source_text, logger=logger),
+        )
+        seed_terms = self._xtts_pronunciation_seed_terms(state)
+        suggestions = suggest_document_pronunciation_rules(
+            source_text,
+            seed_terms=seed_terms,
+            existing_rules=merged,
+            limit=80,
+        )
+        added_from_document = self._append_unique_pronunciation_rules(merged, suggestions)
+        added = added_from_lexicon + added_from_document
+        if added <= 0:
+            return state
+        state.pronunciation_rules = normalize_pronunciation_rules(merged)
+        if added_from_lexicon and added_from_document:
+            state.append_log(
+                f"Added {added} automatic XTTS pronunciation rule(s) from lexicon and this book"
+            )
+        elif added_from_lexicon:
+            state.append_log(f"Added {added_from_lexicon} automatic XTTS pronunciation rule(s) from lexicon")
+        else:
+            state.append_log(f"Added {added_from_document} automatic XTTS pronunciation rule(s) from this book")
+        logger.info(
+            "Added %s automatic XTTS pronunciation rule(s) for job %s (lexicon=%s document=%s)",
+            added,
+            state.job_id,
+            added_from_lexicon,
+            added_from_document,
+        )
+        return state
+
+    def _append_unique_pronunciation_rules(
+        self,
+        merged: list[dict[str, object]],
+        candidates: Iterable[dict[str, object]],
+    ) -> int:
+        seen_matches = {
+            str(rule.get("match", "") or "").strip().casefold()
+            for rule in merged
+            if str(rule.get("match", "") or "").strip()
+        }
+        added = 0
+        for candidate in candidates:
+            match = str(candidate.get("match", "") or "").strip()
+            if not match or match.casefold() in seen_matches:
+                continue
+            spoken_as = str(candidate.get("spoken_as", "") or match).strip() or match
+            if match.casefold() == spoken_as.casefold():
+                continue
+            seen_matches.add(match.casefold())
+            merged.append(
+                {
+                    "match": match,
+                    "spoken_as": spoken_as,
+                    "scope": "whole_phrase",
+                    "enabled": bool(candidate.get("enabled", True)),
+                }
+            )
+            added += 1
+        return added
+
+    def _xtts_matching_global_lexicon_rules(
+        self,
+        source_text: str,
+        *,
+        logger: logging.Logger,
+        limit: int = 160,
+    ) -> list[dict[str, object]]:
+        try:
+            from book2mp3.metadata_extractor.lexicon import build_pronunciation_rules
+        except Exception as exc:
+            logger.debug("Skipped global pronunciation lexicon for XTTS job: %s", exc)
+            return []
+        matches: list[dict[str, object]] = []
+        for rule in build_pronunciation_rules():
+            match = str(rule.get("match", "") or "").strip()
+            spoken_as = str(rule.get("spoken_as", "") or "").strip()
+            if not match or not spoken_as or match.casefold() == spoken_as.casefold():
+                continue
+            if not self._xtts_text_contains_rule_match(source_text, match):
+                continue
+            matches.append(rule)
+            if len(matches) >= limit:
+                break
+        return matches
+
+    def _xtts_text_contains_rule_match(self, source_text: str, match: str) -> bool:
+        parts = [re.escape(part) for part in re.split(r"\s+", match.strip()) if part]
+        if not parts:
+            return False
+        pattern = r"(?<!\w)" + r"\s+".join(parts) + r"(?!\w)"
+        return re.search(pattern, source_text, flags=re.IGNORECASE | re.UNICODE) is not None
+
+    def _xtts_pronunciation_detection_text(self, state: JobState) -> str:
+        pieces = [
+            state.audiobook_metadata.title,
+            state.audiobook_metadata.author,
+            state.title,
+            state.source_name,
+            *(chapter.title for chapter in state.chapters),
+        ]
+        extracted_path = Path(state.extracted_file)
+        if extracted_path.exists():
+            try:
+                pieces.append(extracted_path.read_text(encoding="utf-8"))
+            except OSError:
+                pass
+        return "\n".join(str(piece or "") for piece in pieces if str(piece or "").strip())
+
+    def _xtts_pronunciation_seed_terms(self, state: JobState) -> list[str]:
+        terms = [
+            state.audiobook_metadata.title,
+            state.audiobook_metadata.author,
+            state.title,
+            Path(state.source_name).stem,
+            *(chapter.title for chapter in state.chapters),
+        ]
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for term in terms:
+            text = " ".join(str(term or "").split()).strip()
+            if not text or text.casefold() in seen:
+                continue
+            seen.add(text.casefold())
+            deduped.append(text)
+        return deduped
 
     def _catch_up_xtts_deferred_mp3_artifacts(
         self,
@@ -833,6 +1136,69 @@ class JobManager:
         state.append_log(f"Failure report written: {report_path.name} ({category})")
         return state
 
+    def record_job_failure(
+        self,
+        job_id: str,
+        *,
+        error: Exception,
+        traceback_text: str = "",
+    ) -> JobState:
+        state = self.load_state(job_id)
+        logger = self.job_logger(state)
+        error_text = f"{type(error).__name__}: {error}".strip()
+        details = {"traceback": traceback_text} if traceback_text else {}
+        if isinstance(error, PermissionError):
+            blocked_target = ""
+            try:
+                blocked_target = str(Path(error.filename).resolve()) if error.filename else ""
+            except Exception:
+                blocked_target = str(error.filename or "")
+            reason = "Job-Arbeitsbereich ist nicht beschreibbar."
+            if blocked_target:
+                reason = f"{reason} Betroffen: {blocked_target}"
+            state.status = "blocked"
+            state.block_reason = reason
+            state.append_log(f"Job blocked after permission error: {error_text}")
+            try:
+                state = self._write_failure_report(
+                    state,
+                    category="workspace_permission_denied",
+                    error=error_text,
+                    recovery_result="Der Auftrag wurde aus der Queue genommen, damit kein Endlos-Neustart entsteht.",
+                    auto_recovery_attempted=False,
+                    recommended_action="Schreibrechte im Job- oder Workspace-Ordner korrigieren und den Auftrag danach manuell erneut anstellen.",
+                    details=details | {"blocked_target": blocked_target},
+                )
+            except PermissionError:
+                logger.warning("Could not write failure report for blocked job %s because the job directory is not writable", job_id)
+            try:
+                self.save_state(state)
+            except PermissionError:
+                logger.warning("Could not persist blocked state for job %s because the job directory is not writable", job_id)
+            logger.error("Blocked job %s after permission error: %s", job_id, error_text)
+            return state
+        state.status = "failed"
+        state.block_reason = ""
+        state.append_log(f"Job failed before completion: {error_text}")
+        try:
+            state = self._write_failure_report(
+                state,
+                category="job_runtime_exception",
+                error=error_text,
+                recovery_result="Der Auftrag wurde auf failed gesetzt und nicht automatisch erneut gestartet.",
+                auto_recovery_attempted=False,
+                recommended_action="Fehlerursache im Traceback prüfen und den Auftrag danach manuell erneut anstellen.",
+                details=details,
+            )
+        except PermissionError:
+            logger.warning("Could not write failure report for failed job %s because the job directory is not writable", job_id)
+        try:
+            self.save_state(state)
+        except PermissionError:
+            logger.warning("Could not persist failed state for job %s because the job directory is not writable", job_id)
+        logger.error("Marked job %s as failed after unhandled exception: %s", job_id, error_text)
+        return state
+
     def _xtts_runtime_reason(self, logger: logging.Logger | None = None) -> str:
         backend = self._xtts_backend(logger=logger)
         return backend.availability_reason()
@@ -879,6 +1245,12 @@ class JobManager:
         return f"Unsupported backend: {state.backend}"
 
     def refresh_job_availability(self, state: JobState) -> JobState:
+        if not self._job_workspace_writable(state):
+            reason = f"Job-Arbeitsbereich ist nicht beschreibbar: {state.job_dir(self.paths.jobs)}"
+            if state.status in {"queued", "prepared", "blocked"}:
+                state.status = "blocked"
+                state.block_reason = reason
+            return state
         reason = self.backend_block_reason(state)
         if reason:
             if state.backend == "xtts" and self._should_attempt_xtts_self_heal(reason) and state.auto_recovery_attempts < 1:
@@ -972,9 +1344,22 @@ class JobManager:
         return self.load_state(job_id)
 
     def delete_job(self, job_id: str) -> None:
+        state = None
+        try:
+            state = self.load_state(job_id)
+        except Exception:
+            state = None
         job_dir = self.paths.jobs / job_id
+        if state is not None:
+            try:
+                self._clear_final_books_output(state, logger=self.logger)
+            except Exception as exc:
+                self.logger.warning("Could not clear final-books mirror for %s: %s", job_id, exc)
         if job_dir.exists():
-            shutil.rmtree(job_dir)
+            shutil.rmtree(
+                job_dir,
+                onexc=self._rmtree_on_permission_error,
+            )
         self.logger.info("Deleted job %s", job_id)
 
     def update_audiobook_metadata(
@@ -985,6 +1370,7 @@ class JobManager:
         reapply_outputs: bool = True,
     ) -> JobState:
         state = self.load_state(job_id)
+        previous_dir = self._job_final_books_dir(state)
         fallback = state.audiobook_metadata
         updated_metadata = AudiobookMetadata.from_dict(metadata_overrides, fallback=fallback)
         state.audiobook_metadata = updated_metadata
@@ -994,7 +1380,10 @@ class JobManager:
         logger = self.job_logger(state)
         if reapply_outputs and self._job_has_existing_mp3_outputs(state):
             self._finalize_outputs(state, logger)
+            self._sync_final_books_outputs(state, logger, previous_dir=previous_dir)
             state.append_log("Updated MP3 tags and export manifests for all existing job MP3 files")
+        elif previous_dir != self._job_final_books_dir(state):
+            self._sync_final_books_outputs(state, logger, previous_dir=previous_dir)
         self.save_state(state)
         logger.info("Updated audiobook metadata for job %s", job_id)
         return state
@@ -1016,6 +1405,7 @@ class JobManager:
         reset_output: bool = True,
     ) -> JobState:
         state = self.load_state(job_id)
+        logger = self.job_logger(state)
         selected = {int(index) for index in chunk_indexes} if chunk_indexes else {chunk.index for chunk in state.chunks}
         for chunk in state.chunks:
             if chunk.index not in selected:
@@ -1035,6 +1425,7 @@ class JobManager:
             state.final_output_files = []
             for chapter in state.chapters:
                 chapter.output_file = ""
+            self._clear_final_books_output(state, logger=logger)
         state.status = "queued"
         state.block_reason = ""
         state.append_log(
@@ -1640,6 +2031,10 @@ class JobManager:
             path = Path(path_str)
             if path.exists():
                 path.unlink()
+        try:
+            self._clear_final_books_output(state, logger=self.job_logger(state))
+        except Exception as exc:
+            self.job_logger(state).warning("Could not clear final-books mirror while deleting artifacts for %s: %s", state.job_id, exc)
 
     def _chapter_output_files(self, state: JobState, logger: logging.Logger, *, prefer_wav: bool = False) -> list[str]:
         output_dir = Path(state.final_output_file).parent
@@ -1902,8 +2297,10 @@ class JobManager:
             )
         if output_paths:
             self._write_output_manifests(state, logger, outputs, chunk_timeline, chapter_timeline)
+            self._sync_final_books_outputs(state, logger)
             state.append_log("Applied MP3 metadata and wrote export manifests")
         else:
+            self._sync_final_books_outputs(state, logger)
             state.append_log("Applied MP3 metadata to existing chunk files")
 
     def _cleanup_intermediate_wavs(self, state: JobState, logger: logging.Logger) -> None:

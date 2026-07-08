@@ -75,15 +75,22 @@ def build_pronunciation_rules(
         spoken_as = " ".join(str(character.get("spoken_as", "") or "").split()).strip()
         if not spoken_as:
             continue
-        variants = [str(character.get("name", "") or "").strip()]
-        variants.extend(str(alias).strip() for alias in character.get("rule_aliases", []) if str(alias).strip())
-        for match in variants:
+        name = str(character.get("name", "") or "").strip()
+        variants: list[tuple[str, str]] = []
+        if name:
+            variants.append((name, spoken_as))
+        for alias in character.get("rule_aliases", []):
+            match = str(alias).strip()
             if not match:
+                continue
+            variants.append((match, _character_alias_spoken_as(name, spoken_as, match)))
+        for match, variant_spoken_as in variants:
+            if _normalize_label(match) == _normalize_label(variant_spoken_as):
                 continue
             rules.append(
                 {
                     "match": match,
-                    "spoken_as": spoken_as,
+                    "spoken_as": variant_spoken_as,
                     "scope": "whole_phrase",
                     "enabled": True,
                 }
@@ -431,3 +438,50 @@ def _author_spoken_hint(author: str) -> str:
     hinted = re.sub(r"[-]+", " ", hinted)
     hinted = re.sub(r"\s+", " ", hinted).strip()
     return hinted
+
+
+def _character_alias_spoken_as(name: str, spoken_as: str, alias: str) -> str:
+    alias = " ".join(str(alias or "").split()).strip()
+    if not alias:
+        return ""
+    name_tokens = _name_tokens(name)
+    alias_tokens = _name_tokens(alias)
+    spoken_tokens = str(spoken_as or "").split()
+    if not name_tokens or not alias_tokens or not spoken_tokens:
+        return alias
+    span_start = _token_span_start(name_tokens, alias_tokens)
+    if span_start < 0:
+        if len(alias_tokens) == len(name_tokens) and any(
+            alias_token == name_token
+            for alias_token, name_token in zip(alias_tokens, name_tokens, strict=False)
+        ):
+            return " ".join(spoken_tokens[:len(name_tokens)]).strip() or _author_spoken_hint(alias)
+        return _author_spoken_hint(alias)
+    if len(spoken_tokens) >= len(name_tokens):
+        selected = spoken_tokens[span_start:span_start + len(alias_tokens)]
+    elif len(alias_tokens) == 1 and span_start == 0:
+        selected = spoken_tokens[:1]
+    elif len(alias_tokens) == 1 and span_start == len(name_tokens) - 1:
+        selected = spoken_tokens[-1:]
+    elif span_start == 0:
+        selected = spoken_tokens[:len(alias_tokens)]
+    elif span_start + len(alias_tokens) == len(name_tokens):
+        selected = spoken_tokens[-len(alias_tokens):]
+    else:
+        selected = []
+    return " ".join(selected).strip() or _author_spoken_hint(alias)
+
+
+def _name_tokens(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKD", value.replace("’", "'"))
+    stripped = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return [token.casefold() for token in re.findall(r"[A-Za-zÄÖÜäöüß]+", stripped)]
+
+
+def _token_span_start(tokens: list[str], needle: list[str]) -> int:
+    if not needle or len(needle) > len(tokens):
+        return -1
+    for index in range(0, len(tokens) - len(needle) + 1):
+        if tokens[index:index + len(needle)] == needle:
+            return index
+    return -1

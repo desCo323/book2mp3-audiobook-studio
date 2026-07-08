@@ -64,6 +64,7 @@ from book2mp3.tts.pronunciation import (
 from book2mp3.tts.xtts import XttsBackend
 from book2mp3.presets import QUALITY_PRESETS, get_preset
 from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
+from book2mp3.ui.async_tasks import AsyncTaskRunner
 from book2mp3.ui.theme import apply_modern_window_style
 from book2mp3.utils.logging_utils import get_logger
 from book2mp3.utils.perf_logging import perf_event, perf_scope
@@ -381,6 +382,13 @@ class FindBestSettingDialog(QDialog):
         self.initial_source_path = Path(initial_source_path) if initial_source_path else None
         self.current_source: Path | None = None
         self.current_session_id: str | None = None
+        self._async_request_id = 0
+        self._active_source_analysis_request_id = 0
+        self._source_analysis_runner: AsyncTaskRunner | None = None
+        self._active_create_session_request_id = 0
+        self._create_session_runner: AsyncTaskRunner | None = None
+        self._active_new_excerpt_request_id = 0
+        self._new_excerpt_runner: AsyncTaskRunner | None = None
         self.installed_voices: list[str] = []
         self.source_structure = DocumentStructure(
             source_type="",
@@ -403,6 +411,7 @@ class FindBestSettingDialog(QDialog):
         self.play_preview_after_render = True
         self._pending_close = False
         self._shutdown_wait_attempts = 0
+        self._voice_lab_dialog: VoiceLabDialog | None = None
         self.xtts_backend = XttsBackend(paths.runtime, logger=self.logger, device_mode=self.app_settings.xtts_device_mode)
 
         self.player = QMediaPlayer(self)
@@ -441,6 +450,40 @@ class FindBestSettingDialog(QDialog):
 
     def _text(self, text: str) -> str:
         return apply_text(text, self.ui_language)
+
+    def _next_async_request_id(self) -> int:
+        self._async_request_id += 1
+        return self._async_request_id
+
+    def _connect_async_runner(
+        self,
+        runner: AsyncTaskRunner,
+        on_success,
+        on_failure,
+    ) -> None:
+        runner.success.connect(on_success)
+        runner.failure.connect(on_failure)
+        runner.finished.connect(lambda: self._cleanup_async_runner(runner))
+        runner.start()
+
+    def _cleanup_async_runner(self, runner: object) -> None:
+        if self._source_analysis_runner is runner:
+            self._source_analysis_runner = None
+        if self._create_session_runner is runner:
+            self._create_session_runner = None
+        if self._new_excerpt_runner is runner:
+            self._new_excerpt_runner = None
+        if hasattr(runner, "deleteLater"):
+            runner.deleteLater()
+
+    def _focus_existing_dialog(self, dialog: QDialog | None) -> bool:
+        if dialog is None:
+            return False
+        if dialog.isVisible():
+            dialog.activateWindow()
+            dialog.raise_()
+            return True
+        return False
 
     def _build_ui(self) -> None:
         outer_layout = QVBoxLayout(self)
@@ -1451,9 +1494,34 @@ class FindBestSettingDialog(QDialog):
                 "Es wurden weder Piper-Stimmen noch XTTS-Profile gefunden.",
             )
             return
-        session = create_preview_session(self.paths, self.current_source)
-        self.current_session_id = session.session_id
-        self.show_session(session.session_id)
+        self.source_analysis_label.setText("Sitzungserstellung läuft …")
+        request_id = self._next_async_request_id()
+        self._active_create_session_request_id = request_id
+        source_path = self.current_source
+        source_path_text = str(source_path)
+
+        def _create_preview_session() -> str:
+            return create_preview_session(self.paths, source_path).session_id
+
+        self._create_session_runner = AsyncTaskRunner(request_id, _create_preview_session, parent=self)
+
+        def on_success(rid: int, session_id: str) -> None:
+            if rid != self._active_create_session_request_id:
+                return
+            if not self.current_source or str(self.current_source) != source_path_text:
+                return
+            self.show_session(session_id)
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_create_session_request_id:
+                return
+            if not self.current_source or str(self.current_source) != source_path_text:
+                return
+            self.source_analysis_label.setText(
+                self._text("Sitzungserstellung fehlgeschlagen: ") + message.strip().splitlines()[-1]
+            )
+
+        self._connect_async_runner(self._create_session_runner, on_success, on_failure)
 
     def show_session(self, session_id: str) -> None:
         session = {item.session_id: item for item in list_preview_sessions(self.paths)}[session_id]
@@ -1539,15 +1607,53 @@ class FindBestSettingDialog(QDialog):
     def refresh_source_analysis(self) -> None:
         if not self.current_source:
             self.source_structure = self._empty_source_structure("Noch keine Quelle gewählt.")
+            self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
+            self.apply_requested_output_mode(self.output_mode_requested)
         elif not self.current_source.exists():
             self.source_structure = self._empty_source_structure(
                 "Datei noch nicht gefunden. Die Kapitelerkennung startet, sobald die Quelle vorhanden ist."
             )
+            self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
+            self.apply_requested_output_mode(self.output_mode_requested)
         else:
+            source_path = self.current_source
+            source_path_text = str(source_path)
             self.source_analysis_label.setText("Kapitelanalyse läuft …")
-            self.source_structure = analyze_document_structure(self.current_source)
-        self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
-        self.apply_requested_output_mode(self.output_mode_requested)
+            request_id = self._next_async_request_id()
+            self._active_source_analysis_request_id = request_id
+
+            def _analyze_source() -> tuple[str, DocumentStructure]:
+                return source_path_text, analyze_document_structure(source_path)
+
+            self._source_analysis_runner = AsyncTaskRunner(
+                request_id,
+                _analyze_source,
+                parent=self,
+            )
+
+            def on_success(rid: int, payload: tuple[str, DocumentStructure]) -> None:
+                if rid != self._active_source_analysis_request_id:
+                    return
+                cached_source, structure = payload
+                if not self.current_source or str(self.current_source) != cached_source:
+                    return
+                self.source_structure = structure
+                self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
+                self.apply_requested_output_mode(self.output_mode_requested)
+
+            def on_failure(rid: int, message: str) -> None:
+                if rid != self._active_source_analysis_request_id:
+                    return
+                if not self.current_source or str(self.current_source) != source_path_text:
+                    return
+                self.source_structure = self._empty_source_structure("Kapitelerkennung fehlgeschlagen.")
+                self.source_structure.analysis_status = "error"
+                self.source_structure.error = message.strip().splitlines()[-1] if message else "Unbekannter Fehler"
+                self.source_structure.summary = f"Kapitelerkennung fehlgeschlagen: {self.source_structure.error}"
+                self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
+                self.apply_requested_output_mode(self.output_mode_requested)
+
+            self._connect_async_runner(self._source_analysis_runner, on_success, on_failure)
 
     def on_output_mode_radio_toggled(self, mode: str, checked: bool) -> None:
         if not checked or self._syncing_output_mode_radios:
@@ -1591,8 +1697,32 @@ class FindBestSettingDialog(QDialog):
         if not self.current_session_id:
             QMessageBox.warning(self, "Keine Session", "Bitte zuerst ein Buch waehlen.")
             return
-        session = refresh_preview_excerpt(self.paths, self.current_session_id)
-        self.show_session(session.session_id)
+        request_id = self._next_async_request_id()
+        self._active_new_excerpt_request_id = request_id
+        session_id = self.current_session_id
+
+        self.source_analysis_label.setText("Neuen Ausschnitt wird gesucht …")
+
+        def _refresh_excerpt() -> str:
+            return refresh_preview_excerpt(self.paths, session_id).session_id
+
+        self._new_excerpt_runner = AsyncTaskRunner(request_id, _refresh_excerpt, parent=self)
+
+        def on_success(rid: int, refreshed_session_id: str) -> None:
+            if rid != self._active_new_excerpt_request_id:
+                return
+            if self.current_session_id != session_id:
+                return
+            self.show_session(refreshed_session_id)
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_new_excerpt_request_id:
+                return
+            self.source_analysis_label.setText(
+                f"Ausschnittsaktualisierung fehlgeschlagen: {message.strip().splitlines()[-1] if message else 'Unbekannter Fehler'}"
+            )
+
+        self._connect_async_runner(self._new_excerpt_runner, on_success, on_failure)
 
     def refresh_voice_test_candidates(self) -> None:
         selected_candidate_id = self.assistant_candidate_combo.currentData() or self.active_assistant_candidate_id
@@ -2401,7 +2531,14 @@ class FindBestSettingDialog(QDialog):
         )
 
     def open_voice_lab(self) -> None:
-        dialog = VoiceLabDialog(self.paths, self, ui_language=self.ui_language)
+        if self._focus_existing_dialog(self._voice_lab_dialog):
+            return
+        if self._voice_lab_dialog is None:
+            dialog = VoiceLabDialog(self.paths, self, ui_language=self.ui_language)
+            dialog.finished.connect(lambda _result: setattr(self, "_voice_lab_dialog", None))
+            self._voice_lab_dialog = dialog
+        else:
+            dialog = self._voice_lab_dialog
         dialog.exec()
         self.refresh_voice_profiles()
 

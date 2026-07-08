@@ -66,6 +66,7 @@ def copy_project_files(output_dir: Path, without_voices: bool, without_runtime: 
             copy_path(source, target)
             copied.append(label)
     for rel in [
+        "finalbooks",
         "runtime",
         "voices",
     ]:
@@ -121,6 +122,7 @@ def write_start_here(output_dir: Path) -> Path:
         "",
         "- Piper is bundled and ready to use.",
         "- Local GUI, CLI and local API are included.",
+        "- Finished MP3 exports are automatically mirrored to `finalbooks/<book-title>/`.",
         "- Saved jobs, queue resume and final MP3 export work without extra Python setup.",
         "",
         "## Included Piper language coverage",

@@ -9,6 +9,7 @@ import json
 from book2mp3.config import AppPaths
 from book2mp3.voice_lab import sanitize_profile_id
 from book2mp3.voice_lab import SUPPORTED_SAMPLE_EXTENSIONS, create_voice_profile, list_voice_profiles
+from book2mp3.voice_settings import seed_default_voice_settings
 
 
 LANGUAGE_HINTS = {"de", "en", "fr", "es", "it", "nl", "pl", "pt", "tr", "ru", "cs", "ar", "zh", "ja", "hu", "ko"}
@@ -360,6 +361,7 @@ def install_starter_xtts_profiles(paths: AppPaths) -> list[Path]:
             )
             manifests.append(manifest)
             existing_ids.add(manifest.parent.name)
+    seed_default_voice_settings(paths.voice_settings, paths.voice_profiles)
     return manifests
 
 

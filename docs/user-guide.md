@@ -271,6 +271,7 @@ If something fails, these are the first places to inspect.
 - `runtime/`: local Piper binaries
 - `voices/`: installed voice models
 - `workspace/jobs/`: all jobs and outputs
+- `finalbooks/`: finished export mirror (mp3, manifest, chapters)
 - `workspace/voice_profiles/`: Voice Lab profiles
 - `workspace/voice_settings/`: saved voice settings from the tuning mode
 

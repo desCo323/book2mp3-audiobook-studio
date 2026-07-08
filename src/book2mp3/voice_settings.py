@@ -25,6 +25,35 @@ VALID_PROFILE_STATUSES = {
     PROFILE_STATUS_APPROVED,
     PROFILE_STATUS_ARCHIVED,
 }
+DEFAULT_RAMONA_SETTING_ID = "xtts1"
+DEFAULT_RAMONA_VOICE_PROFILE_ID = "xtts_deutsch_weiblich_warm"
+_DEFAULT_RAMONA_LEXICON_AUTHORS = {
+    "G. A. Aiken",
+    "Thea Harrison",
+    "J. K. Rowling",
+    "Sara Kylie Morrighan",
+}
+_DEFAULT_RAMONA_FALLBACK_RULES = [
+    {"match": "G. A. Aiken", "spoken_as": "G A Eyken", "scope": "whole_phrase", "enabled": True},
+    {"match": "G.A. Aiken", "spoken_as": "G A Eyken", "scope": "whole_phrase", "enabled": True},
+    {"match": "Aiken, G. A.", "spoken_as": "G A Eyken", "scope": "whole_phrase", "enabled": True},
+    {"match": "Sara Kylie Morrighan", "spoken_as": "Sara Morrigan", "scope": "whole_phrase", "enabled": True},
+    {"match": "Conall Víga-Feilan", "spoken_as": "Konnal Wiga Feilan", "scope": "whole_phrase", "enabled": True},
+    {"match": "Conall", "spoken_as": "Konnal", "scope": "whole_phrase", "enabled": True},
+    {"match": "Víga-Feilan", "spoken_as": "Wiga Feilan", "scope": "whole_phrase", "enabled": True},
+    {"match": "Nikolai Vorislav", "spoken_as": "Nikolai Worislaw", "scope": "whole_phrase", "enabled": True},
+    {"match": "Nik Vorislav", "spoken_as": "Nikolai Worislaw", "scope": "whole_phrase", "enabled": True},
+    {"match": "Aleksei Vorislav", "spoken_as": "Aleksei Worislaw", "scope": "whole_phrase", "enabled": True},
+    {"match": "Bannik Vorislav", "spoken_as": "Bannik Worislaw", "scope": "whole_phrase", "enabled": True},
+    {"match": "Annwyl", "spoken_as": "Annwil", "scope": "whole_phrase", "enabled": True},
+    {"match": "Fearghus", "spoken_as": "Fergus", "scope": "whole_phrase", "enabled": True},
+    {"match": "Briec", "spoken_as": "Briek", "scope": "whole_phrase", "enabled": True},
+    {"match": "Iseabail", "spoken_as": "Isabehl", "scope": "whole_phrase", "enabled": True},
+    {"match": "Dragos Cuelebre", "spoken_as": "Dragos Kuelebre", "scope": "whole_phrase", "enabled": True},
+    {"match": "Cuelebre", "spoken_as": "Kuelebre", "scope": "whole_phrase", "enabled": True},
+    {"match": "Newt Scamander", "spoken_as": "Njut Skamander", "scope": "whole_phrase", "enabled": True},
+    {"match": "Cormoran Strike", "spoken_as": "Kormoran Streik", "scope": "whole_phrase", "enabled": True},
+]
 
 
 def normalize_profile_status(status: str | None) -> str:
@@ -301,6 +330,60 @@ def load_voice_setting(root: Path, setting_id: str) -> VoiceSetting:
     )
     payload["pronunciation_rules"] = normalize_pronunciation_rules(payload.get("pronunciation_rules"))
     return VoiceSetting(**payload)
+
+
+def seed_default_voice_settings(root: Path, voice_profiles_root: Path) -> list[VoiceSetting]:
+    """Create the approved Ramona Live XTTS setting for fresh workspaces."""
+    if list(_settings_dir(root).glob("*.json")):
+        return []
+    if not (voice_profiles_root / DEFAULT_RAMONA_VOICE_PROFILE_ID / "profile.json").exists():
+        return []
+    return [
+        save_voice_setting(
+            root,
+            display_name="Ramona Live XTTS",
+            backend="xtts",
+            voice_id="de_DE-ramona-low",
+            voice_profile_id=DEFAULT_RAMONA_VOICE_PROFILE_ID,
+            preset_hint="premium_natural",
+            max_chars=420,
+            output_mode="chapter_files",
+            target_part_minutes=20,
+            sentence_silence=0.24,
+            length_scale=1.03,
+            notes=(
+                "Approved Ramona live profile with max-quality XTTS settings, longer chunks "
+                "and automatic fantasy-name pronunciation rules."
+            ),
+            status=PROFILE_STATUS_APPROVED,
+            approved_at=utc_now(),
+            xtts_quality_mode="max_quality",
+            xtts_inference={
+                "temperature": 0.65,
+                "top_p": 0.85,
+                "top_k": 50,
+                "repetition_penalty": 5.0,
+                "num_beams": 2,
+                "do_sample": True,
+            },
+            pronunciation_rules=_default_ramona_pronunciation_rules(),
+            setting_id=DEFAULT_RAMONA_SETTING_ID,
+        )
+    ]
+
+
+def _default_ramona_pronunciation_rules() -> list[dict[str, Any]]:
+    try:
+        from book2mp3.metadata_extractor.lexicon import build_pronunciation_rules
+
+        rules = build_pronunciation_rules(authors=_DEFAULT_RAMONA_LEXICON_AUTHORS)
+    except Exception:
+        rules = _DEFAULT_RAMONA_FALLBACK_RULES
+    return normalize_pronunciation_rules(
+        rule
+        for rule in rules
+        if str(rule.get("match", "")).casefold() != str(rule.get("spoken_as", "")).casefold()
+    )
 
 
 def update_voice_setting_status(root: Path, setting_id: str, status: str) -> VoiceSetting:

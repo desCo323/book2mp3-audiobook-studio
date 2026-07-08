@@ -60,6 +60,9 @@ class VoiceLabDialog(QDialog):
         translate_widget_tree(self, self.ui_language)
         self.refresh_existing_profiles()
 
+    def _text(self, text: str) -> str:
+        return apply_text(text, self.ui_language)
+
     def _build_ui(self) -> None:
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(8, 8, 8, 8)
@@ -216,10 +219,8 @@ class VoiceLabDialog(QDialog):
                 ensure_ascii=False,
             )
         )
-        QMessageBox.information(
-            self,
-            "XTTS-Sprecher importiert",
-            f"{len(manifests)} XTTS-Sprecherprofile aus dem WebUI-Ordner importiert.",
+        self.runtime_intro.setText(
+            self._text(f"{len(manifests)} XTTS-Sprecherprofile aus dem WebUI-Ordner importiert.")
         )
 
     def auto_import_webui_speakers(self) -> None:
@@ -248,10 +249,8 @@ class VoiceLabDialog(QDialog):
                 ensure_ascii=False,
             )
         )
-        QMessageBox.information(
-            self,
-            "XTTS-Sprecher importiert",
-            f"{len(manifests)} XTTS-Sprecherprofile automatisch aus {source_root} importiert.",
+        self.runtime_intro.setText(
+            self._text(f"{len(manifests)} XTTS-Sprecherprofile automatisch aus {source_root} importiert.")
         )
 
     def show_candidate_locations(self) -> None:
@@ -268,11 +267,7 @@ class VoiceLabDialog(QDialog):
         manifests = install_starter_xtts_profiles(self.paths)
         self.refresh_existing_profiles()
         if not manifests:
-            QMessageBox.information(
-                self,
-                "Starter bereits vorhanden",
-                "Die XTTS-Starterprofile sind bereits installiert.",
-            )
+            self.runtime_intro.setText("Die XTTS-Starterprofile sind bereits installiert.")
             return
         self.details.setPlainText(
             json.dumps(
@@ -284,11 +279,7 @@ class VoiceLabDialog(QDialog):
                 ensure_ascii=False,
             )
         )
-        QMessageBox.information(
-            self,
-            "Starter installiert",
-            f"{len(manifests)} XTTS-Starterprofile wurden installiert.",
-        )
+        self.runtime_intro.setText(self._text(f"{len(manifests)} XTTS-Starterprofile wurden installiert."))
 
     def save_profile(self) -> None:
         name = self.name_edit.text().strip()
@@ -310,11 +301,7 @@ class VoiceLabDialog(QDialog):
         self.refresh_existing_profiles()
         payload = json.loads(manifest.read_text(encoding="utf-8"))
         self.details.setPlainText(json.dumps(payload, indent=2, ensure_ascii=False))
-        QMessageBox.information(
-            self,
-            "Profil gespeichert",
-            "XTTS-Profil gespeichert. Darauf kann jetzt im Profilstudio und in Produktionsprofilen aufgebaut werden.",
-        )
+        self.runtime_intro.setText("XTTS-Profil gespeichert. Darauf kann jetzt im Profilstudio und in Produktionsprofilen aufgebaut werden.")
 
     def refresh_existing_profiles(self) -> None:
         self.profile_list.clear()

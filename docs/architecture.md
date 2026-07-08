@@ -64,6 +64,16 @@ workspace/jobs/<job-id>/
 
 This makes resume deterministic and keeps cleanup local to one job.
 
+Completed outputs are additionally mirrored to the application root as:
+
+```text
+finalbooks/
+  <title>/
+    *.mp3
+    manifest.json
+    chapters.json
+```
+
 ### Persistent queue
 
 The application is designed as a queue runner, not as a single-job launcher.

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 import re
+import unicodedata
 from typing import Any
 
 from book2mp3.xtts_options import normalize_pronunciation_rules
@@ -14,16 +16,90 @@ _NAME_CANDIDATE_PATTERN = re.compile(
     r"\b[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’\-]{2,}(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’\-]{2,})*\b"
 )
 _COMMON_NAME_WORDS = {
-    "Kapitel",
-    "Chapter",
-    "Teil",
-    "Prolog",
-    "Epilog",
+    "Aber",
+    "Abend",
+    "Alle",
+    "Alles",
+    "Als",
+    "Also",
+    "Am",
+    "An",
+    "And",
     "Audiobook",
-    "Segment",
-    "Gesamttext",
+    "Auf",
+    "Aus",
+    "Bei",
+    "Beim",
+    "Bis",
+    "Das",
+    "Dass",
+    "De",
+    "Den",
+    "Der",
+    "Des",
+    "Die",
+    "Doch",
+    "Donnerstag",
     "Dragon",
+    "Durch",
+    "Ein",
+    "Eine",
+    "Einem",
+    "Einen",
+    "Einer",
+    "Eines",
+    "Epilog",
+    "Er",
+    "Es",
+    "Freitag",
+    "Fuer",
+    "Für",
+    "Gesamttext",
+    "Heute",
+    "Ich",
+    "Kapitel",
+    "Kein",
+    "Keine",
+    "Man",
+    "Mit",
+    "Mittwoch",
+    "Montag",
+    "Nach",
+    "Noch",
+    "Nun",
+    "Oder",
+    "Prolog",
+    "Samstag",
+    "Schon",
+    "Segment",
+    "Sie",
+    "Sonntag",
+    "Teil",
+    "Und",
+    "Vom",
+    "Von",
+    "Vor",
+    "Was",
+    "Wenn",
+    "Wer",
+    "Wie",
+    "Wir",
+    "Zum",
+    "Zur",
+    "Chapter",
 }
+_GERMAN_DIACRITICS = str.maketrans(
+    {
+        "Ä": "Ae",
+        "Ö": "Oe",
+        "Ü": "Ue",
+        "ä": "ae",
+        "ö": "oe",
+        "ü": "ue",
+        "ß": "ss",
+    }
+)
+_NAME_TOKEN_RE = re.compile(r"[A-Za-zÄÖÜäöüß]+")
 
 
 def spoken_hint(candidate: str) -> str:
@@ -40,8 +116,15 @@ def spoken_hint(candidate: str) -> str:
     hinted = re.sub(r"[_/,;]+", " ", hinted)
     hinted = re.sub(r"[-]+", " ", hinted)
     hinted = hinted.replace("’", " ").replace("'", " ")
+    hinted = _strip_non_german_diacritics(hinted)
     hinted = re.sub(r"\s+", " ", hinted).strip()
     return hinted or str(candidate or "").strip()
+
+
+def _strip_non_german_diacritics(value: str) -> str:
+    protected = value.translate(_GERMAN_DIACRITICS)
+    normalized = unicodedata.normalize("NFKD", protected)
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
 
 
 @dataclass
@@ -148,6 +231,69 @@ def suggest_pronunciation_candidates(
     return suggestions
 
 
+def suggest_document_pronunciation_rules(
+    text: str,
+    *,
+    seed_terms: list[str] | tuple[str, ...] | None = None,
+    existing_rules: list[dict[str, Any]] | None = None,
+    limit: int = 80,
+    min_occurrences: int = 2,
+) -> list[dict[str, str]]:
+    existing = {
+        str(rule.get("match", "") or "").strip().casefold()
+        for rule in normalize_pronunciation_rules(existing_rules)
+    }
+    suggestions: list[dict[str, str]] = []
+    seen: set[str] = set(existing)
+
+    for suggestion in suggest_explicit_pronunciation_candidates(
+        list(seed_terms or []),
+        existing_rules=existing_rules,
+        limit=24,
+        reason="metadata_or_heading_name",
+    ):
+        _append_name_suggestion(suggestions, suggestion, seen, limit)
+
+    counts: Counter[str] = Counter()
+    canonical: dict[str, str] = {}
+    for raw_candidate in _iter_name_candidates(text):
+        candidate = _clean_name_candidate(raw_candidate)
+        if not _is_document_name_candidate(candidate):
+            continue
+        folded = candidate.casefold()
+        counts[folded] += 1
+        canonical.setdefault(folded, candidate)
+        for token in _interesting_name_tokens(candidate):
+            token_folded = token.casefold()
+            counts[token_folded] += 1
+            canonical.setdefault(token_folded, token)
+
+    ranked = sorted(
+        canonical.items(),
+        key=lambda item: (_candidate_priority(item[1], counts[item[0]]), counts[item[0]], len(item[1])),
+        reverse=True,
+    )
+    for folded, candidate in ranked:
+        if folded in seen:
+            continue
+        occurrences = counts[folded]
+        if occurrences < max(1, min_occurrences) and not _name_has_strong_signal(candidate):
+            continue
+        _append_name_suggestion(
+            suggestions,
+            {
+                "match": candidate,
+                "spoken_as": spoken_hint(candidate),
+                "reason": _suggestion_reason(candidate),
+            },
+            seen,
+            limit,
+        )
+        if len(suggestions) >= max(1, limit):
+            break
+    return suggestions
+
+
 def suggest_explicit_pronunciation_candidates(
     terms: list[str] | tuple[str, ...],
     *,
@@ -187,3 +333,90 @@ def _suggestion_reason(candidate: str) -> str:
     if " " in candidate:
         return "multi_word_name"
     return "capitalized_name"
+
+
+def _iter_name_candidates(text: str) -> list[str]:
+    pieces: list[str] = []
+    cursor = 0
+    for protected in _PROTECTED_BLOCK_PATTERN.finditer(text):
+        if protected.start() > cursor:
+            pieces.extend(match.group(0) for match in _NAME_CANDIDATE_PATTERN.finditer(text[cursor:protected.start()]))
+        cursor = protected.end()
+    if cursor < len(text):
+        pieces.extend(match.group(0) for match in _NAME_CANDIDATE_PATTERN.finditer(text[cursor:]))
+    return pieces
+
+
+def _clean_name_candidate(candidate: str) -> str:
+    return " ".join(str(candidate or "").replace("’", "'").split()).strip(" ,.;:!?()[]{}\"")
+
+
+def _is_document_name_candidate(candidate: str) -> bool:
+    if len(candidate) < 4 or len(candidate) > 80:
+        return False
+    tokens = _NAME_TOKEN_RE.findall(candidate)
+    if not tokens:
+        return False
+    if all(token in _COMMON_NAME_WORDS for token in tokens):
+        return False
+    if len(tokens) == 1 and tokens[0] in _COMMON_NAME_WORDS:
+        return False
+    return any(len(token) >= 4 and token not in _COMMON_NAME_WORDS for token in tokens)
+
+
+def _interesting_name_tokens(candidate: str) -> list[str]:
+    tokens = [
+        token
+        for token in _NAME_TOKEN_RE.findall(candidate)
+        if len(token) >= 4 and token not in _COMMON_NAME_WORDS
+    ]
+    if len(tokens) <= 1:
+        return []
+    return tokens
+
+
+def _name_has_strong_signal(candidate: str) -> bool:
+    if any(marker in candidate for marker in ("-", "'", "’")):
+        return True
+    if _strip_non_german_diacritics(candidate) != candidate.translate(_GERMAN_DIACRITICS):
+        return True
+    tokens = _NAME_TOKEN_RE.findall(candidate)
+    return len(tokens) >= 2
+
+
+def _candidate_priority(candidate: str, occurrences: int) -> int:
+    score = min(occurrences, 8)
+    if _name_has_strong_signal(candidate):
+        score += 5
+    if " " in candidate:
+        score += 3
+    return score
+
+
+def _append_name_suggestion(
+    suggestions: list[dict[str, str]],
+    suggestion: dict[str, str],
+    seen: set[str],
+    limit: int,
+) -> None:
+    if len(suggestions) >= max(1, limit):
+        return
+    match = _clean_name_candidate(str(suggestion.get("match", "") or ""))
+    if not match:
+        return
+    folded = match.casefold()
+    if folded in seen or not _is_document_name_candidate(match):
+        return
+    seen.add(folded)
+    spoken_as = " ".join(str(suggestion.get("spoken_as", "") or spoken_hint(match)).split()).strip() or match
+    if spoken_as.casefold() == match.casefold():
+        return
+    suggestions.append(
+        {
+            "match": match,
+            "spoken_as": spoken_as,
+            "scope": "whole_phrase",
+            "enabled": True,
+            "reason": str(suggestion.get("reason", "") or _suggestion_reason(match)),
+        }
+    )

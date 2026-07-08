@@ -29,6 +29,7 @@ book2mp3/
   src/
   runtime/
   voices/
+  finalbooks/
   workspace/
   THIRD_PARTY_NOTICES.md
   python/

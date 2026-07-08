@@ -45,6 +45,7 @@ def _quarantine_path(path: Path, reason: str) -> Path:
 class AppPaths:
     root: Path
     workspace: Path
+    final_books: Path
     jobs: Path
     runtime: Path
     voices: Path
@@ -62,6 +63,7 @@ class AppPaths:
         return cls(
             root=root,
             workspace=workspace,
+            final_books=root / "finalbooks",
             jobs=workspace / "jobs",
             runtime=_prefer_local_or_parent(root, "runtime"),
             voices=_prefer_local_or_parent(root, "voices"),
@@ -80,7 +82,7 @@ class AppPaths:
         for path in (self.runtime, self.voices):
             path.mkdir(parents=True, exist_ok=True)
 
-        for path in (self.jobs, self.logs, self.statistics, self.voice_profiles, self.voice_settings, self.preview_sessions):
+        for path in (self.final_books, self.jobs, self.logs, self.statistics, self.voice_profiles, self.voice_settings, self.preview_sessions):
             path.parent.mkdir(parents=True, exist_ok=True)
             if path.exists():
                 if not path.is_dir():

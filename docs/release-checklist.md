@@ -41,6 +41,7 @@ This checklist is the practical go/no-go guide before presenting `book2mp3` as a
 
 - bundle contains `START_HERE.md`
 - bundle contains app-local Python runtime(s)
+- bundle contains `finalbooks/` for copied completed audiobook exports
 - bundle starts through `start.sh` / `start.bat`
 - users do not need to install Python manually
 - bundle checker passes:

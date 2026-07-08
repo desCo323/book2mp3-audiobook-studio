@@ -16,7 +16,7 @@ import requests
 from book2mp3.app_settings import AppSettings, load_app_settings, reset_workspace_state, save_app_settings
 from book2mp3.config import AppPaths
 from book2mp3.metadata_extractor import (
-    build_author_pronunciation_rules,
+    build_pronunciation_rules,
     extract_metadata_from_source,
     guess_metadata_from_filename,
     search_online_book_metadata,
@@ -40,6 +40,7 @@ from book2mp3.voice_settings import (
     list_voice_settings,
     load_voice_setting,
     profile_status_label,
+    seed_default_voice_settings,
     update_voice_setting_status,
 )
 from book2mp3.xtts_options import default_xtts_inference, normalize_pronunciation_rules, normalize_xtts_inference, normalize_xtts_quality_mode
@@ -53,6 +54,7 @@ class Book2Mp3Service:
     def __init__(self, paths: AppPaths) -> None:
         self.paths = paths
         self.paths.ensure()
+        seed_default_voice_settings(self.paths.voice_settings, self.paths.voice_profiles)
         self.manager = JobManager(paths)
         self.logger = get_logger("service")
         self._metadata_history_warning_emitted = False
@@ -247,7 +249,7 @@ class Book2Mp3Service:
         if backend == "xtts":
             resolved_pronunciation_rules = self._merge_pronunciation_rules(
                 resolved_pronunciation_rules,
-                build_author_pronunciation_rules(authors={metadata.author}),
+                build_pronunciation_rules(authors={metadata.author}),
             )
         state = self.manager.create_job(
             source_path=source,
@@ -571,6 +573,7 @@ class Book2Mp3Service:
             "paths": {
                 "root": self._path_info(self.paths.root),
                 "workspace": self._path_info(self.paths.workspace),
+                "final_books": self._path_info(self.paths.final_books),
                 "jobs": self._path_info(self.paths.jobs),
                 "logs": self._path_info(self.paths.logs),
                 "statistics": self._path_info(self.paths.statistics),

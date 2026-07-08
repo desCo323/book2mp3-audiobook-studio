@@ -39,6 +39,15 @@ class JobWorker(QThread):
             self.logger.warning("Worker stopped for job %s", self.state.job_id)
             state = self.manager.load_state(self.state.job_id)
             self.job_finished.emit(state)
-        except Exception:
+        except Exception as exc:
+            trace = traceback.format_exc()
             self.logger.exception("Worker failed for job %s", self.state.job_id)
-            self.job_failed.emit(traceback.format_exc())
+            try:
+                self.manager.record_job_failure(
+                    self.state.job_id,
+                    error=exc,
+                    traceback_text=trace,
+                )
+            except Exception:
+                self.logger.exception("Failed to persist job failure state for %s", self.state.job_id)
+            self.job_failed.emit(trace)

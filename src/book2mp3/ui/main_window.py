@@ -5,6 +5,7 @@ import shutil
 from collections import Counter
 from pathlib import Path
 import time
+from typing import Any
 
 from PySide6.QtCore import QStringListModel, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QDialog,
     QProgressBar,
     QRadioButton,
     QScrollArea,
@@ -60,6 +62,7 @@ from book2mp3.tts.xtts import XttsBackend
 from book2mp3.ui.find_best_setting_dialog import FindBestSettingDialog
 from book2mp3.ui.theme import apply_modern_window_style
 from book2mp3.ui.voice_lab_dialog import VoiceLabDialog
+from book2mp3.ui.async_tasks import AsyncTaskRunner
 from book2mp3.ui.worker import JobWorker
 from book2mp3.ui.xtts_setup_dialog import XttsSetupDialog
 from book2mp3.utils.logging_utils import configure_logging, get_logger
@@ -116,6 +119,30 @@ class MainWindow(QMainWindow):
         self.installed_voice_ids: list[str] = []
         self.selected_source_files: list[Path] = []
         self.pause_requested_job_id: str | None = None
+        self._async_request_id = 0
+        self._active_source_analysis_request_id = 0
+        self._source_analysis_runner: AsyncTaskRunner | None = None
+        self._active_metadata_request_id = 0
+        self._metadata_runner: AsyncTaskRunner | None = None
+        self._active_metadata_save_request_id = 0
+        self._metadata_save_runner: AsyncTaskRunner | None = None
+        self._active_metadata_search_request_id = 0
+        self._metadata_search_runner: AsyncTaskRunner | None = None
+        self._active_finished_metadata_request_id = 0
+        self._finished_metadata_runner: AsyncTaskRunner | None = None
+        self._active_finished_metadata_search_request_id = 0
+        self._finished_metadata_search_runner: AsyncTaskRunner | None = None
+        self._active_finished_metadata_save_request_id = 0
+        self._finished_metadata_save_runner: AsyncTaskRunner | None = None
+        self._active_delete_job_request_id = 0
+        self._delete_job_runner: AsyncTaskRunner | None = None
+        self._active_delete_finished_job_request_id = 0
+        self._delete_finished_job_runner: AsyncTaskRunner | None = None
+        self._active_diagnostics_request_id = 0
+        self._diagnostics_runner: AsyncTaskRunner | None = None
+        self._xtts_setup_dialog: XttsSetupDialog | None = None
+        self._voice_lab_dialog: VoiceLabDialog | None = None
+        self._find_best_setting_dialog: FindBestSettingDialog | None = None
         self.source_structures: dict[str, DocumentStructure] = {}
         self.source_structure = DocumentStructure(
             source_type="",
@@ -159,6 +186,54 @@ class MainWindow(QMainWindow):
 
     def _tr(self, key: str, **kwargs) -> str:
         return tr(self.ui_language, key, **kwargs)
+
+    def _next_async_request_id(self) -> int:
+        self._async_request_id += 1
+        return self._async_request_id
+
+    def _connect_async_runner(
+        self,
+        runner: AsyncTaskRunner,
+        on_success,
+        on_failure,
+    ) -> None:
+        runner.success.connect(on_success)
+        runner.failure.connect(on_failure)
+        runner.finished.connect(lambda: self._cleanup_async_runner(runner))
+        runner.start()
+
+    def _cleanup_async_runner(self, runner: object) -> None:
+        if self._source_analysis_runner is runner:
+            self._source_analysis_runner = None
+        if self._metadata_runner is runner:
+            self._metadata_runner = None
+        if self._metadata_search_runner is runner:
+            self._metadata_search_runner = None
+        if self._finished_metadata_runner is runner:
+            self._finished_metadata_runner = None
+        if self._finished_metadata_search_runner is runner:
+            self._finished_metadata_search_runner = None
+        if self._metadata_save_runner is runner:
+            self._metadata_save_runner = None
+        if self._finished_metadata_save_runner is runner:
+            self._finished_metadata_save_runner = None
+        if self._delete_job_runner is runner:
+            self._delete_job_runner = None
+        if self._delete_finished_job_runner is runner:
+            self._delete_finished_job_runner = None
+        if self._diagnostics_runner is runner:
+            self._diagnostics_runner = None
+        if hasattr(runner, "deleteLater"):
+            runner.deleteLater()
+
+    def _focus_existing_dialog(self, dialog: QDialog | None) -> bool:
+        if dialog is None:
+            return False
+        if dialog.isVisible():
+            dialog.activateWindow()
+            dialog.raise_()
+            return True
+        return False
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -1139,6 +1214,7 @@ class MainWindow(QMainWindow):
         if not self.selected_source_files:
             self.source_structure = self._empty_source_structure("Noch keine Quelle gewählt.")
             self.source_count_label.setText(self._tr("source.count.none"))
+            self.apply_job_output_mode_availability()
         else:
             self.source_analysis_label.setText({
                 "de": "Kapitelanalyse läuft …",
@@ -1146,36 +1222,69 @@ class MainWindow(QMainWindow):
                 "es": "Analizando capítulos …",
                 "pt": "Analisando capítulos …",
             }.get(self.ui_language, "Chapter analysis running …"))
-            for source in self.selected_source_files:
-                if not source.exists():
-                    structure = self._empty_source_structure(
-                        "Datei noch nicht gefunden. Die Kapitelerkennung startet, sobald der Pfad gültig ist."
-                    )
-                    structure.source_type = source.suffix.lower().lstrip(".")
-                    structure.analysis_status = "error"
-                    structure.error = f"Datei nicht gefunden: {source}"
+            request_id = self._next_async_request_id()
+            self._active_source_analysis_request_id = request_id
+            sources = list(self.selected_source_files)
+
+            def _analyze_source_paths(paths: list[Path]) -> list[tuple[str, dict[str, object]]]:
+                results: list[tuple[str, dict[str, object]]] = []
+                for item in paths:
+                    results.append((str(item), dict(self.service.analyze_source(item))))
+                return results
+
+            self._source_analysis_runner = AsyncTaskRunner(request_id, lambda: _analyze_source_paths(sources), parent=self)
+
+            def on_success(rid: int, payload: list[tuple[str, dict[str, object]]]) -> None:
+                if rid != self._active_source_analysis_request_id:
+                    return
+                structures: dict[str, DocumentStructure] = {}
+                for source_text, raw in payload:
+                    try:
+                        structure = DocumentStructure(**raw)
+                    except Exception:
+                        structure = self._empty_source_structure(
+                            f"Fehler bei der Analyse von {source_text}."
+                        )
+                        structure.analysis_status = "error"
+                    structures[source_text] = structure
+                self.source_structures = structures
+                if sources:
+                    self.source_structure = self.source_structures.get(str(sources[0]), self._empty_source_structure("Noch keine Quelle gewählt."))
                 else:
-                    structure = DocumentStructure(**self.service.analyze_source(source))
-                self.source_structures[str(source)] = structure
-            self.source_structure = self.source_structures.get(str(self.selected_source_files[0]), self._empty_source_structure("Noch keine Quelle gewählt."))
-            supported_count = sum(1 for structure in self.source_structures.values() if structure.supports_chapter_files)
-            total_count = len(self.selected_source_files)
-            self.source_count_label.setText(self._tr("source.count", total=total_count, supported=supported_count))
-            self.refresh_source_list()
-            if total_count == 1:
-                self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
-            else:
-                self.source_analysis_label.setText(
-                    self._tr(
-                        "source.analysis.multi",
-                        total=total_count,
-                        supported=supported_count,
-                        fallback=total_count - supported_count,
+                    self.source_structure = self._empty_source_structure("Noch keine Quelle gewählt.")
+                supported_count = sum(1 for structure in self.source_structures.values() if structure.supports_chapter_files)
+                total_count = len(sources)
+                self.source_count_label.setText(self._tr("source.count", total=total_count, supported=supported_count))
+                self.refresh_source_list()
+                if total_count == 1 and sources:
+                    source_text = str(sources[0])
+                    structure = self.source_structures.get(source_text, self.source_structure)
+                    self.source_analysis_label.setText(self._source_structure_summary_text(structure))
+                elif total_count:
+                    self.source_analysis_label.setText(
+                        self._tr(
+                            "source.analysis.multi",
+                            total=total_count,
+                            supported=supported_count,
+                            fallback=total_count - supported_count,
+                        )
                     )
-                )
-        if not self.selected_source_files:
-            self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
-        self.apply_job_output_mode_availability()
+                else:
+                    self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
+                self.apply_job_output_mode_availability()
+
+            def on_failure(rid: int, message: str) -> None:
+                if rid != self._active_source_analysis_request_id:
+                    return
+                self.logger.warning("Source analysis failed", extra={"reason": message})
+                self.source_structure = self._empty_source_structure("Kapitelerkennung fehlgeschlagen.")
+                self.source_count_label.setText(self._tr("source.count.none"))
+                self.source_analysis_label.setText("Kapitelerkennung fehlgeschlagen. Bitte erneut versuchen.")
+                self.apply_job_output_mode_availability()
+
+            self._connect_async_runner(self._source_analysis_runner, on_success, on_failure)
+            return
+        self.source_analysis_label.setText(self._source_structure_summary_text(self.source_structure))
 
     def refresh_source_list(self) -> None:
         self.source_list.clear()
@@ -1243,6 +1352,89 @@ class MainWindow(QMainWindow):
     def _active_metadata_source(self) -> Path | None:
         return self.selected_source_files[0] if self.selected_source_files else None
 
+    @staticmethod
+    def _metadata_value_as_text(value: object) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                text = MainWindow._metadata_value_as_text(item)
+                if text:
+                    return text
+            return ""
+        if isinstance(value, dict):
+            return ""
+        return str(value).strip()
+
+    @staticmethod
+    def _metadata_list_values(value: object) -> list[str]:
+        if isinstance(value, (list, tuple, set)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        text = MainWindow._metadata_value_as_text(value)
+        return [text] if text else []
+
+    @classmethod
+    def _metadata_has_value(cls, value: object) -> bool:
+        if isinstance(value, (list, tuple, set)):
+            return any(cls._metadata_has_value(item) for item in value)
+        if isinstance(value, dict):
+            return bool(value)
+        text = cls._metadata_value_as_text(value)
+        return bool(text) and text != "0"
+
+    @classmethod
+    def _metadata_sources(cls, payload: dict[str, object] | None) -> list[dict[str, object]]:
+        if not isinstance(payload, dict):
+            return []
+        sources: list[dict[str, object]] = [payload]
+        extra = payload.get("extra")
+        if isinstance(extra, dict):
+            sources.append(extra)
+        mp3_transfer = payload.get("mp3_transfer")
+        if isinstance(mp3_transfer, dict):
+            sources.append(mp3_transfer)
+            core_metadata = mp3_transfer.get("core_metadata")
+            if isinstance(core_metadata, dict):
+                sources.append(core_metadata)
+            ffmetadata_tags = mp3_transfer.get("ffmetadata_tags")
+            if isinstance(ffmetadata_tags, dict):
+                sources.append(ffmetadata_tags)
+        return sources
+
+    @classmethod
+    def _metadata_first_value(
+        cls,
+        payload: dict[str, object] | None,
+        extended: dict[str, object] | None,
+        *keys: str,
+    ) -> str:
+        for source in cls._metadata_sources(payload) + cls._metadata_sources(extended):
+            for key in keys:
+                text = cls._metadata_value_as_text(source.get(key))
+                if text:
+                    return text
+        return ""
+
+    @classmethod
+    def _metadata_values(
+        cls,
+        payload: dict[str, object] | None,
+        extended: dict[str, object] | None,
+        *keys: str,
+    ) -> list[str]:
+        raw_values: list[str] = []
+        for source in cls._metadata_sources(payload) + cls._metadata_sources(extended):
+            for key in keys:
+                raw_values.extend(cls._metadata_list_values(source.get(key)))
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for value in raw_values:
+            if value in seen:
+                continue
+            deduped.append(value)
+            seen.add(value)
+        return deduped
+
     def _apply_metadata_payload_to_create_fields(
         self,
         payload: dict[str, object],
@@ -1250,47 +1442,69 @@ class MainWindow(QMainWindow):
         extended: dict[str, object] | None = None,
         overwrite_title: bool = True,
     ) -> None:
-        title = str(payload.get("title") or "")
+        title = self._metadata_first_value(payload, extended, "title")
         if overwrite_title and title:
             self.meta_title_edit.setText(title)
         elif overwrite_title and not title and len(self.selected_source_files) == 1 and self.selected_source_files:
             self.meta_title_edit.setText(self.selected_source_files[0].stem)
-        author = str(payload.get("author") or "")
+        author = self._metadata_first_value(payload, extended, "author")
         if author:
             self.meta_author_edit.setText(author)
-        narrator = str(payload.get("narrator") or "")
+        narrator = self._metadata_first_value(
+            payload,
+            extended,
+            "narrator",
+            "speaker",
+            "reader",
+            "reader_name",
+            "narrators",
+            "contributors",
+            "artist",
+            "album_artist",
+            "performer",
+            "read_by",
+            "voiced_by",
+            "voice",
+            "speaker_name",
+            "author",
+        )
         if narrator and not self.meta_narrator_edit.text().strip():
             self.meta_narrator_edit.setText(narrator)
-        genre = str(payload.get("genre") or "")
+        genre = self._metadata_first_value(payload, extended, "genre", "genres", "category")
         if genre:
             self.meta_genre_edit.setText(genre)
-        language = str(payload.get("language") or "")
+        language = self._metadata_first_value(payload, extended, "language", "lang", "lang_code")
         if language:
             self.meta_language_tag_edit.setText(language)
-        comment = str(payload.get("comment") or "")
+        comment = self._metadata_first_value(
+            payload,
+            extended,
+            "comment",
+            "description",
+            "summary",
+            "abstract",
+            "synopsis",
+        )
         if comment and not self.meta_comment_edit.toPlainText().strip():
             self.meta_comment_edit.setPlainText(comment)
         extended = extended or {}
-        publisher = str(extended.get("publisher") or payload.get("publisher") or "")
+        publisher = self._metadata_first_value(payload, extended, "publisher", "publisher_name")
         if publisher:
             self.meta_publisher_edit.setText(publisher)
-        year = str(extended.get("year") or payload.get("year") or "")
+        year = self._metadata_first_value(payload, extended, "year")
         if year and year != "0":
             self.meta_year_edit.setText(year)
-        subjects = extended.get("subjects") or payload.get("subjects") or ""
-        if isinstance(subjects, list):
-            subjects_text = ", ".join(str(item) for item in subjects if item)
-        else:
-            subjects_text = str(subjects or "")
+        subjects_text = ", ".join(
+            self._metadata_values(payload, extended, "subjects", "subject", "categories")
+        )
         if subjects_text:
             self.meta_subject_edit.setText(subjects_text)
-        identifiers = extended.get("identifiers") or payload.get("identifiers") or []
-        isbn = str(payload.get("isbn") or extended.get("isbn") or "")
+        identifiers = self._metadata_values(payload, extended, "identifiers", "isbn")
+        isbn = self._metadata_first_value(payload, extended, "isbn")
         if not isbn and isinstance(identifiers, list):
             for identifier in identifiers:
-                identifier_text = str(identifier or "").strip()
-                if identifier_text:
-                    isbn = identifier_text
+                if identifier:
+                    isbn = identifier
                     break
         if isbn:
             self.meta_isbn_edit.setText(isbn)
@@ -1300,46 +1514,68 @@ class MainWindow(QMainWindow):
         payload: dict[str, object],
         *,
         extended: dict[str, object] | None = None,
+        overwrite_narrator: bool = False,
     ) -> None:
-        title = str(payload.get("title") or "")
+        extended = extended or {}
+        title = self._metadata_first_value(payload, extended, "title")
         if title:
             self.finished_meta_title_edit.setText(title)
-        author = str(payload.get("author") or "")
+        author = self._metadata_first_value(payload, extended, "author")
         if author:
             self.finished_meta_author_edit.setText(author)
-        narrator = str(payload.get("narrator") or "")
-        if narrator and not self.finished_meta_narrator_edit.text().strip():
+        narrator = self._metadata_first_value(
+            payload,
+            extended,
+            "narrator",
+            "speaker",
+            "reader",
+            "reader_name",
+            "narrators",
+            "contributors",
+            "artist",
+            "album_artist",
+            "performer",
+            "read_by",
+            "voiced_by",
+            "voice",
+            "speaker_name",
+            "author",
+        )
+        if narrator and (overwrite_narrator or not self.finished_meta_narrator_edit.text().strip()):
             self.finished_meta_narrator_edit.setText(narrator)
-        genre = str(payload.get("genre") or "")
+        genre = self._metadata_first_value(payload, extended, "genre", "genres", "category")
         if genre:
             self.finished_meta_genre_edit.setText(genre)
-        language = str(payload.get("language") or "")
+        language = self._metadata_first_value(payload, extended, "language", "lang", "lang_code")
         if language:
             self.finished_meta_language_edit.setText(language)
-        comment = str(payload.get("comment") or "")
+        comment = self._metadata_first_value(
+            payload,
+            extended,
+            "comment",
+            "description",
+            "summary",
+            "abstract",
+            "synopsis",
+        )
         if comment and not self.finished_meta_comment_edit.toPlainText().strip():
             self.finished_meta_comment_edit.setPlainText(comment)
         extended = extended or {}
-        publisher = str(extended.get("publisher") or payload.get("publisher") or "")
+        publisher = self._metadata_first_value(payload, extended, "publisher", "publisher_name")
         if publisher:
             self.finished_meta_publisher_edit.setText(publisher)
-        year = str(extended.get("year") or payload.get("year") or "")
+        year = self._metadata_first_value(payload, extended, "year")
         if year and year != "0":
             self.finished_meta_year_edit.setText(year)
-        subjects = extended.get("subjects") or payload.get("subjects") or ""
-        if isinstance(subjects, list):
-            subjects_text = ", ".join(str(item) for item in subjects if item)
-        else:
-            subjects_text = str(subjects or "")
+        subjects_text = ", ".join(self._metadata_values(payload, extended, "subjects", "subject", "categories"))
         if subjects_text:
             self.finished_meta_subject_edit.setText(subjects_text)
-        identifiers = extended.get("identifiers") or payload.get("identifiers") or []
-        isbn = str(payload.get("isbn") or extended.get("isbn") or "")
+        identifiers = self._metadata_values(payload, extended, "identifiers", "isbn")
+        isbn = self._metadata_first_value(payload, extended, "isbn")
         if not isbn and isinstance(identifiers, list):
             for identifier in identifiers:
-                identifier_text = str(identifier or "").strip()
-                if identifier_text:
-                    isbn = identifier_text
+                if identifier:
+                    isbn = identifier
                     break
         if isbn:
             self.finished_meta_isbn_edit.setText(isbn)
@@ -1406,67 +1642,110 @@ class MainWindow(QMainWindow):
         source = self._active_metadata_source()
         if source is None:
             return
-        try:
-            suggestions = self.service.metadata_suggestions(source)
-        except Exception as exc:
+        self.metadata_status_label.setText(
+            {
+                "de": "Metadatenanalyse läuft …",
+                "en": "Metadata analysis running …",
+                "es": "Análisis de metadatos en curso …",
+                "pt": "Análise de metadados em andamento…",
+            }.get(self.ui_language, "Metadata analysis running …")
+        )
+        request_id = self._next_async_request_id()
+        self._active_metadata_request_id = request_id
+        snapshot = tuple(str(item) for item in self.selected_source_files)
+        source_text = str(source)
+        source_ref = source
+
+        def _fetch_metadata() -> dict[str, Any]:
+            return self.service.metadata_suggestions(source_ref)
+
+        self._metadata_runner = AsyncTaskRunner(request_id, _fetch_metadata, parent=self)
+
+        def on_success(rid: int, suggestions: dict[str, Any]) -> None:
+            if rid != self._active_metadata_request_id:
+                return
+            current_source = self._active_metadata_source()
+            if current_source is None:
+                return
+            if tuple(str(item) for item in self.selected_source_files) != snapshot:
+                return
+            if str(current_source) != source_text:
+                return
+            guessed = suggestions.get("guessed") or {}
+            extended = suggestions.get("extended_book_metadata") or {}
+            best_result = suggestions.get("best_result") or {}
+            base_payload: dict[str, object] = guessed.copy() if isinstance(guessed, dict) else {}
+            merged_extended: dict[str, object] = extended.copy() if isinstance(extended, dict) else {}
+            if isinstance(best_result, dict):
+                merged_extended_from_candidate = best_result.get("extra")
+                if isinstance(merged_extended_from_candidate, dict):
+                    merged_extended.update(merged_extended_from_candidate)
+                for key, value in best_result.items():
+                    if key == "extra":
+                        continue
+                    if self._metadata_has_value(value):
+                        base_payload[key] = value
+            results = suggestions.get("results") or suggestions.get("candidates") or []
+            if isinstance(results, list):
+                self._populate_metadata_results_list(
+                    self.metadata_results_list,
+                    [entry for entry in results if isinstance(entry, dict)],
+                )
+            confidence = float(suggestions.get("confidence") or 0.0)
+            title_source = str(suggestions.get("title_source") or "-")
+            author_source = str(suggestions.get("author_source") or "-")
+            confidence_band = self._metadata_confidence_band(confidence)
+            should_apply = confidence_band in {"high", "medium"}
+            if should_apply and isinstance(base_payload, dict):
+                self._apply_metadata_payload_to_create_fields(
+                    base_payload,
+                    extended=merged_extended,
+                    overwrite_title=len(self.selected_source_files) == 1,
+                )
+            if confidence_band == "high":
+                message = {
+                    "de": "Metadaten automatisch übernommen",
+                    "en": "Metadata applied automatically",
+                    "es": "Metadatos aplicados automáticamente",
+                    "pt": "Metadados aplicados automaticamente",
+                }.get(self.ui_language, "Metadata applied automatically")
+            elif confidence_band == "medium":
+                message = {
+                    "de": "Metadaten automatisch vorgeschlagen. Bitte kurz prüfen.",
+                    "en": "Metadata suggested automatically. Please review briefly.",
+                    "es": "Metadatos sugeridos automáticamente. Revísalos brevemente.",
+                    "pt": "Metadados sugeridos automaticamente. Revise rapidamente.",
+                }.get(self.ui_language, "Metadata suggested automatically. Please review briefly.")
+            else:
+                message = {
+                    "de": "Automatik unsicher. Bitte Trefferliste prüfen und manuell übernehmen.",
+                    "en": "Automatic detection is unsure. Review the match list and apply one manually.",
+                    "es": "La detección automática es incierta. Revisa la lista y aplica un resultado manualmente.",
+                    "pt": "A detecção automática é incerta. Revise a lista e aplique um resultado manualmente.",
+                }.get(self.ui_language, "Automatic detection is unsure. Review the match list and apply one manually.")
+            self.metadata_status_label.setText(
+                f"{message}. "
+                + {
+                    "de": f"Konfidenz {confidence:.2f}, Titelquelle {title_source}, Autorquelle {author_source}.",
+                    "en": f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.",
+                    "es": f"Confianza {confidence:.2f}, origen del título {title_source}, origen del autor {author_source}.",
+                    "pt": f"Confiança {confidence:.2f}, origem do título {title_source}, origem do autor {author_source}.",
+                }.get(self.ui_language, f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.")
+            )
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_metadata_request_id:
+                return
             self.metadata_status_label.setText(
                 {
-                    "de": f"Automatische Metadatenerkennung fehlgeschlagen: {exc}",
-                    "en": f"Automatic metadata detection failed: {exc}",
-                    "es": f"La detección automática de metadatos falló: {exc}",
-                    "pt": f"A detecção automática de metadados falhou: {exc}",
-                }.get(self.ui_language, f"Automatic metadata detection failed: {exc}")
+                    "de": f"Automatische Metadatenerkennung fehlgeschlagen: {message}",
+                    "en": f"Automatic metadata detection failed: {message}",
+                    "es": f"La detección automática de metadatos falló: {message}",
+                    "pt": f"A detecção automática de metadados falhou: {message}",
+                }.get(self.ui_language, f"Automatic metadata detection failed: {message}")
             )
-            return
-        guessed = suggestions.get("guessed") or {}
-        extended = suggestions.get("extended_book_metadata") or {}
-        results = suggestions.get("results") or suggestions.get("candidates") or []
-        if isinstance(results, list):
-            self._populate_metadata_results_list(
-                self.metadata_results_list,
-                [entry for entry in results if isinstance(entry, dict)],
-            )
-        confidence = float(suggestions.get("confidence") or 0.0)
-        title_source = str(suggestions.get("title_source") or "-")
-        author_source = str(suggestions.get("author_source") or "-")
-        confidence_band = self._metadata_confidence_band(confidence)
-        should_apply = confidence_band in {"high", "medium"}
-        if should_apply and isinstance(guessed, dict):
-            self._apply_metadata_payload_to_create_fields(
-                guessed,
-                extended=extended if isinstance(extended, dict) else {},
-                overwrite_title=len(self.selected_source_files) == 1,
-            )
-        if confidence_band == "high":
-            message = {
-                "de": "Metadaten automatisch übernommen",
-                "en": "Metadata applied automatically",
-                "es": "Metadatos aplicados automáticamente",
-                "pt": "Metadados aplicados automaticamente",
-            }.get(self.ui_language, "Metadata applied automatically")
-        elif confidence_band == "medium":
-            message = {
-                "de": "Metadaten automatisch vorgeschlagen. Bitte kurz prüfen.",
-                "en": "Metadata suggested automatically. Please review briefly.",
-                "es": "Metadatos sugeridos automáticamente. Revísalos brevemente.",
-                "pt": "Metadados sugeridos automaticamente. Revise rapidamente.",
-            }.get(self.ui_language, "Metadata suggested automatically. Please review briefly.")
-        else:
-            message = {
-                "de": "Automatik unsicher. Bitte Trefferliste prüfen und manuell übernehmen.",
-                "en": "Automatic detection is unsure. Review the match list and apply one manually.",
-                "es": "La detección automática es incierta. Revisa la lista y aplica un resultado manualmente.",
-                "pt": "A detecção automática é incerta. Revise a lista e aplique um resultado manualmente.",
-            }.get(self.ui_language, "Automatic detection is unsure. Review the match list and apply one manually.")
-        self.metadata_status_label.setText(
-            f"{message}. "
-            + {
-                "de": f"Konfidenz {confidence:.2f}, Titelquelle {title_source}, Autorquelle {author_source}.",
-                "en": f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.",
-                "es": f"Confianza {confidence:.2f}, origen del título {title_source}, origen del autor {author_source}.",
-                "pt": f"Confiança {confidence:.2f}, origem do título {title_source}, origem do autor {author_source}.",
-            }.get(self.ui_language, f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.")
-        )
+
+        self._connect_async_runner(self._metadata_runner, on_success, on_failure)
 
     def search_metadata_online(self) -> None:
         source = self._active_metadata_source()
@@ -1474,30 +1753,60 @@ class MainWindow(QMainWindow):
             return
         query_title = self.meta_title_edit.text().strip()
         query_author = self.meta_author_edit.text().strip()
-        try:
-            suggestions = self.service.search_book_metadata(
+        self.metadata_status_label.setText(
+            {
+                "de": "Online-Suche läuft …",
+                "en": "Online search running …",
+                "es": "Búsqueda en línea en curso …",
+                "pt": "Busca online em andamento …",
+            }.get(self.ui_language, "Online search running …")
+        )
+        query = f"{query_title} {query_author}".strip()
+        request_id = self._next_async_request_id()
+        self._active_metadata_search_request_id = request_id
+        source_text = str(source)
+
+        def _search_metadata() -> list[dict[str, Any]]:
+            return self.service.search_book_metadata(
                 title=query_title,
                 author=query_author,
-                query=f"{query_title} {query_author}".strip(),
+                query=query,
                 limit=5,
             )
-        except Exception as exc:
+
+        self._metadata_search_runner = AsyncTaskRunner(request_id, _search_metadata, parent=self)
+
+        def on_success(rid: int, suggestions: list[dict[str, Any]]) -> None:
+            if rid != self._active_metadata_search_request_id:
+                return
+            active_source = self._active_metadata_source()
+            if active_source is None or str(active_source) != source_text:
+                return
+            if self.meta_title_edit.text().strip() != query_title or self.meta_author_edit.text().strip() != query_author:
+                return
+            self._populate_metadata_results_list(self.metadata_results_list, suggestions)
             self.metadata_status_label.setText(
                 {
-                    "de": f"Metadatensuche fehlgeschlagen: {exc}",
-                    "en": f"Metadata search failed: {exc}",
-                    "es": f"La búsqueda de metadatos falló: {exc}",
-                    "pt": f"A busca de metadados falhou: {exc}",
-                }.get(self.ui_language, f"Metadata search failed: {exc}")
+                    "de": f"Online-Suche abgeschlossen: {len(suggestions)} Treffer.",
+                    "en": f"Online search finished: {len(suggestions)} result(s).",
+                    "es": f"Búsqueda online completada: {len(suggestions)} resultado(s).",
+                    "pt": f"Busca online concluída: {len(suggestions)} resultado(s).",
+                }.get(self.ui_language, f"Online search finished: {len(suggestions)} result(s).")
             )
-            return
-        self._populate_metadata_results_list(self.metadata_results_list, suggestions)
-        self.metadata_status_label.setText({
-            "de": f"Online-Suche abgeschlossen: {len(suggestions)} Treffer.",
-            "en": f"Online search finished: {len(suggestions)} result(s).",
-            "es": f"Búsqueda online completada: {len(suggestions)} resultado(s).",
-            "pt": f"Busca online concluída: {len(suggestions)} resultado(s).",
-        }.get(self.ui_language, f"Online search finished: {len(suggestions)} result(s)."))
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_metadata_search_request_id:
+                return
+            self.metadata_status_label.setText(
+                {
+                    "de": f"Metadatensuche fehlgeschlagen: {message}",
+                    "en": f"Metadata search failed: {message}",
+                    "es": f"La búsqueda de metadatos falló: {message}",
+                    "pt": f"A busca de metadados falhou: {message}",
+                }.get(self.ui_language, f"Metadata search failed: {message}")
+            )
+
+        self._connect_async_runner(self._metadata_search_runner, on_success, on_failure)
 
     def apply_best_metadata_result(self) -> None:
         item = self.metadata_results_list.currentItem()
@@ -1580,23 +1889,159 @@ class MainWindow(QMainWindow):
         if job is None:
             QMessageBox.warning(self, "Kein Auftrag", "Bitte zuerst links einen Auftrag auswählen.")
             return
-        self.service.update_job_metadata(
-            job.job_id,
-            audiobook_metadata=self._current_job_metadata_payload(),
-            reapply_outputs=True,
-        )
-        updated_state = self.manager.load_state(job.job_id)
-        self.refresh_jobs()
-        self.refresh_all_metadata_completers()
-        self.show_job(updated_state)
+        if self._metadata_save_runner is not None:
+            return
+        job_id = job.job_id
+        payload = self._current_job_metadata_payload()
+        self.metadata_save_job_button.setEnabled(False)
         self.metadata_status_label.setText(
             {
-                "de": f"Auftrag aktualisiert. Metadaten und vorhandene MP3-Tags wurden neu geschrieben: {updated_state.audiobook_metadata.title}",
-                "en": f"Job updated. Metadata and existing MP3 tags were rewritten: {updated_state.audiobook_metadata.title}",
-                "es": f"Trabajo actualizado. Se reescribieron los metadatos y las etiquetas MP3 existentes: {updated_state.audiobook_metadata.title}",
-                "pt": f"Tarefa atualizada. Os metadados e as tags MP3 existentes foram regravados: {updated_state.audiobook_metadata.title}",
-            }.get(self.ui_language, f"Job updated. Metadata and existing MP3 tags were rewritten: {updated_state.audiobook_metadata.title}")
+                "de": "Metadaten werden gespeichert und vorhandene MP3-Tags neu geschrieben …",
+                "en": "Saving metadata and rewriting existing MP3 tags …",
+                "es": "Guardando metadatos y reescribiendo etiquetas MP3 existentes …",
+                "pt": "Salvando metadados e regravando tags MP3 existentes …",
+            }.get(self.ui_language, "Saving metadata and rewriting existing MP3 tags …")
         )
+
+        request_id = self._next_async_request_id()
+        self._active_metadata_save_request_id = request_id
+
+        def _save_metadata() -> None:
+            self.service.update_job_metadata(
+                job_id,
+                audiobook_metadata=payload,
+                reapply_outputs=True,
+            )
+
+        self._metadata_save_runner = AsyncTaskRunner(request_id, _save_metadata, parent=self)
+
+        def on_success(rid: int, _payload: object) -> None:
+            if rid != self._active_metadata_save_request_id:
+                return
+            try:
+                updated_state = self.manager.load_state(job_id)
+            except FileNotFoundError:
+                self.metadata_status_label.setText(
+                    {
+                        "de": "Speichern war erfolgreich, aber der Auftrag wurde inzwischen nicht mehr gefunden.",
+                        "en": "Saving succeeded, but the job could not be found anymore.",
+                        "es": "El guardado se completó, pero el trabajo ya no se encontró.",
+                        "pt": "O salvamento foi concluído, mas o trabalho não foi encontrado.",
+                    }.get(self.ui_language, "Saving succeeded, but the job could not be found anymore.")
+                )
+                self.metadata_save_job_button.setEnabled(self.current_job_id is not None)
+                return
+
+            self.refresh_jobs()
+            self.refresh_all_metadata_completers()
+            if self.current_job_id == job_id:
+                self.show_job(updated_state)
+            self.metadata_status_label.setText(
+                {
+                    "de": f"Auftrag aktualisiert. Metadaten und vorhandene MP3-Tags wurden neu geschrieben: {updated_state.audiobook_metadata.title}",
+                    "en": f"Job updated. Metadata and existing MP3 tags were rewritten: {updated_state.audiobook_metadata.title}",
+                    "es": f"Trabajo actualizado. Se reescribieron los metadatos y las etiquetas MP3 existentes: {updated_state.audiobook_metadata.title}",
+                    "pt": f"Tarefa atualizada. Os metadaten e as tags MP3 existentes foram regravados: {updated_state.audiobook_metadata.title}",
+                }.get(self.ui_language, f"Job updated. Metadata and existing MP3 tags were rewritten: {updated_state.audiobook_metadata.title}")
+            )
+            self.metadata_save_job_button.setEnabled(self.current_job_id is not None)
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_metadata_save_request_id:
+                return
+            self.metadata_save_job_button.setEnabled(self.current_job_id is not None)
+            self.metadata_status_label.setText(
+                {
+                    "de": f"Speichern der Metadaten ist fehlgeschlagen: {message}",
+                    "en": f"Saving metadata failed: {message}",
+                    "es": f"Error al guardar metadatos: {message}",
+                    "pt": f"O salvamento de metadados falhou: {message}",
+                }.get(self.ui_language, f"Saving metadata failed: {message}")
+            )
+
+        self._connect_async_runner(self._metadata_save_runner, on_success, on_failure)
+
+    def save_finished_job_metadata(self) -> None:
+        job = self._selected_finished_job()
+        if job is None:
+            return
+        if self._finished_metadata_save_runner is not None:
+            return
+        job_id = job.job_id
+        payload = self._finished_metadata_payload()
+        self.finished_metadata_save_button.setEnabled(False)
+        self.finished_metadata_status_label.setText(
+            {
+                "de": "Metadaten werden gespeichert und bestehende MP3-Tags neu geschrieben …",
+                "en": "Saving metadata and rewriting existing MP3 tags …",
+                "es": "Guardando metadatos y reescribiendo etiquetas MP3 existentes …",
+                "pt": "Salvando metadatos e regravando tags MP3 existentes …",
+            }.get(self.ui_language, "Saving metadata and rewriting existing MP3 tags …")
+        )
+
+        request_id = self._next_async_request_id()
+        self._active_finished_metadata_save_request_id = request_id
+
+        def _save_finished_metadata() -> None:
+            self.service.update_job_metadata(
+                job_id,
+                audiobook_metadata=payload,
+                reapply_outputs=True,
+            )
+
+        self._finished_metadata_save_runner = AsyncTaskRunner(request_id, _save_finished_metadata, parent=self)
+
+        def on_success(rid: int, _updated: object) -> None:
+            if rid != self._active_finished_metadata_save_request_id:
+                return
+            try:
+                updated_state = self.manager.load_state(job_id)
+            except FileNotFoundError:
+                self.finished_metadata_status_label.setText(
+                    {
+                        "de": "Speichern war erfolgreich, aber der Auftrag wurde inzwischen nicht mehr gefunden.",
+                        "en": "Saving succeeded, but the job could not be found anymore.",
+                        "es": "El guardado se completó, pero el trabajo ya no se encontró.",
+                        "pt": "O salvamento foi concluído, mas o trabalho não foi encontrado.",
+                    }.get(self.ui_language, "Saving succeeded, but the job could not be found anymore.")
+                )
+                self.finished_metadata_save_button.setEnabled(self._selected_finished_job() is not None)
+                return
+
+            self.refresh_jobs()
+            self.refresh_all_metadata_completers()
+            if self.current_job_id == job_id:
+                self.show_job(updated_state)
+            selected = self._selected_finished_job()
+            if selected is not None and selected.job_id == job_id:
+                self.refresh_finished_metadata_editor(updated_state)
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Metadaten und MP3-Tags für '{updated_state.audiobook_metadata.title}' wurden aktualisiert.",
+                    "en": f"Metadata and MP3 tags for '{updated_state.audiobook_metadata.title}' were updated.",
+                    "es": f"Se actualizaron los metadatos y las etiquetas MP3 de '{updated_state.audiobook_metadata.title}'.",
+                    "pt": f"Os metadados e as tags MP3 de '{updated_state.audiobook_metadata.title}' foram atualizados.",
+                }.get(
+                    self.ui_language,
+                    f"Metadata and MP3 tags for '{updated_state.audiobook_metadata.title}' were updated.",
+                )
+            )
+            self.finished_metadata_save_button.setEnabled(self._selected_finished_job() is not None)
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_finished_metadata_save_request_id:
+                return
+            self.finished_metadata_save_button.setEnabled(self._selected_finished_job() is not None)
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Speichern der Metadaten ist fehlgeschlagen: {message}",
+                    "en": f"Saving metadata failed: {message}",
+                    "es": f"Error al guardar metadatos: {message}",
+                    "pt": f"O salvamento de metadados falhou: {message}",
+                }.get(self.ui_language, f"Saving metadata failed: {message}")
+            )
+
+        self._connect_async_runner(self._finished_metadata_save_runner, on_success, on_failure)
 
     def _resolved_output_mode_for_structure(self, requested_mode: str, structure: DocumentStructure) -> str:
         actual_mode = requested_mode or "single_file"
@@ -1698,79 +2143,104 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def refresh_diagnostics_summary(self, *, include_runtime_probe: bool = False) -> None:
-        diagnostics = self.service.diagnostics(include_runtime_probe=include_runtime_probe)
-        paths = diagnostics["paths"]
-        xtts = diagnostics["xtts"]
-        jobs = diagnostics["jobs"]
-        profiles = diagnostics["profiles"]
-        perf = diagnostics["performance_logging"]
-        system_usage = diagnostics.get("system_usage", {})
-        probe = xtts.get("probe")
-        runtime_stats = diagnostics["runtime_statistics"]
-        core_voice_counts = diagnostics["voices"].get("core_language_voice_counts", {})
-        core_voice_summary = ", ".join(
-            f"{core_language_label(prefix, ui_language=self.ui_language)} {core_voice_counts.get(prefix, 0)}"
-            for prefix in ("de", "en", "es", "pt")
-        )
-        if probe:
-            probe_text = (
-                f"Probe: {'OK' if probe.get('ok') else 'Fehler'} | "
-                f"CUDA={probe.get('cuda_available')} | Torch={probe.get('torch_version', '-')}"
+        request_id = self._next_async_request_id()
+        self._active_diagnostics_request_id = request_id
+
+        def _load_diagnostics() -> dict[str, object]:
+            return self.service.diagnostics(include_runtime_probe=include_runtime_probe)
+
+        self._diagnostics_runner = AsyncTaskRunner(request_id, _load_diagnostics, parent=self)
+
+        def on_success(rid: int, diagnostics: dict[str, object]) -> None:
+            if rid != self._active_diagnostics_request_id:
+                return
+            paths = diagnostics["paths"]
+            xtts = diagnostics["xtts"]
+            jobs = diagnostics["jobs"]
+            profiles = diagnostics["profiles"]
+            perf = diagnostics["performance_logging"]
+            system_usage = diagnostics.get("system_usage", {})
+            probe = xtts.get("probe")
+            runtime_stats = diagnostics["runtime_statistics"]
+            core_voice_counts = diagnostics["voices"].get("core_language_voice_counts", {})
+            core_voice_summary = ", ".join(
+                f"{core_language_label(prefix, ui_language=self.ui_language)} {core_voice_counts.get(prefix, 0)}"
+                for prefix in ("de", "en", "es", "pt")
             )
-        else:
-            probe_text = "Probe: nicht frisch ausgeführt"
-        cpu_text = "-"
-        if system_usage.get("cpu_percent") is not None:
-            cpu_text = f"{system_usage['cpu_percent']:.0f}%"
-        ram_text = "-"
-        if system_usage.get("memory_percent") is not None:
-            ram_text = f"{system_usage['memory_percent']:.0f}% ({system_usage.get('memory_used_gb', 0):.1f}/{system_usage.get('memory_total_gb', 0):.1f} GB)"
-        gpu_entries = system_usage.get("gpus") or []
-        if gpu_entries:
-            top_gpu = gpu_entries[0]
-            gpu_text = (
-                f"{top_gpu.get('name', 'GPU')} {top_gpu.get('gpu_percent', 0):.0f}% | "
-                f"VRAM {top_gpu.get('memory_used_mb', 0)/1024:.1f}/{top_gpu.get('memory_total_mb', 0)/1024:.1f} GB "
-                f"({top_gpu.get('memory_percent', 0):.0f}%)"
+            if probe:
+                probe_text = (
+                    f"Probe: {'OK' if probe.get('ok') else 'Fehler'} | "
+                    f"CUDA={probe.get('cuda_available')} | Torch={probe.get('torch_version', '-') }"
+                )
+            else:
+                probe_text = "Probe: nicht frisch ausgeführt"
+            cpu_text = "-"
+            if system_usage.get("cpu_percent") is not None:
+                cpu_text = f"{system_usage['cpu_percent']:.0f}%"
+            ram_text = "-"
+            if system_usage.get("memory_percent") is not None:
+                ram_text = (
+                    f"{system_usage['memory_percent']:.0f}% ({system_usage.get('memory_used_gb', 0):.1f}/"
+                    f"{system_usage.get('memory_total_gb', 0):.1f} GB)"
+                )
+            gpu_entries = system_usage.get("gpus") or []
+            if gpu_entries:
+                top_gpu = gpu_entries[0]
+                gpu_text = (
+                    f"{top_gpu.get('name', 'GPU')} {top_gpu.get('gpu_percent', 0):.0f}% | "
+                    f"VRAM {top_gpu.get('memory_used_mb', 0)/1024:.1f}/{top_gpu.get('memory_total_mb', 0)/1024:.1f} GB "
+                    f"({top_gpu.get('memory_percent', 0):.0f}%)"
+                )
+            else:
+                gpu_text = "kein NVIDIA/CUDA-Telemetriepfad"
+            self.system_usage_label.setText(f"CPU {cpu_text} | RAM {ram_text} | CUDA/GPU {gpu_text}")
+            self.diagnostics_summary.setPlainText(
+                "\n".join(
+                    [
+                        f"Arbeitsbereich: {paths['workspace']['path']}",
+                        f"Logs: {paths['logs']['path']}",
+                        f"Voices: {paths['voices']['path']}",
+                        f"XTTS-Profile: {paths['voice_profiles']['path']}",
+                        "",
+                        f"Jobs: {jobs['count']} | Status: {jobs['status_counts']}",
+                        f"Profile: {profiles['count']} | Status: {profiles['status_counts']}",
+                        f"Piper-Stimmen: {diagnostics['voices']['piper_voice_count']} | XTTS-Profile: {diagnostics['voices']['xtts_profile_count']}",
+                        f"Kernsprachen Piper: {core_voice_summary}",
+                        "",
+                        f"XTTS verfügbar: {xtts['available']}",
+                        f"XTTS Gerät gewählt: {xtts['selected_device_mode']} | empfohlen: {xtts['preferred_device_mode']}",
+                        f"XTTS Verarbeitungsmodus: {diagnostics['app_settings'].get('xtts_processing_mode', 'auto')}",
+                        f"XTTS Hinweis: {xtts['availability_reason']}",
+                        f"XTTS Schnellstart: {xtts_launcher_hint()}",
+                        probe_text,
+                        f"Host CPU-Auslastung: {cpu_text}",
+                        f"Host RAM-Auslastung: {ram_text}",
+                        f"Host GPU/CUDA-Auslastung: {gpu_text}",
+                        "",
+                        f"Performance-Logging aktiv: {perf['enabled']}",
+                        f"Performance-Logdatei: {perf['target_file'] or '-'}",
+                        f"Performance-Run-ID: {perf['run_id'] or '-'}",
+                        "",
+                        f"App-Einstellungen: {diagnostics['app_settings']}",
+                        "",
+                        f"Runtime-Statistiken: {runtime_stats['entry_count']} Einträge | Stand {runtime_stats['updated_at'] or '-'}",
+                        f"Durchschnitt gesamt: {runtime_stats['average_total_seconds']/60:.1f} min | "
+                        f"Backends: {runtime_stats['backend_counts']} | Modi: {runtime_stats['mode_counts']}",
+                    ]
+                )
             )
-        else:
-            gpu_text = "kein NVIDIA/CUDA-Telemetriepfad"
-        self.system_usage_label.setText(f"CPU {cpu_text} | RAM {ram_text} | CUDA/GPU {gpu_text}")
-        self.diagnostics_summary.setPlainText(
-            "\n".join(
-                [
-                    f"Arbeitsbereich: {paths['workspace']['path']}",
-                    f"Logs: {paths['logs']['path']}",
-                    f"Voices: {paths['voices']['path']}",
-                    f"XTTS-Profile: {paths['voice_profiles']['path']}",
-                    "",
-                    f"Jobs: {jobs['count']} | Status: {jobs['status_counts']}",
-                    f"Profile: {profiles['count']} | Status: {profiles['status_counts']}",
-                    f"Piper-Stimmen: {diagnostics['voices']['piper_voice_count']} | XTTS-Profile: {diagnostics['voices']['xtts_profile_count']}",
-                    f"Kernsprachen Piper: {core_voice_summary}",
-                    "",
-                    f"XTTS verfügbar: {xtts['available']}",
-                    f"XTTS Gerät gewählt: {xtts['selected_device_mode']} | empfohlen: {xtts['preferred_device_mode']}",
-                    f"XTTS Verarbeitungsmodus: {diagnostics['app_settings'].get('xtts_processing_mode', 'auto')}",
-                    f"XTTS Hinweis: {xtts['availability_reason']}",
-                    f"XTTS Schnellstart: {xtts_launcher_hint()}",
-                    probe_text,
-                    f"Host CPU-Auslastung: {cpu_text}",
-                    f"Host RAM-Auslastung: {ram_text}",
-                    f"Host GPU/CUDA-Auslastung: {gpu_text}",
-                    "",
-                    f"Performance-Logging aktiv: {perf['enabled']}",
-                    f"Performance-Logdatei: {perf['target_file'] or '-'}",
-                    f"Performance-Run-ID: {perf['run_id'] or '-'}",
-                    "",
-                    f"App-Einstellungen: {diagnostics['app_settings']}",
-                    "",
-                    f"Runtime-Statistiken: {runtime_stats['entry_count']} Einträge | Stand {runtime_stats['updated_at'] or '-'}",
-                    f"Durchschnitt gesamt: {runtime_stats['average_total_seconds']/60:.1f} min | Backends: {runtime_stats['backend_counts']} | Modi: {runtime_stats['mode_counts']}",
-                ]
+            self.update_xtts_setup_presentation()
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_diagnostics_request_id:
+                return
+            self.system_usage_label.setText("Diagnose fehlgeschlagen")
+            self.diagnostics_summary.setPlainText(
+                f"Diagnostik konnte nicht geladen werden: {message}"
             )
-        )
-        self.update_xtts_setup_presentation()
+            self.update_xtts_setup_presentation()
+
+        self._connect_async_runner(self._diagnostics_runner, on_success, on_failure)
 
     def refresh_diagnostics_summary_with_probe(self) -> None:
         self.refresh_diagnostics_summary(include_runtime_probe=True)
@@ -1800,6 +2270,18 @@ class MainWindow(QMainWindow):
 
     def _job_output_dir(self, job: JobState) -> Path:
         return Path(job.final_output_file).parent
+
+    def _finished_book_outputs(self, job: JobState) -> list[Path]:
+        return self.manager.final_output_candidates(job)
+
+    def _final_books_output_dir(self, job: JobState) -> Path:
+        return self.manager.final_books_directory(job)
+
+    def _finished_book_output_dir_for_display(self, job: JobState) -> Path:
+        finished_outputs = self._finished_book_outputs(job)
+        if finished_outputs:
+            return finished_outputs[0].parent
+        return self._final_books_output_dir(job)
 
     def open_current_job_folder(self) -> None:
         job = self._current_job_state()
@@ -2593,7 +3075,14 @@ class MainWindow(QMainWindow):
         self.diagnostics_xtts_setup_button.setText(button_text)
 
     def open_xtts_setup_dialog(self) -> None:
-        dialog = XttsSetupDialog(self.paths, self, ui_language=self.ui_language)
+        if self._focus_existing_dialog(self._xtts_setup_dialog):
+            return
+        if self._xtts_setup_dialog is None:
+            dialog = XttsSetupDialog(self.paths, self, ui_language=self.ui_language)
+            dialog.finished.connect(lambda _result: setattr(self, "_xtts_setup_dialog", None))
+            self._xtts_setup_dialog = dialog
+        else:
+            dialog = self._xtts_setup_dialog
         dialog.exec()
         self.xtts_probe_cache = None
         self.refresh_voice_profiles()
@@ -2882,7 +3371,7 @@ class MainWindow(QMainWindow):
                     break
 
     def refresh_jobs(self) -> None:
-        jobs = self.manager.list_jobs()
+        jobs = self.manager.refresh_queue_availability()
         self._job_cache = {job.job_id: job for job in jobs}
         active_jobs = [job for job in jobs if job.status != "completed"]
         self.cached_jobs = list(jobs)
@@ -2966,7 +3455,7 @@ class MainWindow(QMainWindow):
                         f"{self._text('Titel')}: {job.audiobook_metadata.title}",
                         f"{self._text('Autor')}: {job.audiobook_metadata.author or '-'}",
                         f"{self._text('Sprecher')}: {job.audiobook_metadata.narrator or '-'}",
-                        f"{self._text('Ausgabe')}: {self._job_output_dir(job)}",
+                        f"{self._text('Ausgabe')}: {self._finished_book_output_dir_for_display(job)}",
                     ]
                 )
             )
@@ -2985,17 +3474,37 @@ class MainWindow(QMainWindow):
         job_id = item.data(Qt.UserRole)
         if not job_id:
             return None
-        return self.manager.load_state(job_id)
+        try:
+            return self.manager.load_state(job_id)
+        except (FileNotFoundError, PermissionError, json.JSONDecodeError):
+            row = self.finished_books_list.row(item)
+            if row >= 0:
+                self.finished_books_list.takeItem(row)
+            if self.current_job_id == job_id:
+                self.current_job_id = None
+            self.refresh_finished_metadata_editor(None)
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": "Der ausgewählte Eintrag ist zwischenzeitlich nicht mehr vorhanden und wurde aus der Anzeige entfernt.",
+                    "en": "The selected item is no longer available and was removed from the list.",
+                    "es": "La entrada seleccionada ya no está disponible y se eliminó de la lista.",
+                    "pt": "O item selecionado não está mais disponível e foi removido da lista.",
+                }.get(self.ui_language, "The selected item is no longer available and was removed from the list.")
+            )
+            self.logger.warning("Selected finished job disappeared before loading: %s", job_id)
+            return None
 
     def _finished_metadata_needs_enrichment(self, job: JobState) -> bool:
         title = job.audiobook_metadata.title.strip()
         author = job.audiobook_metadata.author.strip()
+        narrator = job.audiobook_metadata.narrator.strip()
         genre = job.audiobook_metadata.genre.strip()
         language = job.audiobook_metadata.language.strip()
         source_stem = Path(job.source_file).stem.strip()
         return (
             not title
             or not author
+            or not narrator
             or not genre
             or not language
             or title == source_stem
@@ -3095,101 +3604,188 @@ class MainWindow(QMainWindow):
         job = self._selected_finished_job()
         if job is None:
             return
-        try:
-            suggestions = self.service.metadata_suggestions(Path(job.source_file))
-        except Exception as exc:
+        self.finished_metadata_status_label.setText(
+            {
+                "de": "Metadatenanalyse für fertiges Hörbuch läuft …",
+                "en": "Metadata analysis for finished audiobook is running …",
+                "es": "El análisis de metadatos del audiolibro terminado está en curso …",
+                "pt": "A análise de metadatos do audiolivro concluído está em andamento …",
+            }.get(self.ui_language, "Metadata analysis for finished audiobook is running …")
+        )
+        request_id = self._next_async_request_id()
+        self._active_finished_metadata_request_id = request_id
+        selected_job_id = job.job_id
+        source_path_text = str(job.source_file)
+
+        def _load_metadata() -> tuple[str, dict[str, object]]:
+            return source_path_text, self.service.metadata_suggestions(Path(source_path_text))
+
+        self._finished_metadata_runner = AsyncTaskRunner(
+            request_id,
+            _load_metadata,
+            parent=self,
+        )
+
+        def on_success(rid: int, payload: tuple[str, dict[str, object]]) -> None:
+            if rid != self._active_finished_metadata_request_id:
+                return
+            active_job = self._selected_finished_job()
+            if active_job is None or active_job.job_id != selected_job_id:
+                return
+            _, suggestions = payload
+            guessed = suggestions.get("guessed") or {}
+            extended = suggestions.get("extended_book_metadata") or {}
+            best_result = suggestions.get("best_result") or {}
+            base_payload: dict[str, object] = guessed.copy() if isinstance(guessed, dict) else {}
+            merged_extended: dict[str, object] = extended.copy() if isinstance(extended, dict) else {}
+            if isinstance(best_result, dict):
+                best_extended = best_result.get("extra")
+                if isinstance(best_extended, dict):
+                    merged_extended.update(best_extended)
+                for key, value in best_result.items():
+                    if key == "extra":
+                        continue
+                    if self._metadata_has_value(value):
+                        base_payload[key] = value
+            results = suggestions.get("results") or suggestions.get("candidates") or []
+            if isinstance(results, list):
+                self._populate_metadata_results_list(
+                    self.finished_metadata_results_list,
+                    [entry for entry in results if isinstance(entry, dict)],
+                )
+            confidence = float(suggestions.get("confidence") or 0.0)
+            title_source = str(suggestions.get("title_source") or "-")
+            author_source = str(suggestions.get("author_source") or "-")
+            confidence_band = self._metadata_confidence_band(confidence)
+            metadata_needs_enrichment = self._finished_metadata_needs_enrichment(active_job)
+            should_apply = metadata_needs_enrichment and confidence_band in {"high", "medium"}
+            if should_apply and isinstance(base_payload, dict):
+                self._apply_metadata_payload_to_finished_fields(
+                    base_payload,
+                    extended=merged_extended,
+                    overwrite_narrator=auto_run,
+                )
+            if confidence_band == "high":
+                prefix = {
+                    "de": "Fertiges Hörbuch automatisch erkannt und übernommen.",
+                    "en": "Finished audiobook metadata detected and applied automatically.",
+                    "es": "Los metadatos del audiolibro terminado se detectaron y aplicaron automáticamente.",
+                    "pt": "Os metadatos do audiolivro concluído foram detectados e aplicados automaticamente.",
+                }.get(self.ui_language, "Finished audiobook metadata detected and applied automatically.")
+            elif confidence_band == "medium":
+                prefix = {
+                    "de": "Fertiges Hörbuch automatisch analysiert. Bitte kurz prüfen.",
+                    "en": "Finished audiobook analyzed automatically. Please review briefly.",
+                    "es": "Audiolibro terminado analizado automáticamente. Revísalo brevemente.",
+                    "pt": "Audiolivro concluído analisado automaticamente. Revise rapidamente.",
+                }.get(self.ui_language, "Finished audiobook analyzed automatically. Please review briefly.")
+            else:
+                prefix = {
+                    "de": "Automatik unsicher. Bitte Trefferliste prüfen und Metadaten manuell übernehmen.",
+                    "en": "Automatic detection is unsure. Review the match list and apply metadata manually.",
+                    "es": "La detección automática es incierta. Revisa la lista y aplica los metadatos manualmente.",
+                    "pt": "A detecção automática é incerta. Revise a lista e aplique os metadatos manualmente.",
+                }.get(self.ui_language, "Automatic detection is unsure. Review the match list and apply metadata manually.")
+            self.finished_metadata_status_label.setText(
+                f"{prefix} "
+                + {
+                    "de": f"Konfidenz {confidence:.2f}, Titelquelle {title_source}, Autorquelle {author_source}.",
+                    "en": f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.",
+                    "es": f"Confianza {confidence:.2f}, origen del título {title_source}, origen del autor {author_source}.",
+                    "pt": f"Confiança {confidence:.2f}, origem do título {title_source}, origem do autor {author_source}.",
+                }.get(
+                    self.ui_language,
+                    f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.",
+                )
+            )
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_finished_metadata_request_id:
+                return
+            active_job = self._selected_finished_job()
+            if active_job is None or active_job.job_id != selected_job_id:
+                return
             self.finished_metadata_status_label.setText(
                 {
-                    "de": f"Automatische Metadatenerkennung für das fertige Hörbuch fehlgeschlagen: {exc}",
-                    "en": f"Automatic metadata detection for the finished audiobook failed: {exc}",
-                    "es": f"La detección automática de metadatos para el audiolibro terminado falló: {exc}",
-                    "pt": f"A detecção automática de metadados para o audiolivro concluído falhou: {exc}",
-                }.get(self.ui_language, f"Automatic metadata detection for the finished audiobook failed: {exc}")
+                    "de": f"Automatische Metadatenerkennung für das fertige Hörbuch fehlgeschlagen: {message}",
+                    "en": f"Automatic metadata detection for the finished audiobook failed: {message}",
+                    "es": f"La detección automática de metadatos para el audiolibro terminado falló: {message}",
+                    "pt": f"A detecção automática de metadatos para o audiolivro concluído falhou: {message}",
+                }.get(self.ui_language, f"Automatic metadata detection for the finished audiobook failed: {message}")
             )
-            return
-        guessed = suggestions.get("guessed") or {}
-        extended = suggestions.get("extended_book_metadata") or {}
-        results = suggestions.get("results") or suggestions.get("candidates") or []
-        if isinstance(results, list):
-            self._populate_metadata_results_list(
-                self.finished_metadata_results_list,
-                [entry for entry in results if isinstance(entry, dict)],
-            )
-        confidence = float(suggestions.get("confidence") or 0.0)
-        title_source = str(suggestions.get("title_source") or "-")
-        author_source = str(suggestions.get("author_source") or "-")
-        confidence_band = self._metadata_confidence_band(confidence)
-        metadata_needs_enrichment = self._finished_metadata_needs_enrichment(job)
-        should_apply = metadata_needs_enrichment and confidence_band in {"high", "medium"}
-        if should_apply and isinstance(guessed, dict):
-            self._apply_metadata_payload_to_finished_fields(
-                guessed,
-                extended=extended if isinstance(extended, dict) else {},
-            )
-        if confidence_band == "high":
-            prefix = {
-                "de": "Fertiges Hörbuch automatisch erkannt und übernommen.",
-                "en": "Finished audiobook metadata detected and applied automatically.",
-                "es": "Los metadatos del audiolibro terminado se detectaron y aplicaron automáticamente.",
-                "pt": "Os metadados do audiolivro concluído foram detectados e aplicados automaticamente.",
-            }.get(self.ui_language, "Finished audiobook metadata detected and applied automatically.")
-        elif confidence_band == "medium":
-            prefix = {
-                "de": "Fertiges Hörbuch automatisch analysiert. Bitte kurz prüfen.",
-                "en": "Finished audiobook analyzed automatically. Please review briefly.",
-                "es": "Audiolibro terminado analizado automáticamente. Revísalo brevemente.",
-                "pt": "Audiolivro concluído analisado automaticamente. Revise rapidamente.",
-            }.get(self.ui_language, "Finished audiobook analyzed automatically. Please review briefly.")
-        else:
-            prefix = {
-                "de": "Automatik unsicher. Bitte Trefferliste prüfen und Metadaten manuell übernehmen.",
-                "en": "Automatic detection is unsure. Review the match list and apply metadata manually.",
-                "es": "La detección automática es incierta. Revisa la lista y aplica los metadatos manualmente.",
-                "pt": "A detecção automática é incerta. Revise a lista e aplique os metadados manualmente.",
-            }.get(self.ui_language, "Automatic detection is unsure. Review the match list and apply metadata manually.")
-        self.finished_metadata_status_label.setText(
-            f"{prefix} "
-            + {
-                "de": f"Konfidenz {confidence:.2f}, Titelquelle {title_source}, Autorquelle {author_source}.",
-                "en": f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.",
-                "es": f"Confianza {confidence:.2f}, origen del título {title_source}, origen del autor {author_source}.",
-                "pt": f"Confiança {confidence:.2f}, origem do título {title_source}, origem do autor {author_source}.",
-            }.get(
-                self.ui_language,
-                f"Confidence {confidence:.2f}, title source {title_source}, author source {author_source}.",
-            )
-        )
+
+        self._connect_async_runner(self._finished_metadata_runner, on_success, on_failure)
 
     def search_finished_metadata_online(self) -> None:
         job = self._selected_finished_job()
         if job is None:
             return
-        try:
-            suggestions = self.service.search_book_metadata(
-                title=self.finished_meta_title_edit.text().strip(),
-                author=self.finished_meta_author_edit.text().strip(),
-                query=f"{self.finished_meta_title_edit.text().strip()} {self.finished_meta_author_edit.text().strip()}".strip(),
-                limit=5,
-            )
-        except Exception as exc:
-            self.finished_metadata_status_label.setText(
-                {
-                    "de": f"Metadatensuche für das fertige Hörbuch fehlgeschlagen: {exc}",
-                    "en": f"Metadata search for the finished audiobook failed: {exc}",
-                    "es": f"La búsqueda de metadatos para el audiolibro terminado falló: {exc}",
-                    "pt": f"A busca de metadados para o audiolivro concluído falhou: {exc}",
-                }.get(self.ui_language, f"Metadata search for the finished audiobook failed: {exc}")
-            )
-            return
-        self._populate_metadata_results_list(self.finished_metadata_results_list, suggestions)
         self.finished_metadata_status_label.setText(
             {
-                "de": f"Online-Suche für das fertige Hörbuch abgeschlossen: {len(suggestions)} Treffer.",
-                "en": f"Online search for the finished audiobook finished: {len(suggestions)} result(s).",
-                "es": f"La búsqueda online para el audiolibro terminado finalizó: {len(suggestions)} resultado(s).",
-                "pt": f"A busca online para o audiolivro concluído terminou: {len(suggestions)} resultado(s).",
-            }.get(self.ui_language, f"Online search for the finished audiobook finished: {len(suggestions)} result(s).")
+                "de": "Online-Suche für das fertige Hörbuch läuft …",
+                "en": "Online search for the finished audiobook is running …",
+                "es": "La búsqueda online para el audiolibro terminado está en curso …",
+                "pt": "A busca online para o audiolivro concluído está em andamento …",
+            }.get(self.ui_language, "Online search for the finished audiobook is running …")
         )
+        query_title = self.finished_meta_title_edit.text().strip()
+        query_author = self.finished_meta_author_edit.text().strip()
+        query = f"{query_title} {query_author}".strip()
+        request_id = self._next_async_request_id()
+        self._active_finished_metadata_search_request_id = request_id
+        selected_job_id = job.job_id
+
+        def _search_metadata() -> tuple[str, list[dict[str, Any]]]:
+            return query, self.service.search_book_metadata(
+                title=query_title,
+                author=query_author,
+                query=query,
+                limit=5,
+            )
+
+        self._finished_metadata_search_runner = AsyncTaskRunner(
+            request_id,
+            _search_metadata,
+            parent=self,
+        )
+
+        def on_success(rid: int, payload: tuple[str, list[dict[str, Any]]]) -> None:
+            if rid != self._active_finished_metadata_search_request_id:
+                return
+            active_job = self._selected_finished_job()
+            if active_job is None or active_job.job_id != selected_job_id:
+                return
+            cached_query, suggestions = payload
+            if cached_query != query:
+                return
+            if self.finished_meta_title_edit.text().strip() != query_title or self.finished_meta_author_edit.text().strip() != query_author:
+                return
+            self._populate_metadata_results_list(self.finished_metadata_results_list, suggestions)
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Online-Suche für das fertige Hörbuch abgeschlossen: {len(suggestions)} Treffer.",
+                    "en": f"Online search for the finished audiobook finished: {len(suggestions)} result(s).",
+                    "es": f"La búsqueda online para el audiolibro terminado finalizó: {len(suggestions)} resultado(s).",
+                    "pt": f"A busca online para o audiolivro concluído terminou: {len(suggestions)} resultado(s).",
+                }.get(self.ui_language, f"Online search for the finished audiobook finished: {len(suggestions)} result(s).")
+            )
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_finished_metadata_search_request_id:
+                return
+            active_job = self._selected_finished_job()
+            if active_job is None or active_job.job_id != selected_job_id:
+                return
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Metadatensuche für das fertige Hörbuch fehlgeschlagen: {message}",
+                    "en": f"Metadata search for the finished audiobook failed: {message}",
+                    "es": f"La búsqueda de metadatos para el audiolibro terminado falló: {message}",
+                    "pt": f"A busca de metadados para o audiolivro concluído falhou: {message}",
+                }.get(self.ui_language, f"Metadata search for the finished audiobook failed: {message}")
+            )
+
+        self._connect_async_runner(self._finished_metadata_search_runner, on_success, on_failure)
 
     def apply_finished_metadata_result(self) -> None:
         item = self.finished_metadata_results_list.currentItem()
@@ -3209,34 +3805,14 @@ class MainWindow(QMainWindow):
             }.get(self.ui_language, "The selected metadata has been copied to the finished audiobook. Save the tags now to update the final files.")
         )
 
-    def save_finished_job_metadata(self) -> None:
-        job = self._selected_finished_job()
-        if job is None:
-            return
-        updated = self.service.update_job_metadata(
-            job.job_id,
-            audiobook_metadata=self._finished_metadata_payload(),
-            reapply_outputs=True,
-        )
-        updated_state = self.manager.load_state(job.job_id)
-        self.refresh_jobs()
-        self.refresh_all_metadata_completers()
-        self.refresh_finished_metadata_editor(updated_state)
-        self.show_job(updated_state)
-        self.status_label.setText(
-            {
-                "de": f"Metadaten und MP3-Tags für '{updated_state.audiobook_metadata.title}' wurden aktualisiert.",
-                "en": f"Metadata and MP3 tags for '{updated_state.audiobook_metadata.title}' were updated.",
-                "es": f"Se actualizaron los metadatos y las etiquetas MP3 de '{updated_state.audiobook_metadata.title}'.",
-                "pt": f"Os metadados e as tags MP3 de '{updated_state.audiobook_metadata.title}' foram atualizados.",
-            }.get(self.ui_language, f"Metadata and MP3 tags for '{updated_state.audiobook_metadata.title}' were updated.")
-        )
-
     def open_selected_finished_audio(self) -> None:
         job = self._selected_finished_job()
-        if not job or not job.final_output_files:
+        if not job:
             return
-        self.open_path(Path(job.final_output_files[0]))
+        outputs = self._finished_book_outputs(job)
+        if not outputs:
+            return
+        self.open_path(outputs[0])
 
     def _suggest_finished_download_name(self, job: JobState, source_path: Path) -> str:
         title = (job.audiobook_metadata.title or job.title or source_path.stem).strip()
@@ -3247,9 +3823,9 @@ class MainWindow(QMainWindow):
 
     def download_selected_finished_audio(self) -> None:
         job = self._selected_finished_job()
-        if not job or not job.final_output_files:
+        if not job:
             return
-        output_paths = [Path(path) for path in job.final_output_files if Path(path).exists()]
+        output_paths = self._finished_book_outputs(job)
         if not output_paths:
             self.status_label.setText(
                 {
@@ -3292,9 +3868,15 @@ class MainWindow(QMainWindow):
         export_dir.mkdir(parents=True, exist_ok=True)
         for source_path in output_paths:
             shutil.copy2(source_path, export_dir / source_path.name)
-        if job.manifest_file and Path(job.manifest_file).exists():
+        manifest_source = self._final_books_output_dir(job) / Path(job.manifest_file).name
+        if manifest_source.exists():
+            shutil.copy2(manifest_source, export_dir / manifest_source.name)
+        elif job.manifest_file and Path(job.manifest_file).exists():
             shutil.copy2(Path(job.manifest_file), export_dir / Path(job.manifest_file).name)
-        if job.chapters_file and Path(job.chapters_file).exists():
+        chapters_source = self._final_books_output_dir(job) / Path(job.chapters_file).name
+        if chapters_source.exists():
+            shutil.copy2(chapters_source, export_dir / chapters_source.name)
+        elif job.chapters_file and Path(job.chapters_file).exists():
             shutil.copy2(Path(job.chapters_file), export_dir / Path(job.chapters_file).name)
         self.status_label.setText(
             {
@@ -3309,11 +3891,25 @@ class MainWindow(QMainWindow):
         job = self._selected_finished_job()
         if not job:
             return
+        output_dir = self._finished_book_output_dir_for_display(job)
+        if output_dir.exists():
+            self.open_path(output_dir)
+            return
         self.open_path(self._job_output_dir(job))
 
     def delete_selected_finished_job(self) -> None:
         job = self._selected_finished_job()
         if not job:
+            return
+        if self._delete_finished_job_runner is not None:
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": "Es läuft bereits ein Löschvorgang. Bitte kurz warten.",
+                    "en": "A delete operation is already running. Please wait.",
+                    "es": "Ya se está ejecutando una operación de eliminación. Espera un momento.",
+                    "pt": "Já há uma operação de exclusão em andamento. Aguarde um momento.",
+                }.get(self.ui_language, "A delete operation is already running. Please wait.")
+            )
             return
         answer = QMessageBox.question(
             self,
@@ -3329,8 +3925,50 @@ class MainWindow(QMainWindow):
             return
         if self.current_job_id == job.job_id:
             self.current_job_id = None
-        self.manager.delete_job(job.job_id)
-        self.refresh_jobs()
+        request_id = self._next_async_request_id()
+        self._active_delete_finished_job_request_id = request_id
+        self.finished_metadata_status_label.setText(
+            {
+                "de": f"Projekt '{job.audiobook_metadata.title}' wird gelöscht …",
+                "en": f"Deleting finished project '{job.audiobook_metadata.title}' …",
+                "es": f"Eliminando proyecto terminado '{job.audiobook_metadata.title}'…",
+                "pt": f"Excluindo projeto concluído '{job.audiobook_metadata.title}'...",
+            }.get(self.ui_language, f"Deleting finished project '{job.audiobook_metadata.title}' …")
+        )
+
+        def _delete_finished_job() -> None:
+            self.manager.delete_job(job.job_id)
+
+        self._delete_finished_job_runner = AsyncTaskRunner(request_id, _delete_finished_job, parent=self)
+
+        def on_success(rid: int, _payload: object) -> None:
+            if rid != self._active_delete_finished_job_request_id:
+                return
+            self.refresh_jobs()
+            self.refresh_finished_metadata_editor(None)
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": "Fertiges Projekt gelöscht.",
+                    "en": "Finished project deleted.",
+                    "es": "Proyecto terminado eliminado.",
+                    "pt": "Projeto concluído excluído.",
+                }.get(self.ui_language, "Finished project deleted.")
+            )
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_delete_finished_job_request_id:
+                return
+            self.logger.warning("Failed to delete finished job %s: %s", job.job_id, message)
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Löschen fehlgeschlagen: {message}",
+                    "en": f"Delete failed: {message}",
+                    "es": f"No se pudo eliminar: {message}",
+                    "pt": f"Falha ao excluir: {message}",
+                }.get(self.ui_language, f"Delete failed: {message}")
+            )
+
+        self._connect_async_runner(self._delete_finished_job_runner, on_success, on_failure)
 
     def on_preset_changed(self) -> None:
         preset_id = self.preset_combo.currentData()
@@ -3670,6 +4308,16 @@ class MainWindow(QMainWindow):
         if job.status == "running":
             QMessageBox.warning(self, "Job laeuft", "Einen laufenden Job bitte erst stoppen, bevor du ihn loeschst.")
             return
+        if self._delete_job_runner is not None:
+            self.status_label.setText(
+                {
+                    "de": "Es läuft bereits ein Löschvorgang. Bitte kurz warten.",
+                    "en": "A delete operation is already running. Please wait.",
+                    "es": "Ya se está ejecutando una operación de eliminación. Espera un momento.",
+                    "pt": "Já há uma operação de exclusão em andamento. Aguarde um momento.",
+                }.get(self.ui_language, "A delete operation is already running. Please wait.")
+            )
+            return
         answer = QMessageBox.question(
             self,
             "Job loeschen",
@@ -3677,16 +4325,52 @@ class MainWindow(QMainWindow):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        self.manager.delete_job(job_id)
-        self.current_job_id = None
-        self.refresh_jobs()
-        self.job_summary.clear()
-        self.job_stage_list.clear()
-        self.job_chapter_list.clear()
-        self.job_chunk_list.clear()
-        self.job_selection_details.clear()
-        self.details.clear()
-        self.status_label.setText("Job geloescht.")
+        request_id = self._next_async_request_id()
+        self._active_delete_job_request_id = request_id
+        self.status_label.setText(
+            {
+                "de": f"Lösche Auftrag '{job.audiobook_metadata.title}' ...",
+                "en": f"Deleting job '{job.audiobook_metadata.title}' ...",
+                "es": f"Eliminando trabajo '{job.audiobook_metadata.title}'...",
+                "pt": f"Excluindo tarefa '{job.audiobook_metadata.title}'...",
+            }.get(
+                self.ui_language,
+                f"Deleting job '{job.audiobook_metadata.title}' ...",
+            )
+        )
+
+        def _delete_job() -> None:
+            self.manager.delete_job(job_id)
+
+        self._delete_job_runner = AsyncTaskRunner(request_id, _delete_job, parent=self)
+
+        def on_success(rid: int, _payload: object) -> None:
+            if rid != self._active_delete_job_request_id:
+                return
+            self.refresh_jobs()
+            if self.current_job_id == job_id:
+                self.current_job_id = None
+                self.job_summary.clear()
+                self.job_stage_list.clear()
+                self.job_chapter_list.clear()
+                self.job_chunk_list.clear()
+                self.job_selection_details.clear()
+                self.details.clear()
+            self.status_label.setText("Job geloescht.")
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_delete_job_request_id:
+                return
+            self.status_label.setText(
+                {
+                    "de": f"Löschen fehlgeschlagen: {message}",
+                    "en": f"Delete failed: {message}",
+                    "es": f"La eliminación falló: {message}",
+                    "pt": f"Falha ao excluir: {message}",
+                }.get(self.ui_language, f"Delete failed: {message}")
+            )
+
+        self._connect_async_runner(self._delete_job_runner, on_success, on_failure)
 
     def toggle_debug_logging(self, checked: bool) -> None:
         self.app_settings.debug_logging = checked
@@ -3788,7 +4472,14 @@ class MainWindow(QMainWindow):
         self.refresh_diagnostics_summary()
 
     def open_voice_lab(self) -> None:
-        dialog = VoiceLabDialog(self.paths, self, ui_language=self.ui_language)
+        if self._focus_existing_dialog(self._voice_lab_dialog):
+            return
+        if self._voice_lab_dialog is None:
+            dialog = VoiceLabDialog(self.paths, self, ui_language=self.ui_language)
+            dialog.finished.connect(lambda _result: setattr(self, "_voice_lab_dialog", None))
+            self._voice_lab_dialog = dialog
+        else:
+            dialog = self._voice_lab_dialog
         dialog.exec()
         self.refresh_voice_profiles()
         self.refresh_diagnostics_summary()
@@ -3908,16 +4599,23 @@ class MainWindow(QMainWindow):
         lexicon_seed_terms: list[str] | None = None,
         initial_source_path: Path | None = None,
     ) -> None:
-        dialog = FindBestSettingDialog(
-            self.paths,
-            self.manager,
-            self,
-            focus_assistant=focus_assistant,
-            focus_lexicon=focus_lexicon,
-            lexicon_seed_terms=lexicon_seed_terms,
-            initial_source_path=initial_source_path,
-            ui_language=self.ui_language,
-        )
+        if self._focus_existing_dialog(self._find_best_setting_dialog):
+            return
+        if self._find_best_setting_dialog is None:
+            dialog = FindBestSettingDialog(
+                self.paths,
+                self.manager,
+                self,
+                focus_assistant=focus_assistant,
+                focus_lexicon=focus_lexicon,
+                lexicon_seed_terms=lexicon_seed_terms,
+                initial_source_path=initial_source_path,
+                ui_language=self.ui_language,
+            )
+            dialog.finished.connect(lambda _result: setattr(self, "_find_best_setting_dialog", None))
+            self._find_best_setting_dialog = dialog
+        else:
+            dialog = self._find_best_setting_dialog
         dialog.exec()
         self.refresh_saved_profiles()
         self.refresh_jobs()
@@ -4055,12 +4753,17 @@ class MainWindow(QMainWindow):
 
     def on_job_failed(self, message: str) -> None:
         self._flush_progress_updates()
+        failed_job_id = self.current_job_id
         if self.current_job_id:
             update_preview_job_status(self.paths, self.current_job_id, "failed")
         self.refresh_jobs()
         self.details.appendPlainText(message)
         self.status_label.setText("failed")
         self.logger.error("Job failed callback with traceback")
+        next_job = self.manager.next_queued_job()
+        if failed_job_id and next_job and next_job.job_id == failed_job_id:
+            self.logger.warning("Suppressing immediate restart loop for failed job %s", failed_job_id)
+            return
         self.maybe_start_next_job()
 
     def cleanup_worker(self) -> None:
