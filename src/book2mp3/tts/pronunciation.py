@@ -12,8 +12,11 @@ _PROTECTED_BLOCK_PATTERN = re.compile(
     r"(https?://\S+|www\.\S+|\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b)",
     re.IGNORECASE,
 )
+_NAME_LETTERS = "A-Za-zÄÖÜäöüßÉéÁáÀàÂâÈèÊêÍíÌìÎîÓóÒòÔôÚúÙùÛûÇçÑñ"
+_NAME_START_LETTERS = "A-ZÄÖÜÉÁÀÂÈÊÍÌÎÓÒÔÚÙÛÇÑ"
 _NAME_CANDIDATE_PATTERN = re.compile(
-    r"\b[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’\-]{2,}(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’\-]{2,})*\b"
+    rf"\b[{_NAME_START_LETTERS}][{_NAME_LETTERS}'’\-]{{2,}}"
+    rf"(?:\s+[{_NAME_START_LETTERS}][{_NAME_LETTERS}'’\-]{{2,}})*\b"
 )
 _COMMON_NAME_WORDS = {
     "Aber",
@@ -41,6 +44,8 @@ _COMMON_NAME_WORDS = {
     "Doch",
     "Donnerstag",
     "Dragon",
+    "Drachen",
+    "Diesmal",
     "Durch",
     "Ein",
     "Eine",
@@ -51,11 +56,24 @@ _COMMON_NAME_WORDS = {
     "Epilog",
     "Er",
     "Es",
+    "Eva",
     "Freitag",
     "Fuer",
     "Für",
+    "Gebrüll",
     "Gesamttext",
+    "Gestalt",
+    "Greifen",
+    "Gänsehaut",
+    "Form",
+    "Haar",
+    "Hälfte",
+    "Halsansatz",
+    "Harpyie",
+    "Heiliger",
+    "Hell",
     "Heute",
+    "Hohen",
     "Ich",
     "Kapitel",
     "Kein",
@@ -72,9 +90,17 @@ _COMMON_NAME_WORDS = {
     "Samstag",
     "Schon",
     "Segment",
+    "Selbst",
     "Sie",
+    "Silber",
+    "Schäferhundmischling",
     "Sonntag",
+    "Reiter",
+    "Rücken",
+    "Rüstung",
+    "Überraschung",
     "Teil",
+    "Tiergestalten",
     "Und",
     "Vom",
     "Von",
@@ -84,9 +110,42 @@ _COMMON_NAME_WORDS = {
     "Wer",
     "Wie",
     "Wir",
+    "Viele",
+    "Zähne",
+    "Zügen",
     "Zum",
     "Zur",
     "Chapter",
+}
+_SPECIAL_SHORT_NAME_TOKENS = {
+    "Wyr",
+}
+_FANTASY_SPOKEN_EXCEPTIONS = {
+    "ainissesthai": "Anissestai",
+    "aryal": "Arial",
+    "bayne": "Beyn",
+    "baynes": "Beyns",
+    "beluviel": "Beluwiel",
+    "caeravorn": "Keravorn",
+    "calondir": "Kalondir",
+    "calondirs": "Kalondirs",
+    "carling": "Karling",
+    "constantine": "Konstantin",
+    "cuelebre": "Kuelebre",
+    "eibhear": "Eiwer",
+    "graydon": "Greydon",
+    "grym": "Grimm",
+    "hugh": "Hju",
+    "irish": "Airisch",
+    "james": "Dschehms",
+    "johnny": "Dschonni",
+    "miguel": "Migel",
+    "quentin": "Kwentin",
+    "rhoswen": "Roswen",
+    "rune": "Rune",
+    "runes": "Ruuns",
+    "wolfhound": "Wolfhaund",
+    "wyr": "Wier",
 }
 _GERMAN_DIACRITICS = str.maketrans(
     {
@@ -99,10 +158,14 @@ _GERMAN_DIACRITICS = str.maketrans(
         "ß": "ss",
     }
 )
-_NAME_TOKEN_RE = re.compile(r"[A-Za-zÄÖÜäöüß]+")
+_NAME_TOKEN_RE = re.compile(rf"[{_NAME_LETTERS}]+")
 
 
 def spoken_hint(candidate: str) -> str:
+    return _fantasy_spoken_hint(_basic_spoken_hint(candidate))
+
+
+def _basic_spoken_hint(candidate: str) -> str:
     hinted = " ".join(str(candidate or "").split()).strip()
     if not hinted:
         return ""
@@ -119,6 +182,54 @@ def spoken_hint(candidate: str) -> str:
     hinted = _strip_non_german_diacritics(hinted)
     hinted = re.sub(r"\s+", " ", hinted).strip()
     return hinted or str(candidate or "").strip()
+
+
+def _fantasy_spoken_hint(value: str) -> str:
+    hinted = " ".join(str(value or "").split()).strip()
+    if not hinted:
+        return ""
+    tokens = hinted.split()
+    spoken_tokens = [_fantasy_token_spoken_hint(token) for token in tokens]
+    return " ".join(token for token in spoken_tokens if token).strip() or hinted
+
+
+def _fantasy_token_spoken_hint(token: str) -> str:
+    raw = str(token or "").strip()
+    if not raw:
+        return ""
+    prefix_match = re.match(r"^[^A-Za-zÄÖÜäöüßÉéÁáÀàÂâÈèÊêÍíÌìÎîÓóÒòÔôÚúÙùÛûÇçÑñ]+", raw)
+    suffix_match = re.search(r"[^A-Za-zÄÖÜäöüßÉéÁáÀàÂâÈèÊêÍíÌìÎîÓóÒòÔôÚúÙùÛûÇçÑñ]+$", raw)
+    prefix = prefix_match.group(0) if prefix_match else ""
+    suffix = suffix_match.group(0) if suffix_match else ""
+    core = raw[len(prefix): len(raw) - len(suffix) if suffix else len(raw)]
+    if not core:
+        return raw
+    folded = core.casefold()
+    explicit = _FANTASY_SPOKEN_EXCEPTIONS.get(folded)
+    if explicit:
+        return f"{prefix}{explicit}{suffix}"
+
+    transformed = core
+    replacements = (
+        (r"(?i)^qu", "Kw"),
+        (r"(?i)^caer", "Ker"),
+        (r"(?i)^cue", "Kue"),
+        (r"(?i)^car", "Kar"),
+        (r"(?i)^cal", "Kal"),
+        (r"(?i)^con", "Kon"),
+        (r"(?i)^rh", "R"),
+        (r"(?i)^ph", "F"),
+        (r"(?i)gray", "Grey"),
+        (r"(?i)bay", "Bey"),
+        (r"(?i)gh$", ""),
+        (r"(?i)ph", "f"),
+        (r"(?i)th", "t"),
+        (r"(?i)c(?=[aouAOU])", "K"),
+        (r"(?i)c(?=[eiEI])", "S"),
+    )
+    for pattern, replacement in replacements:
+        transformed = re.sub(pattern, replacement, transformed)
+    return f"{prefix}{transformed}{suffix}"
 
 
 def _strip_non_german_diacritics(value: str) -> str:
@@ -352,31 +463,42 @@ def _clean_name_candidate(candidate: str) -> str:
 
 
 def _is_document_name_candidate(candidate: str) -> bool:
-    if len(candidate) < 4 or len(candidate) > 80:
-        return False
     tokens = _NAME_TOKEN_RE.findall(candidate)
+    has_special_short_token = any(token in _SPECIAL_SHORT_NAME_TOKENS for token in tokens)
+    if (len(candidate) < 4 and not has_special_short_token) or len(candidate) > 80:
+        return False
     if not tokens:
         return False
     if all(token in _COMMON_NAME_WORDS for token in tokens):
         return False
     if len(tokens) == 1 and tokens[0] in _COMMON_NAME_WORDS:
         return False
-    return any(len(token) >= 4 and token not in _COMMON_NAME_WORDS for token in tokens)
+    return any(
+        (len(token) >= 4 or token in _SPECIAL_SHORT_NAME_TOKENS)
+        and token not in _COMMON_NAME_WORDS
+        for token in tokens
+    )
 
 
 def _interesting_name_tokens(candidate: str) -> list[str]:
+    raw_tokens = _NAME_TOKEN_RE.findall(candidate)
     tokens = [
         token
-        for token in _NAME_TOKEN_RE.findall(candidate)
-        if len(token) >= 4 and token not in _COMMON_NAME_WORDS
+        for token in raw_tokens
+        if (len(token) >= 4 or token in _SPECIAL_SHORT_NAME_TOKENS)
+        and token not in _COMMON_NAME_WORDS
     ]
-    if len(tokens) <= 1:
+    if len(raw_tokens) <= 1:
         return []
     return tokens
 
 
 def _name_has_strong_signal(candidate: str) -> bool:
     if any(marker in candidate for marker in ("-", "'", "’")):
+        return True
+    basic_hint = _basic_spoken_hint(candidate)
+    fantasy_hint = _fantasy_spoken_hint(basic_hint)
+    if fantasy_hint.casefold() != basic_hint.casefold():
         return True
     if _strip_non_german_diacritics(candidate) != candidate.translate(_GERMAN_DIACRITICS):
         return True
@@ -404,12 +526,16 @@ def _append_name_suggestion(
     match = _clean_name_candidate(str(suggestion.get("match", "") or ""))
     if not match:
         return
+    if _is_common_noun_phrase(match):
+        return
     folded = match.casefold()
     if folded in seen or not _is_document_name_candidate(match):
         return
     seen.add(folded)
     spoken_as = " ".join(str(suggestion.get("spoken_as", "") or spoken_hint(match)).split()).strip() or match
     if spoken_as.casefold() == match.casefold():
+        return
+    if _is_low_value_spoken_hint(match, spoken_as):
         return
     suggestions.append(
         {
@@ -420,3 +546,20 @@ def _append_name_suggestion(
             "reason": str(suggestion.get("reason", "") or _suggestion_reason(match)),
         }
     )
+
+
+def _is_common_noun_phrase(candidate: str) -> bool:
+    tokens = _NAME_TOKEN_RE.findall(candidate)
+    if len(tokens) <= 1:
+        return False
+    if any(token in _COMMON_NAME_WORDS for token in tokens):
+        return True
+    return False
+
+
+def _is_low_value_spoken_hint(match: str, spoken_as: str) -> bool:
+    basic_hint = _basic_spoken_hint(match)
+    fantasy_hint = _fantasy_spoken_hint(basic_hint)
+    if fantasy_hint.casefold() != basic_hint.casefold():
+        return False
+    return spoken_as.casefold() == basic_hint.casefold()

@@ -905,8 +905,11 @@
         {
           "name": "Bayne",
           "aliases": [],
-          "spoken_as": "Bayne",
-          "use_for_xtts": false,
+          "rule_aliases": [
+            "Bayne"
+          ],
+          "spoken_as": "Beyn",
+          "use_for_xtts": true,
           "role": "supporting",
           "notes": "Recurring Wyr sentinel appearing in the local German EPUB.",
           "sources": [
@@ -1176,8 +1179,11 @@
         {
           "name": "Bayne",
           "aliases": [],
-          "spoken_as": "Bayne",
-          "use_for_xtts": false,
+          "rule_aliases": [
+            "Bayne"
+          ],
+          "spoken_as": "Beyn",
+          "use_for_xtts": true,
           "role": "supporting",
           "notes": "Recurring Wyr sentinel who appears in the local EPUB.",
           "sources": [

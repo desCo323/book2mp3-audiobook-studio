@@ -11,10 +11,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from book2mp3.config import AppPaths
+from book2mp3.metadata_extractor.lexicon import build_pronunciation_rules
+from book2mp3.tts.pronunciation import suggest_document_pronunciation_rules
 from book2mp3.tts.xtts import XttsBackend
 from book2mp3.voice_lab import load_voice_profile
 from book2mp3.voice_settings import load_voice_setting
-from book2mp3.xtts_options import safe_xtts_chunk_chars
+from book2mp3.xtts_options import normalize_pronunciation_rules, safe_xtts_chunk_chars
 from scripts.render_xtts_dialogue_example import RenderVariant, _logger, _render_variant
 
 
@@ -22,29 +24,6 @@ SOURCE_JOB_ID = "d683f2a91148"
 SOURCE_CHUNK_START = 1948
 SOURCE_CHUNK_END = 1956
 VARIANT_KEY = "names_01_expressive_context"
-
-NAME_PRONUNCIATION_OVERRIDES = [
-    {"match": "Calondirs", "spoken_as": "Kalondirs", "scope": "whole_phrase", "enabled": True},
-    {"match": "Calondir", "spoken_as": "Kalondir", "scope": "whole_phrase", "enabled": True},
-    {"match": "Dragos", "spoken_as": "Dragos", "scope": "whole_phrase", "enabled": True},
-    {"match": "Pia", "spoken_as": "Pia", "scope": "whole_phrase", "enabled": True},
-    {"match": "Wyr", "spoken_as": "Wier", "scope": "whole_phrase", "enabled": True},
-    {"match": "Quentin", "spoken_as": "Kwentin", "scope": "whole_phrase", "enabled": True},
-    {"match": "Pegasus", "spoken_as": "Pegasus", "scope": "whole_phrase", "enabled": True},
-    {"match": "Carling", "spoken_as": "Karling", "scope": "whole_phrase", "enabled": True},
-    {"match": "Runes", "spoken_as": "Ruuns", "scope": "whole_phrase", "enabled": True},
-    {"match": "Baynes", "spoken_as": "Beyns", "scope": "whole_phrase", "enabled": True},
-    {"match": "Bayne", "spoken_as": "Beyn", "scope": "whole_phrase", "enabled": True},
-    {"match": "Constantine", "spoken_as": "Konstantin", "scope": "whole_phrase", "enabled": True},
-    {"match": "Graydon", "spoken_as": "Greydon", "scope": "whole_phrase", "enabled": True},
-    {"match": "Eva", "spoken_as": "Eva", "scope": "whole_phrase", "enabled": True},
-    {"match": "Miguel", "spoken_as": "Migel", "scope": "whole_phrase", "enabled": True},
-    {"match": "Hugh", "spoken_as": "Hju", "scope": "whole_phrase", "enabled": True},
-    {"match": "Andrea", "spoken_as": "Andrea", "scope": "whole_phrase", "enabled": True},
-    {"match": "Johnny", "spoken_as": "Dschonni", "scope": "whole_phrase", "enabled": True},
-    {"match": "James", "spoken_as": "Dschehms", "scope": "whole_phrase", "enabled": True},
-    {"match": "Irish Wolfhound", "spoken_as": "Airisch Wolfhaund", "scope": "whole_phrase", "enabled": True},
-]
 
 
 def _read_source_passage(paths: AppPaths) -> tuple[str, list[str]]:
@@ -71,6 +50,32 @@ def _remove_variant_artifacts(example_dir: Path) -> None:
     ):
         if child.exists():
             child.unlink()
+
+
+def _text_contains_rule_match(source_text: str, match: str) -> bool:
+    import re
+
+    parts = [re.escape(part) for part in match.strip().split() if part]
+    if not parts:
+        return False
+    pattern = r"(?<!\w)" + r"\s+".join(parts) + r"(?!\w)"
+    return re.search(pattern, source_text, flags=re.IGNORECASE | re.UNICODE) is not None
+
+
+def _automatic_name_rules(source_text: str, setting_rules: list[dict[str, object]]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    lexicon_matches = [
+        rule
+        for rule in build_pronunciation_rules()
+        if _text_contains_rule_match(source_text, str(rule.get("match", "") or ""))
+    ]
+    base_rules = normalize_pronunciation_rules([*setting_rules, *lexicon_matches])
+    document_rules = suggest_document_pronunciation_rules(
+        source_text,
+        existing_rules=base_rules,
+        limit=80,
+        min_occurrences=1,
+    )
+    return base_rules, document_rules
 
 
 def main() -> int:
@@ -101,14 +106,18 @@ def main() -> int:
         "sound_norm_refs": True,
         "librosa_trim_db": None,
     }
+    base_pronunciation_rules, automatic_document_rules = _automatic_name_rules(
+        source_text,
+        setting.pronunciation_rules,
+    )
     variant = RenderVariant(
         key=VARIANT_KEY,
-        label="Expressive context test with dense fantasy and character names",
+        label="Expressive context test with automatic fantasy-name pronunciation layer and tighter dense-name chunks",
         file_name=f"{VARIANT_KEY}.mp3",
-        max_chars=safe_xtts_chunk_chars(160, profile.target_language),
+        max_chars=safe_xtts_chunk_chars(130, profile.target_language),
         length_scale=0.96,
         inference_options=expressive_context_inference_options,
-        pronunciation_overrides=NAME_PRONUNCIATION_OVERRIDES,
+        pronunciation_overrides=automatic_document_rules,
     )
 
     try:
@@ -117,7 +126,7 @@ def main() -> int:
             example_dir,
             source_text,
             variant,
-            setting.pronunciation_rules,
+            base_pronunciation_rules,
             profile,
             logger,
         )
@@ -134,6 +143,8 @@ def main() -> int:
         "source_chunks": [SOURCE_CHUNK_START, SOURCE_CHUNK_END],
         "source_files": source_files,
         "source_file": str(source_path),
+        "base_pronunciation_rule_count": len(base_pronunciation_rules),
+        "automatic_document_rules": automatic_document_rules,
         "variant": asdict(result),
         "selected_reason": (
             "Manual pick from the name-density scan: a Wyr/dragon passage with Calondir, Dragos, Pia, "

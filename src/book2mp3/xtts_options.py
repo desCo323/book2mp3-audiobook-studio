@@ -110,6 +110,11 @@ def safe_xtts_chunk_chars(requested: int, language_code: str | None = "de") -> i
 def normalize_xtts_dialog_text(text: str) -> str:
     """Normalize dialogue punctuation before sending text to XTTS."""
     normalized = str(text or "").translate(_XTTS_DIALOG_TRANSLATION)
+    normalized = re.sub(
+        r"\b([A-Za-zÄÖÜäöüßÉéÁáÀàÂâÈèÊêÍíÌìÎîÓóÒòÔôÚúÙùÛûÇçÑñ]+)'(?=\s+)",
+        r"\1",
+        normalized,
+    )
     normalized = re.sub(r"\s+", " ", normalized).strip()
     normalized = re.sub(r"^\s*[\"']+\s*", "", normalized)
     normalized = re.sub(r"\s*[\"']+\s*$", "", normalized)
