@@ -279,6 +279,41 @@ def main() -> int:
         "num_beams": 1,
         "do_sample": True,
     }
+    expressive_context_inference_options = {
+        **base_inference_options,
+        "temperature": 0.82,
+        "top_p": 0.96,
+        "top_k": 80,
+        "repetition_penalty": 4.0,
+        "num_beams": 1,
+        "do_sample": True,
+        "gpt_cond_len": 30,
+        "gpt_cond_chunk_len": 6,
+        "max_ref_length": 45,
+        "sound_norm_refs": True,
+        "librosa_trim_db": None,
+    }
+    expressive_punchy_inference_options = {
+        **base_inference_options,
+        "temperature": 0.92,
+        "top_p": 0.98,
+        "top_k": 100,
+        "repetition_penalty": 3.5,
+        "num_beams": 1,
+        "do_sample": True,
+        "gpt_cond_len": 30,
+        "gpt_cond_chunk_len": 6,
+        "max_ref_length": 45,
+        "sound_norm_refs": True,
+        "librosa_trim_db": None,
+    }
+    fantasy_name_overrides = [
+        {"match": "Talwyn", "spoken_as": "Tallwin", "scope": "whole_phrase", "enabled": True},
+        {"match": "Éibhear", "spoken_as": "Eiwer", "scope": "whole_phrase", "enabled": True},
+        {"match": "Eibhear", "spoken_as": "Eiwer", "scope": "whole_phrase", "enabled": True},
+        {"match": "Rhi", "spoken_as": "Rie", "scope": "whole_phrase", "enabled": True},
+        {"match": "Izzy", "spoken_as": "Issi", "scope": "whole_phrase", "enabled": True},
+    ]
     variants = [
         RenderVariant(
             key="dialogue_01_current",
@@ -303,13 +338,25 @@ def main() -> int:
             max_chars=100,
             length_scale=0.99,
             inference_options=livelier_inference_options,
-            pronunciation_overrides=[
-                {"match": "Talwyn", "spoken_as": "Tallwin", "scope": "whole_phrase", "enabled": True},
-                {"match": "Éibhear", "spoken_as": "Eiwer", "scope": "whole_phrase", "enabled": True},
-                {"match": "Eibhear", "spoken_as": "Eiwer", "scope": "whole_phrase", "enabled": True},
-                {"match": "Rhi", "spoken_as": "Rie", "scope": "whole_phrase", "enabled": True},
-                {"match": "Izzy", "spoken_as": "Issi", "scope": "whole_phrase", "enabled": True},
-            ],
+            pronunciation_overrides=fantasy_name_overrides,
+        ),
+        RenderVariant(
+            key="dialogue_04_expressive_context",
+            label="Expressive decoding with longer dialogue context",
+            file_name="dialogue_04_expressive_context.mp3",
+            max_chars=safe_xtts_chunk_chars(160, profile.target_language),
+            length_scale=0.96,
+            inference_options=expressive_context_inference_options,
+            pronunciation_overrides=fantasy_name_overrides,
+        ),
+        RenderVariant(
+            key="dialogue_05_expressive_punchy",
+            label="Stronger expressive sampling with punchier pace",
+            file_name="dialogue_05_expressive_punchy.mp3",
+            max_chars=safe_xtts_chunk_chars(140, profile.target_language),
+            length_scale=0.93,
+            inference_options=expressive_punchy_inference_options,
+            pronunciation_overrides=fantasy_name_overrides,
         ),
     ]
 
@@ -331,6 +378,16 @@ def main() -> int:
     finally:
         XttsBackend.shutdown_all_servers()
     accepted_variants = [result for result in variant_results if result.accepted]
+    expressive_feedback_variants = [
+        result.variant_key
+        for result in accepted_variants
+        if "expressive" in result.variant_key
+    ]
+    fallback_feedback_variants = [
+        result.variant_key
+        for result in accepted_variants
+        if result.variant_key != "dialogue_01_current" and result.variant_key not in expressive_feedback_variants
+    ]
     summary = {
         "accepted": bool(accepted_variants),
         "setting_id": setting.setting_id,
@@ -342,11 +399,7 @@ def main() -> int:
         "source_file": str(source_path),
         "variants": [asdict(result) for result in variant_results],
         "accepted_variants": [result.variant_key for result in accepted_variants],
-        "recommended_feedback_order": [
-            result.variant_key
-            for result in variant_results
-            if result.accepted and result.variant_key != "dialogue_01_current"
-        ],
+        "recommended_feedback_order": [*expressive_feedback_variants, *fallback_feedback_variants],
         "note": "A/B dialogue examples with shared XTTS normalization, Ramona pronunciation rules, edge-only WAV trimming, and render-only parameter/name variants.",
     }
     (example_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
