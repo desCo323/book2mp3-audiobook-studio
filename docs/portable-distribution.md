@@ -100,6 +100,15 @@ To assemble a portable bundle skeleton from the current repo:
 python scripts/build_portable_bundle.py dist/book2mp3-portable --clean
 ```
 
+To prepare release-grade Piper assets before packaging:
+
+```bash
+python scripts/bootstrap_runtime.py --piper-platform linux --release-voice-pack
+python scripts/bootstrap_runtime.py --piper-platform windows --release-voice-pack
+```
+
+The compact release voice pack contains German, English, Spanish and Portuguese Piper voices. The larger local default voice pack remains available through `python scripts/bootstrap_runtime.py` without `--release-voice-pack`.
+
 To include app-local runtimes when you already have them:
 
 ```bash
@@ -119,7 +128,7 @@ python scripts/populate_bundle_python_linux.py dist/book2mp3-portable
 For one larger Linux release step that assembles, populates and validates in one run:
 
 ```bash
-python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --archive
+python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --archive --include-xtts-starter-profiles
 ```
 
 For Windows, install the official embeddable package into an existing bundle:
@@ -147,6 +156,12 @@ That path now:
 - patches the `. _pth` file so `src/` is the import root
 - downloads `win_amd64` wheels for the app dependencies
 - unpacks those wheels directly into `python/windows/Lib/site-packages`
+
+For one larger Windows release step that assembles, populates and validates in one run:
+
+```bash
+python scripts/build_windows_portable_release.py dist/book2mp3-windows-portable --archive --include-xtts-starter-profiles
+```
 
 As of April 21, 2026, the default verified embeddable source URL is:
 
@@ -194,6 +209,32 @@ Important:
 
 - this optional download path improves the bundle UX
 - it does **not** automatically solve the XTTS model licensing constraints
+
+## GitHub downloads
+
+The repository ships `.github/workflows/portable-release.yml`.
+
+Every push, pull request and manual run builds downloadable GitHub Actions artifacts:
+
+- `book2mp3-linux-portable.tar.gz`
+- `book2mp3-windows-portable.zip`
+
+Pushes to `main` additionally update the rolling GitHub pre-release named `Continuous Portable Build` with tag `continuous`.
+
+Tags matching `v*`, for example `v0.1.0`, create versioned GitHub Releases and attach:
+
+- Linux archive
+- Windows archive
+- per-file `.sha256` checksums
+- combined `SHA256SUMS.txt`
+
+Each GitHub release archive contains:
+
+- app-local Python for the target platform
+- Piper runtime for the target platform
+- compact multilingual Piper release voice pack
+- XTTS starter speaker profiles, which allow `Standard XTTS` to be created automatically
+- `START_HERE.md`
 
 For a larger Linux bundle build, the optional XTTS runtime can also be included directly:
 

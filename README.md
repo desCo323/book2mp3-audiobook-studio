@@ -177,8 +177,11 @@ Der Quellcode dieses Repos ist veröffentlichbar. Für ein öffentliches Release
 
 Portable Builds:
 
-- Linux- und Windows-Portables werden bei Push auf `main` als rolling Pre-Release gebaut
-- Standardpfad ist `Piper-ready`
+- jeder Branch-/PR-Lauf erzeugt Linux- und Windows-Portables als GitHub-Actions-Artefakte
+- Push auf `main` aktualisiert das rolling Pre-Release `continuous`
+- Tags wie `v0.1.0` erzeugen versionierte GitHub Releases
+- Release-Dateien: `book2mp3-linux-portable.tar.gz`, `book2mp3-windows-portable.zip`, `SHA256SUMS.txt`
+- Standardpfad ist `Piper-ready` mit kompakter mehrsprachiger Stimmenauswahl
 - XTTS bleibt im Release bewusst optional und separat gekennzeichnet
 - Workflow-Datei: [.github/workflows/portable-release.yml](.github/workflows/portable-release.yml)
 
@@ -269,7 +272,13 @@ python scripts/install_xtts_into_bundle_python.py dist/book2mp3-portable
 Or do the larger Linux release step in one command:
 
 ```bash
-python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --archive
+python scripts/build_linux_portable_release.py dist/book2mp3-linux-portable --archive --include-xtts-starter-profiles
+```
+
+For the Windows portable archive:
+
+```bash
+python scripts/build_windows_portable_release.py dist/book2mp3-windows-portable --archive --include-xtts-starter-profiles
 ```
 
 If XTTS should be available directly inside the portable app Python, build with:

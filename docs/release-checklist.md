@@ -41,6 +41,10 @@ This checklist is the practical go/no-go guide before presenting `book2mp3` as a
 
 - bundle contains `START_HERE.md`
 - bundle contains app-local Python runtime(s)
+- Linux download contains Linux Piper runtime
+- Windows download contains Windows Piper runtime
+- downloads contain the compact multilingual Piper release voice pack
+- downloads contain XTTS starter speaker profiles so `Standard XTTS` can be created automatically
 - bundle contains `finalbooks/` for copied completed audiobook exports
 - bundle starts through `start.sh` / `start.bat`
 - users do not need to install Python manually
@@ -55,6 +59,10 @@ python scripts/check_portable_bundle.py /path/to/bundle
 - README matches the real product state
 - GitHub Pages landing page matches the current UI and workflow names
 - portable distribution docs match the real bundle layout
+- GitHub Actions expose Linux and Windows downloads as workflow artifacts
+- Pushes to `main` update the rolling `continuous` GitHub pre-release
+- Tags named `v*` create versioned GitHub releases
+- release assets include `SHA256SUMS.txt`
 - XTTS is clearly described as optional
 - XTTS lexicon workflow is documented and reachable from the docs
 - XTTS licensing is not presented as solved

@@ -22,6 +22,14 @@ PIPER_RELEASES = {
 
 VOICE_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve"
 DEFAULT_VOICES = DEFAULT_VOICE_PACK
+RELEASE_VOICE_PACK = [
+    "de_DE-ramona-low",
+    "de_DE-eva_k-x_low",
+    "en_US-lessac-medium",
+    "en_US-amy-medium",
+    "es_AR-daniela-high",
+    "pt_BR-faber-medium",
+]
 HIGH_FEMALE_VOICE_PACK = [
     "de_DE-eva_k-x_low",
     "de_DE-kerstin-low",
@@ -70,10 +78,17 @@ def ensure_dirs() -> tuple[Path, Path]:
     return runtime, voices
 
 
-def install_piper(runtime_root: Path) -> None:
+def current_piper_platform() -> str:
     system = platform.system().lower()
     if system not in PIPER_RELEASES:
         raise RuntimeError(f"Unsupported platform: {platform.system()}")
+    return system
+
+
+def install_piper(runtime_root: Path, system: str | None = None) -> None:
+    system = system or current_piper_platform()
+    if system not in PIPER_RELEASES:
+        raise RuntimeError(f"Unsupported Piper platform: {system}")
     url = PIPER_RELEASES[system]
     target_dir = runtime_root / "piper" / system
     if target_dir.exists() and any(target_dir.iterdir()):
@@ -116,6 +131,11 @@ def install_default_voices(voices_root: Path) -> None:
         install_voice(voices_root, voice_id)
 
 
+def install_release_voices(voices_root: Path) -> None:
+    for voice_id in RELEASE_VOICE_PACK:
+        install_voice(voices_root, voice_id)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -134,6 +154,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip installation of the built-in default female voices",
     )
+    parser.add_argument(
+        "--release-voice-pack",
+        action="store_true",
+        help="Install the compact multilingual release voice pack instead of the large default pack",
+    )
+    parser.add_argument(
+        "--piper-platform",
+        action="append",
+        choices=sorted(PIPER_RELEASES),
+        default=[],
+        help="Install Piper runtime for this platform; can be passed multiple times",
+    )
+    parser.add_argument(
+        "--all-piper-platforms",
+        action="store_true",
+        help="Install all supported Piper runtime platforms into runtime/piper/",
+    )
     parser.add_argument("--skip-runtime", action="store_true")
     return parser.parse_args()
 
@@ -142,8 +179,15 @@ def main() -> int:
     args = parse_args()
     runtime_root, voices_root = ensure_dirs()
     if not args.skip_runtime:
-        install_piper(runtime_root)
-    if not args.no_default_voices:
+        if args.all_piper_platforms:
+            platforms = sorted(PIPER_RELEASES)
+        else:
+            platforms = args.piper_platform or [current_piper_platform()]
+        for piper_platform in platforms:
+            install_piper(runtime_root, piper_platform)
+    if not args.no_default_voices and args.release_voice_pack:
+        install_release_voices(voices_root)
+    elif not args.no_default_voices:
         install_default_voices(voices_root)
     if args.install_female_high_pack:
         for voice_id in HIGH_FEMALE_VOICE_PACK:

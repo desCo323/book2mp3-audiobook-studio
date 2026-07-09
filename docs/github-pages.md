@@ -31,8 +31,16 @@ Danach veroeffentlicht GitHub die Seite aus:
 Zusätzlich zur GitHub-Page gibt es einen Release-Workflow:
 
 - Datei: `.github/workflows/portable-release.yml`
-- Trigger: Push auf `main` oder manueller Start
-- Ergebnis: rolling Pre-Release mit Linux- und Windows-Portable
+- Trigger: Push auf Branches, Pull Requests, Tags `v*` oder manueller Start
+- Ergebnis bei jedem Lauf: GitHub-Actions-Artefakte fuer Linux und Windows
+- Ergebnis bei Push auf `main`: rolling Pre-Release `continuous` mit Linux- und Windows-Portable
+- Ergebnis bei Tag `v*`: versioniertes GitHub Release mit Linux- und Windows-Portable
+- zusaetzlich: `.sha256`-Dateien und `SHA256SUMS.txt`
+
+Die Release-Artefakte sind:
+
+- `book2mp3-linux-portable.tar.gz`
+- `book2mp3-windows-portable.zip`
 
 Die Pages-Doku und der Release-Workflow sollten inhaltlich zusammenpassen:
 
