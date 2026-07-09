@@ -36,6 +36,7 @@ from book2mp3.utils.logging_utils import attach_job_file_logger, get_logger
 from book2mp3.voice_lab import load_voice_profile
 from book2mp3.xtts_options import (
     default_xtts_inference,
+    normalize_xtts_dialog_text,
     normalize_pronunciation_rules,
     normalize_xtts_inference,
     normalize_xtts_quality_mode,
@@ -752,6 +753,7 @@ class JobManager:
         for chunk in state.chunks:
             original_text = Path(chunk.text_file).read_text(encoding="utf-8")
             transformed = apply_pronunciation_rules(original_text, state.pronunciation_rules)
+            spoken_text = normalize_xtts_dialog_text(transformed.spoken_text)
             spoken_path = self._chunk_spoken_text_path(state, chunk.index)
             previous_spoken = ""
             if spoken_path.exists():
@@ -759,13 +761,13 @@ class JobManager:
                     previous_spoken = spoken_path.read_text(encoding="utf-8")
                 except OSError:
                     previous_spoken = ""
-            if previous_spoken != transformed.spoken_text:
-                spoken_path.write_text(transformed.spoken_text, encoding="utf-8")
+            if previous_spoken != spoken_text:
+                spoken_path.write_text(spoken_text, encoding="utf-8")
                 changed = True
             updated = replace(
                 chunk,
                 spoken_text_file=str(spoken_path),
-                spoken_text_length=len(transformed.spoken_text),
+                spoken_text_length=len(spoken_text),
                 pronunciation_rule_count=transformed.applied_rule_count,
                 pronunciation_applied_occurrences=transformed.applied_occurrences,
             )
@@ -1539,13 +1541,17 @@ class JobManager:
             state.append_log(f"Extracted source text and detected {len(chapters)} chapter(s)")
             logger.debug("Extracted text length: %s", len(document.text))
 
+        xtts_chunks_prepared_from_spoken_text = False
         if not state.chunks:
             chunks_dir = job_dir / "chunks"
             chunks_dir.mkdir(parents=True, exist_ok=True)
             chunks: list[ChunkRecord] = []
             chunk_index = 1
+            xtts_chapters_with_replacements = 0
+            xtts_applied_occurrences = 0
             if state.backend == "xtts":
                 state.max_chars = self._xtts_effective_max_chars(state)
+                state = self._augment_xtts_pronunciation_rules(state, logger=logger)
             logger.info("Preparing chunks with max_chars=%s across %s chapter(s)", state.max_chars, len(state.chapters))
             for chapter in state.chapters or [
                 ChapterRecord(
@@ -1557,7 +1563,15 @@ class JobManager:
                 )
             ]:
                 chapter_text = Path(chapter.text_file).read_text(encoding="utf-8")
-                parts = split_text(chapter_text, state.max_chars)
+                chunk_source_text = chapter_text
+                if state.backend == "xtts":
+                    transformed = apply_pronunciation_rules(chapter_text, state.pronunciation_rules)
+                    chunk_source_text = normalize_xtts_dialog_text(transformed.spoken_text)
+                    xtts_chunks_prepared_from_spoken_text = True
+                    if transformed.applied_occurrences > 0:
+                        xtts_chapters_with_replacements += 1
+                        xtts_applied_occurrences += transformed.applied_occurrences
+                parts = split_text(chunk_source_text, state.max_chars)
                 if not parts:
                     continue
                 chapter.chunk_start_index = chunk_index
@@ -1583,8 +1597,21 @@ class JobManager:
             state.chunks = chunks
             state.chapters = [chapter for chapter in state.chapters if chapter.chunk_end_index >= chapter.chunk_start_index > 0]
             state.append_log(f"Prepared {len(chunks)} chunk files")
+            if state.backend == "xtts":
+                if xtts_applied_occurrences > 0:
+                    state.append_log(
+                        f"Prepared normalized XTTS text with {xtts_applied_occurrences} pronunciation replacement(s)"
+                    )
+                elif xtts_chunks_prepared_from_spoken_text:
+                    state.append_log("Prepared normalized XTTS text for chunking")
+                logger.info(
+                    "Prepared normalized XTTS chunks for job %s (chapters_with_replacements=%s occurrences=%s)",
+                    state.job_id,
+                    xtts_chapters_with_replacements,
+                    xtts_applied_occurrences,
+                )
             logger.debug("Chunk manifest prepared")
-        if state.backend == "xtts":
+        if state.backend == "xtts" and not xtts_chunks_prepared_from_spoken_text:
             state = self._prepare_xtts_spoken_chunks(state, logger=logger)
         state.status = "queued"
         if state.backend == "xtts":

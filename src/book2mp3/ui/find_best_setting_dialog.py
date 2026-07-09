@@ -102,6 +102,7 @@ from book2mp3.voice_test_assistant import (
 )
 from book2mp3.xtts_options import (
     default_xtts_inference,
+    normalize_xtts_dialog_text,
     normalize_pronunciation_rules,
     normalize_xtts_quality_mode,
     safe_xtts_chunk_chars,
@@ -109,30 +110,10 @@ from book2mp3.xtts_options import (
 
 
 _XTTS_PREVIEW_HARD_LIMIT = 2400
-_XTTS_DIALOG_TRANSLATION = str.maketrans(
-    {
-        "«": "",
-        "»": "",
-        "„": "",
-        "“": "",
-        "”": "",
-        "‚": "",
-        "‘": "",
-        "’": "'",
-    }
-)
-
-
-def _normalize_xtts_dialog_text(text: str) -> str:
-    normalized = str(text or "").translate(_XTTS_DIALOG_TRANSLATION)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    normalized = re.sub(r"^\s*[\"']+\s*", "", normalized)
-    normalized = re.sub(r"\s*[\"']+\s*$", "", normalized)
-    return normalized
 
 
 def _xtts_preview_sentences(text: str) -> list[str]:
-    normalized = _normalize_xtts_dialog_text(text)
+    normalized = normalize_xtts_dialog_text(text)
     if not normalized:
         return []
     return [
@@ -143,13 +124,13 @@ def _xtts_preview_sentences(text: str) -> list[str]:
 
 
 def _paragraph_preview_text(text: str, hard_limit: int = _XTTS_PREVIEW_HARD_LIMIT) -> str:
-    normalized = _normalize_xtts_dialog_text(text)
+    normalized = normalize_xtts_dialog_text(text)
     if len(normalized) <= hard_limit:
         return normalized
 
     paragraphs = []
     for paragraph in re.split(r"\n\s*\n+", str(text or "")):
-        normalized_paragraph = _normalize_xtts_dialog_text(paragraph)
+        normalized_paragraph = normalize_xtts_dialog_text(paragraph)
         if normalized_paragraph:
             paragraphs.append(normalized_paragraph)
     chosen: list[str] = []
@@ -319,7 +300,7 @@ class LivePreviewWorker(QThread):
                     profile = load_voice_profile(self.paths.voice_profiles, self.voice_profile_id)
                     preview_text = _paragraph_preview_text(text)
                     spoken_preview = apply_pronunciation_rules(preview_text, self.pronunciation_rules)
-                    spoken_text = _normalize_xtts_dialog_text(spoken_preview.spoken_text)
+                    spoken_text = normalize_xtts_dialog_text(spoken_preview.spoken_text)
                     xtts_max_chars = safe_xtts_chunk_chars(self.max_chars, profile.target_language)
                     xtts_chunks = split_text(spoken_text, xtts_max_chars)
                     if not xtts_chunks:

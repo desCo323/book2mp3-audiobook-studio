@@ -128,7 +128,7 @@ def _style_defaults(style: str, backend: str) -> dict[str, object]:
     )
     if backend == "xtts":
         preset_id = "premium_natural"
-        max_chars = 120
+        max_chars = 100
         sentence_silence = 0.22
         length_scale = 1.0
     preset = get_preset(preset_id)

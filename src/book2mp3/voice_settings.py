@@ -65,6 +65,8 @@ _DEFAULT_RAMONA_EXTRA_RULES = [
     {"match": "Rei Ishii", "spoken_as": "Rei Ischii", "scope": "whole_phrase", "enabled": True},
     {"match": "Talwyn", "spoken_as": "Talwin", "scope": "whole_phrase", "enabled": True},
     {"match": "Talan", "spoken_as": "Talan", "scope": "whole_phrase", "enabled": True},
+    {"match": "Izzy", "spoken_as": "Issi", "scope": "whole_phrase", "enabled": True},
+    {"match": "Rhi", "spoken_as": "Ri", "scope": "whole_phrase", "enabled": True},
     {"match": "Éibhear", "spoken_as": "Eber", "scope": "whole_phrase", "enabled": True},
     {"match": "Eibhear", "spoken_as": "Eber", "scope": "whole_phrase", "enabled": True},
 ]
@@ -360,7 +362,7 @@ def seed_default_voice_settings(root: Path, voice_profiles_root: Path) -> list[V
             voice_id="de_DE-ramona-low",
             voice_profile_id=DEFAULT_RAMONA_VOICE_PROFILE_ID,
             preset_hint="premium_natural",
-            max_chars=120,
+            max_chars=100,
             output_mode="chapter_files",
             target_part_minutes=20,
             sentence_silence=0.24,

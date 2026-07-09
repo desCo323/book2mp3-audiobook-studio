@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 
 XTTS_QUALITY_FAST = "fast"
@@ -14,6 +15,18 @@ XTTS_SAFE_CHUNK_CHARS = 220
 _XTTS_LANGUAGE_CHAR_LIMITS = {
     "de": 253,
 }
+_XTTS_DIALOG_TRANSLATION = str.maketrans(
+    {
+        "«": "",
+        "»": "",
+        "„": "",
+        "“": "",
+        "”": "",
+        "‚": "",
+        "‘": "",
+        "’": "'",
+    }
+)
 
 _QUALITY_DEFAULTS: dict[str, dict[str, Any]] = {
     XTTS_QUALITY_FAST: {
@@ -92,6 +105,15 @@ def safe_xtts_chunk_chars(requested: int, language_code: str | None = "de") -> i
     hard_limit = _XTTS_LANGUAGE_CHAR_LIMITS.get(code, XTTS_SAFE_CHUNK_CHARS + 10)
     safe_limit = max(80, min(XTTS_SAFE_CHUNK_CHARS, hard_limit - 13))
     return min(value, safe_limit)
+
+
+def normalize_xtts_dialog_text(text: str) -> str:
+    """Normalize dialogue punctuation before sending text to XTTS."""
+    normalized = str(text or "").translate(_XTTS_DIALOG_TRANSLATION)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"^\s*[\"']+\s*", "", normalized)
+    normalized = re.sub(r"\s*[\"']+\s*$", "", normalized)
+    return normalized
 
 
 def normalize_xtts_inference(
