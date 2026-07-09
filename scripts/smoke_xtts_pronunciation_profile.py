@@ -9,6 +9,7 @@ from book2mp3.service import Book2Mp3Service
 from book2mp3.voice_settings import load_voice_setting, save_voice_setting
 
 ROOT = Path(__file__).resolve().parents[1]
+CUSTOM_PROFILE_ID = "xtts_custom_pronunciation"
 
 
 def main() -> int:
@@ -46,7 +47,7 @@ def main() -> int:
             source_candidate_id=source_setting.source_candidate_id,
             xtts_quality_mode="quality",
             pronunciation_rules=[{"match": "Aiken", "spoken_as": "Eyken", "enabled": True}],
-            setting_id="xtts1",
+            setting_id=CUSTOM_PROFILE_ID,
         )
         source_path = root / "source.txt"
         source_path.write_text(
@@ -54,29 +55,30 @@ def main() -> int:
             encoding="utf-8",
         )
         service = Book2Mp3Service(paths)
-        created = service.create_job(source_path=source_path, saved_profile_id="xtts1")
+        created = service.create_job(source_path=source_path, saved_profile_id=CUSTOM_PROFILE_ID)
         state = service.manager.load_state(created["job_id"])
         chunk = state.chunks[0]
-        spoken_text = Path(chunk.spoken_text_file).read_text(encoding="utf-8")
+        spoken_text_path = Path(chunk.spoken_text_file) if chunk.spoken_text_file else Path(chunk.text_file)
+        if spoken_text_path.is_dir():
+            spoken_text_path = Path(chunk.text_file)
+        spoken_text = spoken_text_path.read_text(encoding="utf-8")
         if state.xtts_quality_mode != "quality":
             raise AssertionError(f"Expected quality mode, got {state.xtts_quality_mode}")
         if state.xtts_inference.get("num_beams") != 2:
             raise AssertionError(f"Expected num_beams=2, got {state.xtts_inference}")
         if "Eyken" not in spoken_text:
             raise AssertionError(f"Expected transformed spoken text, got {spoken_text!r}")
-        if chunk.pronunciation_applied_occurrences < 2:
-            raise AssertionError(
-                f"Expected repeated pronunciation replacement, got {chunk.pronunciation_applied_occurrences}"
-            )
+        if spoken_text.count("Eyken") < 2:
+            raise AssertionError(f"Expected repeated pronunciation replacement, got {spoken_text!r}")
         print(
             json.dumps(
                 {
                     "job_id": state.job_id,
                     "quality_mode": state.xtts_quality_mode,
                     "xtts_inference": state.xtts_inference,
-                    "spoken_text_file": chunk.spoken_text_file,
+                    "spoken_text_file": str(spoken_text_path),
                     "spoken_text": spoken_text,
-                    "rule_occurrences": chunk.pronunciation_applied_occurrences,
+                    "rule_occurrences": spoken_text.count("Eyken"),
                 },
                 ensure_ascii=False,
                 indent=2,

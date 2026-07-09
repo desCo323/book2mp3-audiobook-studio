@@ -27,6 +27,11 @@ VALID_PROFILE_STATUSES = {
 }
 DEFAULT_RAMONA_SETTING_ID = "xtts1"
 DEFAULT_RAMONA_VOICE_PROFILE_ID = "xtts_deutsch_weiblich_warm"
+STANDARD_XTTS_SETTING_ID = DEFAULT_RAMONA_SETTING_ID
+STANDARD_XTTS_DISPLAY_NAME = "Standard XTTS"
+STANDARD_XTTS_PRESET_HINT = "premium_natural"
+STANDARD_XTTS_MAX_CHARS = 130
+STANDARD_XTTS_LENGTH_SCALE = 0.96
 _DEFAULT_RAMONA_LEXICON_AUTHORS = {
     "G. A. Aiken",
     "Thea Harrison",
@@ -63,13 +68,31 @@ _DEFAULT_RAMONA_EXTRA_RULES = [
     {"match": "Ariani ä Iriel", "spoken_as": "Ariani eh Iriel", "scope": "whole_phrase", "enabled": True},
     {"match": "Amelia Gryffindor", "spoken_as": "Amelia Griffindor", "scope": "whole_phrase", "enabled": True},
     {"match": "Rei Ishii", "spoken_as": "Rei Ischii", "scope": "whole_phrase", "enabled": True},
-    {"match": "Talwyn", "spoken_as": "Talwin", "scope": "whole_phrase", "enabled": True},
+    {"match": "Talwyn", "spoken_as": "Tallwin", "scope": "whole_phrase", "enabled": True},
     {"match": "Talan", "spoken_as": "Talan", "scope": "whole_phrase", "enabled": True},
     {"match": "Izzy", "spoken_as": "Issi", "scope": "whole_phrase", "enabled": True},
-    {"match": "Rhi", "spoken_as": "Ri", "scope": "whole_phrase", "enabled": True},
-    {"match": "Éibhear", "spoken_as": "Eber", "scope": "whole_phrase", "enabled": True},
-    {"match": "Eibhear", "spoken_as": "Eber", "scope": "whole_phrase", "enabled": True},
+    {"match": "Rhi", "spoken_as": "Rie", "scope": "whole_phrase", "enabled": True},
+    {"match": "Éibhear", "spoken_as": "Eiwer", "scope": "whole_phrase", "enabled": True},
+    {"match": "Eibhear", "spoken_as": "Eiwer", "scope": "whole_phrase", "enabled": True},
 ]
+
+
+def standard_xtts_inference() -> dict[str, Any]:
+    return {
+        "temperature": 0.82,
+        "top_p": 0.96,
+        "top_k": 80,
+        "repetition_penalty": 4.0,
+        "length_penalty": 1.0,
+        "num_beams": 1,
+        "do_sample": True,
+        "enable_text_splitting": False,
+        "gpt_cond_len": 30,
+        "gpt_cond_chunk_len": 6,
+        "max_ref_length": 45,
+        "sound_norm_refs": True,
+        "librosa_trim_db": None,
+    }
 
 
 def normalize_profile_status(status: str | None) -> str:
@@ -348,44 +371,63 @@ def load_voice_setting(root: Path, setting_id: str) -> VoiceSetting:
     return VoiceSetting(**payload)
 
 
-def seed_default_voice_settings(root: Path, voice_profiles_root: Path) -> list[VoiceSetting]:
-    """Create the approved Ramona Live XTTS setting for fresh workspaces."""
-    if list(_settings_dir(root).glob("*.json")):
-        return []
+def ensure_standard_xtts_setting(root: Path, voice_profiles_root: Path) -> VoiceSetting | None:
+    """Create or migrate the approved Standard XTTS production profile."""
     if not (voice_profiles_root / DEFAULT_RAMONA_VOICE_PROFILE_ID / "profile.json").exists():
+        return None
+    target_inference = normalize_xtts_inference(standard_xtts_inference(), quality_mode="max_quality")
+    target_rules = _default_ramona_pronunciation_rules()
+    if _setting_path(root, STANDARD_XTTS_SETTING_ID).exists():
+        existing = load_voice_setting(root, STANDARD_XTTS_SETTING_ID)
+        if (
+            existing.display_name == STANDARD_XTTS_DISPLAY_NAME
+            and existing.backend == "xtts"
+            and existing.voice_id == "de_DE-ramona-low"
+            and existing.voice_profile_id == DEFAULT_RAMONA_VOICE_PROFILE_ID
+            and existing.preset_hint == STANDARD_XTTS_PRESET_HINT
+            and existing.max_chars == STANDARD_XTTS_MAX_CHARS
+            and existing.output_mode == "chapter_files"
+            and existing.target_part_minutes == 20
+            and existing.sentence_silence == 0.24
+            and existing.length_scale == STANDARD_XTTS_LENGTH_SCALE
+            and existing.status == PROFILE_STATUS_APPROVED
+            and existing.xtts_quality_mode == "max_quality"
+            and existing.xtts_inference == target_inference
+            and existing.pronunciation_rules == target_rules
+        ):
+            return existing
+    return save_voice_setting(
+        root,
+        display_name=STANDARD_XTTS_DISPLAY_NAME,
+        backend="xtts",
+        voice_id="de_DE-ramona-low",
+        voice_profile_id=DEFAULT_RAMONA_VOICE_PROFILE_ID,
+        preset_hint=STANDARD_XTTS_PRESET_HINT,
+        max_chars=STANDARD_XTTS_MAX_CHARS,
+        output_mode="chapter_files",
+        target_part_minutes=20,
+        sentence_silence=0.24,
+        length_scale=STANDARD_XTTS_LENGTH_SCALE,
+        notes=(
+            "Approved Standard XTTS profile with expressive server parameters, tighter dense-name chunks "
+            "and automatic fantasy-name pronunciation rules."
+        ),
+        status=PROFILE_STATUS_APPROVED,
+        approved_at=None,
+        xtts_quality_mode="max_quality",
+        xtts_inference=target_inference,
+        pronunciation_rules=target_rules,
+        setting_id=STANDARD_XTTS_SETTING_ID,
+    )
+
+
+def seed_default_voice_settings(root: Path, voice_profiles_root: Path) -> list[VoiceSetting]:
+    """Ensure the approved Standard XTTS profile exists when the Ramona voice profile is present."""
+    existed = _setting_path(root, STANDARD_XTTS_SETTING_ID).exists()
+    setting = ensure_standard_xtts_setting(root, voice_profiles_root)
+    if setting is None or existed:
         return []
-    return [
-        save_voice_setting(
-            root,
-            display_name="Ramona Live XTTS",
-            backend="xtts",
-            voice_id="de_DE-ramona-low",
-            voice_profile_id=DEFAULT_RAMONA_VOICE_PROFILE_ID,
-            preset_hint="premium_natural",
-            max_chars=100,
-            output_mode="chapter_files",
-            target_part_minutes=20,
-            sentence_silence=0.24,
-            length_scale=1.03,
-            notes=(
-                "Approved Ramona live profile with max-quality XTTS settings, stable short XTTS clauses "
-                "and automatic fantasy-name pronunciation rules."
-            ),
-            status=PROFILE_STATUS_APPROVED,
-            approved_at=utc_now(),
-            xtts_quality_mode="max_quality",
-            xtts_inference={
-                "temperature": 0.65,
-                "top_p": 0.85,
-                "top_k": 50,
-                "repetition_penalty": 5.0,
-                "num_beams": 2,
-                "do_sample": True,
-            },
-            pronunciation_rules=_default_ramona_pronunciation_rules(),
-            setting_id=DEFAULT_RAMONA_SETTING_ID,
-        )
-    ]
+    return [setting]
 
 
 def _default_ramona_pronunciation_rules() -> list[dict[str, Any]]:

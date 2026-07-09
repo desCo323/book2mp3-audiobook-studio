@@ -33,14 +33,15 @@ from book2mp3.utils.logging_utils import get_logger
 from book2mp3.voice_catalog import core_language_voice_counts, format_voice_label, voice_language_code
 from book2mp3.voice_lab import list_voice_profiles, load_voice_profile
 from book2mp3.voice_settings import (
+    STANDARD_XTTS_SETTING_ID,
     PROFILE_STATUS_ARCHIVED,
     PROFILE_STATUS_APPROVED,
     PROFILE_STATUS_DRAFT,
     VALID_PROFILE_STATUSES,
+    ensure_standard_xtts_setting,
     list_voice_settings,
     load_voice_setting,
     profile_status_label,
-    seed_default_voice_settings,
     update_voice_setting_status,
 )
 from book2mp3.xtts_options import default_xtts_inference, normalize_pronunciation_rules, normalize_xtts_inference, normalize_xtts_quality_mode
@@ -54,7 +55,7 @@ class Book2Mp3Service:
     def __init__(self, paths: AppPaths) -> None:
         self.paths = paths
         self.paths.ensure()
-        seed_default_voice_settings(self.paths.voice_settings, self.paths.voice_profiles)
+        ensure_standard_xtts_setting(self.paths.voice_settings, self.paths.voice_profiles)
         self.manager = JobManager(paths)
         self.logger = get_logger("service")
         self._metadata_history_warning_emitted = False
@@ -66,6 +67,8 @@ class Book2Mp3Service:
         default_settings = AppSettings()
         reset_workspace_state(self.paths.workspace)
         save_app_settings(self.paths.app_settings_file, default_settings)
+        self.paths.ensure()
+        ensure_standard_xtts_setting(self.paths.voice_settings, self.paths.voice_profiles)
         self.manager = JobManager(self.paths)
         return {
             "workspace": str(self.paths.workspace),
@@ -186,6 +189,19 @@ class Book2Mp3Service:
         resolved_xtts_quality_mode = normalize_xtts_quality_mode(xtts_quality_mode)
         resolved_xtts_inference = normalize_xtts_inference(xtts_inference, quality_mode=resolved_xtts_quality_mode)
         resolved_pronunciation_rules = normalize_pronunciation_rules(pronunciation_rules)
+        if not resolved_saved_profile_id:
+            requested_backend = backend.strip().lower()
+            should_use_standard_xtts = (
+                (requested_backend == "xtts" and not voice_profile_id.strip())
+                or (not voice_id.strip() and not voice_profile_id.strip())
+            )
+            standard_profile = (
+                ensure_standard_xtts_setting(self.paths.voice_settings, self.paths.voice_profiles)
+                if should_use_standard_xtts
+                else None
+            )
+            if standard_profile is not None:
+                resolved_saved_profile_id = STANDARD_XTTS_SETTING_ID
         if resolved_saved_profile_id:
             saved_profile = load_voice_setting(self.paths.voice_settings, resolved_saved_profile_id)
             if saved_profile.status == PROFILE_STATUS_ARCHIVED:

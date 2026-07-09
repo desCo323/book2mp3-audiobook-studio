@@ -10,6 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def program_root(output_dir: Path) -> Path:
+    return output_dir / "src"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -20,6 +24,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--without-voices", action="store_true", help="Do not copy voices/")
     parser.add_argument("--archive", action="store_true", help="Create a .zip archive")
+    parser.add_argument(
+        "--include-xtts-starter-profiles",
+        action="store_true",
+        help="Install curated starter XTTS profiles into the portable workspace",
+    )
     return parser.parse_args()
 
 
@@ -40,6 +49,14 @@ def main() -> int:
         ]
     )
     run([sys.executable, str(ROOT / "scripts" / "populate_bundle_python_windows.py"), str(output_dir), "--clean"])
+    if args.include_xtts_starter_profiles:
+        run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "install_xtts_starter_profiles.py"),
+                str(program_root(output_dir)),
+            ]
+        )
     run([sys.executable, str(ROOT / "scripts" / "check_portable_bundle.py"), str(output_dir)])
 
     if args.archive:

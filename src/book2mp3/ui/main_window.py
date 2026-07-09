@@ -77,10 +77,12 @@ from book2mp3.voice_catalog import (
 from book2mp3.xtts_speakers import auto_import_xtts_speakers, install_starter_xtts_profiles
 from book2mp3.voice_lab import list_voice_profiles, load_voice_profile
 from book2mp3.voice_settings import (
+    STANDARD_XTTS_SETTING_ID,
     PROFILE_STATUS_APPROVED,
     PROFILE_STATUS_ARCHIVED,
     PROFILE_STATUS_DRAFT,
     PROFILE_STATUS_TESTED,
+    ensure_standard_xtts_setting,
     list_voice_settings,
     load_voice_setting,
     profile_status_label,
@@ -2625,6 +2627,7 @@ class MainWindow(QMainWindow):
     def refresh_saved_profiles(self) -> None:
         selected_setting_id = self.saved_profile_combo.currentData() or ""
         self.saved_profile_combo.clear()
+        ensure_standard_xtts_setting(self.paths.voice_settings, self.paths.voice_profiles)
         settings = list_voice_settings(self.paths.voice_settings)
         approved_settings = [setting for setting in settings if setting.status == PROFILE_STATUS_APPROVED]
         if not approved_settings:
@@ -2650,7 +2653,8 @@ class MainWindow(QMainWindow):
         for setting in approved_settings:
             label = f"{setting.display_name} | {setting.backend} | {setting.preset_hint} | freigegeben"
             self.saved_profile_combo.addItem(label, setting.setting_id)
-        selected_index = self.saved_profile_combo.findData(selected_setting_id)
+        preferred_setting_id = selected_setting_id or STANDARD_XTTS_SETTING_ID
+        selected_index = self.saved_profile_combo.findData(preferred_setting_id)
         self.saved_profile_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
         self.refresh_saved_profile_summary()
         self.refresh_profile_library()

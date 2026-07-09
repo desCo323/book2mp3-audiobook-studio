@@ -317,7 +317,7 @@ def main() -> int:
     variants = [
         RenderVariant(
             key="dialogue_01_current",
-            label="Current Ramona Live XTTS",
+            label="Current Standard XTTS",
             file_name="dialogue_01_current.mp3",
             max_chars=effective_max_chars,
             length_scale=setting.length_scale,
