@@ -5,8 +5,9 @@ import logging
 import shutil
 import subprocess
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from book2mp3.config import AppPaths
 from book2mp3.pipeline.audio import (
@@ -16,11 +17,11 @@ from book2mp3.pipeline.audio import (
     trim_wav_silence_in_place,
 )
 from book2mp3.pipeline.chunking import split_text
-from book2mp3.tts.pronunciation import apply_pronunciation_rules
+from book2mp3.tts.pronunciation import apply_pronunciation_rules, suggest_pronunciation_candidates
 from book2mp3.tts.xtts import XttsBackend
 from book2mp3.voice_lab import load_voice_profile
 from book2mp3.voice_settings import load_voice_setting
-from book2mp3.xtts_options import normalize_xtts_dialog_text, safe_xtts_chunk_chars
+from book2mp3.xtts_options import normalize_pronunciation_rules, normalize_xtts_dialog_text, safe_xtts_chunk_chars
 
 
 DIALOGUE_EXAMPLE_TEXT = """« »Wirst du uns überhaupt nicht vermissen?« Talwyn sackte ein wenig in sich zusammen. »Darum geht es nicht, und das weißt du auch.« »Ich weiß nur, dass wir gemeinsam am stärksten sind.« »Und ich weiß nur, dass wir in den letzten fünf Jahren nur stagniert haben. Wir haben unsere Fähigkeiten nicht weiterentwickelt.« »Unsere Fähigkeiten oder unsere Macht?« »Beides.« »Was ist los, Schwester? Willst du Drachenkönigin und Südlandkönigin werden?« »Nein. Ich will diese Blutlinie auch noch für die nächsten Jahrtausende blühen und gedeihen sehen. Und wenn du glaubst, wir drei schaffen das, während wir hier herumsitzen und Mum und Dad sich um uns kümmern, bist du ein Idiot.« »He! Ihr zwei!« Sie beugten sich vor und schauten nach unten. Izzy stand unter dem Baum. Hinter ihr warteten Éibhear und Rhi. »Na los!« »Wohin?«, fragte Talan. »Die Familie treffen. Es wird Zeit, das zu besprechen.« Talwyn grunzte. Was nie ein gutes Zeichen war. »Ich habe meiner Mutter nichts zu sagen.« »Das ist mir egal. Schwing deinen Hintern hier runter!«"""
@@ -29,9 +30,27 @@ MAX_ACCEPTED_CHUNK_SECONDS = 12.0
 
 
 @dataclass
-class AttemptResult:
-    accepted: bool
+class RenderVariant:
+    key: str
+    label: str
+    file_name: str
     max_chars: int
+    length_scale: float
+    inference_options: dict[str, Any]
+    pronunciation_overrides: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class VariantResult:
+    variant_key: str
+    label: str
+    accepted: bool
+    mp3_file: str
+    max_chars: int
+    length_scale: float
+    inference_options: dict[str, Any]
+    pronunciation_overrides: list[dict[str, Any]]
+    spoken_chars: int
     chunk_lengths: list[int]
     chunk_durations_seconds: list[float]
     mp3_seconds: float
@@ -39,6 +58,9 @@ class AttemptResult:
     trimmed_wavs: list[dict[str, object]]
     device_mode: str
     render_seconds: float
+    pronunciation_replacements: int
+    applied_pronunciation_rules: list[dict[str, Any]]
+    unmatched_name_candidates: list[dict[str, str]]
     rejection_reasons: list[str]
 
 
@@ -93,31 +115,64 @@ def _write_spoken_chunks(spoken_dir: Path, chunks: list[str]) -> None:
         (spoken_dir / f"{index:03d}.txt").write_text(chunk, encoding="utf-8")
 
 
-def _render_attempt(
+def _variant_pronunciation_rules(
+    base_rules: list[dict[str, Any]],
+    overrides: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_overrides = normalize_pronunciation_rules(overrides)
+    if not normalized_overrides:
+        return normalize_pronunciation_rules(base_rules)
+    override_matches = {str(rule["match"]).casefold() for rule in normalized_overrides}
+    base_without_overridden_matches = [
+        rule
+        for rule in normalize_pronunciation_rules(base_rules)
+        if str(rule["match"]).casefold() not in override_matches
+    ]
+    return normalize_pronunciation_rules([*normalized_overrides, *base_without_overridden_matches])
+
+
+def _name_audit(
+    source_text: str,
+    rules: list[dict[str, Any]],
+    applied_rules: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    normalized_rules = normalize_pronunciation_rules(rules)
+    applied_matches = {
+        str(rule.get("match", "") or "").strip().casefold()
+        for rule in applied_rules
+        if str(rule.get("match", "") or "").strip()
+    }
+    unmatched = suggest_pronunciation_candidates(source_text, existing_rules=normalized_rules, limit=40)
+    return {
+        "applied_rules": applied_rules,
+        "unmatched_name_candidates": [
+            suggestion
+            for suggestion in unmatched
+            if str(suggestion.get("match", "") or "").strip().casefold() not in applied_matches
+        ],
+    }
+
+
+def _render_variant(
     paths: AppPaths,
     example_dir: Path,
-    spoken_text: str,
-    max_chars: int,
-    setting,
+    source_text: str,
+    variant: RenderVariant,
+    base_pronunciation_rules: list[dict[str, Any]],
     profile,
     logger: logging.Logger,
-) -> AttemptResult:
-    for child_name in ("wav", "spoken_chunks"):
-        child = example_dir / child_name
-        if child.exists():
-            shutil.rmtree(child)
-    for child_name in ("fantasy_dialogue_example.mp3", "summary.json"):
-        child = example_dir / child_name
-        if child.exists():
-            child.unlink()
+) -> VariantResult:
+    rules = _variant_pronunciation_rules(base_pronunciation_rules, variant.pronunciation_overrides)
+    transformed = apply_pronunciation_rules(source_text, rules)
+    spoken_text = normalize_xtts_dialog_text(transformed.spoken_text)
+    chunks = split_text(spoken_text, variant.max_chars)
 
-    chunks = split_text(spoken_text, max_chars)
-    _write_spoken_chunks(example_dir / "spoken_chunks", chunks)
-    wav_dir = example_dir / "wav"
+    _write_spoken_chunks(example_dir / "spoken_chunks" / variant.key, chunks)
+    wav_dir = example_dir / "wav" / variant.key
     wav_dir.mkdir(parents=True, exist_ok=True)
     wav_paths = [wav_dir / f"{index:03d}.wav" for index in range(1, len(chunks) + 1)]
-    mp3_path = example_dir / "fantasy_dialogue_example.mp3"
-    inference_options = dict(setting.xtts_inference)
+    mp3_path = example_dir / variant.file_name
+    inference_options = dict(variant.inference_options)
     inference_options["enable_text_splitting"] = False
 
     started = time.perf_counter()
@@ -128,7 +183,7 @@ def _render_attempt(
             chunks,
             profile,
             wav_paths,
-            length_scale=setting.length_scale,
+            length_scale=variant.length_scale,
             enable_text_splitting=False,
             inference_options=inference_options,
         )
@@ -166,9 +221,9 @@ def _render_attempt(
     rejection_reasons: list[str] = []
     if len(chunks) < 3:
         rejection_reasons.append(f"expected at least 3 chunks, got {len(chunks)}")
-    oversized = [len(chunk) for chunk in chunks if len(chunk) > max_chars]
+    oversized = [len(chunk) for chunk in chunks if len(chunk) > variant.max_chars]
     if oversized:
-        rejection_reasons.append(f"chunk over max_chars={max_chars}: {oversized}")
+        rejection_reasons.append(f"chunk over max_chars={variant.max_chars}: {oversized}")
     long_chunks = [duration for duration in chunk_durations if duration > MAX_ACCEPTED_CHUNK_SECONDS]
     if long_chunks:
         rejection_reasons.append(f"chunk duration over {MAX_ACCEPTED_CHUNK_SECONDS}s: {long_chunks}")
@@ -176,9 +231,17 @@ def _render_attempt(
     if active_silences:
         rejection_reasons.append(f"silence over 1s detected: {active_silences}")
 
-    return AttemptResult(
+    audit = _name_audit(source_text, rules, transformed.applied_rules)
+    return VariantResult(
+        variant_key=variant.key,
+        label=variant.label,
         accepted=not rejection_reasons,
-        max_chars=max_chars,
+        mp3_file=str(mp3_path),
+        max_chars=variant.max_chars,
+        length_scale=variant.length_scale,
+        inference_options=inference_options,
+        pronunciation_overrides=normalize_pronunciation_rules(variant.pronunciation_overrides),
+        spoken_chars=len(spoken_text),
         chunk_lengths=[len(chunk) for chunk in chunks],
         chunk_durations_seconds=chunk_durations,
         mp3_seconds=mp3_seconds,
@@ -186,6 +249,9 @@ def _render_attempt(
         trimmed_wavs=trimmed_wavs,
         device_mode=device_mode,
         render_seconds=round(time.perf_counter() - started, 3),
+        pronunciation_replacements=transformed.applied_occurrences,
+        applied_pronunciation_rules=audit["applied_rules"],
+        unmatched_name_candidates=audit["unmatched_name_candidates"],
         rejection_reasons=rejection_reasons,
     )
 
@@ -202,36 +268,90 @@ def main() -> int:
     logger = _logger()
     setting = load_voice_setting(paths.voice_settings, "xtts1")
     profile = load_voice_profile(paths.voice_profiles, setting.voice_profile_id)
-    transformed = apply_pronunciation_rules(DIALOGUE_EXAMPLE_TEXT, setting.pronunciation_rules)
-    spoken_text = normalize_xtts_dialog_text(transformed.spoken_text)
     effective_max_chars = safe_xtts_chunk_chars(setting.max_chars, profile.target_language)
-    attempts: list[AttemptResult] = []
-    for max_chars in dict.fromkeys((effective_max_chars, 100)):
-        if attempts and attempts[-1].accepted:
-            break
-        logger.info("Rendering dialogue example with max_chars=%s", max_chars)
-        attempts.append(_render_attempt(paths, example_dir, spoken_text, max_chars, setting, profile, logger))
-        XttsBackend.shutdown_all_servers()
+    base_inference_options = dict(setting.xtts_inference)
+    livelier_inference_options = {
+        **base_inference_options,
+        "temperature": 0.72,
+        "top_p": 0.90,
+        "top_k": 50,
+        "repetition_penalty": 5.0,
+        "num_beams": 1,
+        "do_sample": True,
+    }
+    variants = [
+        RenderVariant(
+            key="dialogue_01_current",
+            label="Current Ramona Live XTTS",
+            file_name="dialogue_01_current.mp3",
+            max_chars=effective_max_chars,
+            length_scale=setting.length_scale,
+            inference_options=base_inference_options,
+        ),
+        RenderVariant(
+            key="dialogue_02_livelier",
+            label="Livelier XTTS server parameters",
+            file_name="dialogue_02_livelier.mp3",
+            max_chars=100,
+            length_scale=0.99,
+            inference_options=livelier_inference_options,
+        ),
+        RenderVariant(
+            key="dialogue_03_livelier_names",
+            label="Livelier XTTS parameters with alternate fantasy-name pronunciations",
+            file_name="dialogue_03_livelier_names.mp3",
+            max_chars=100,
+            length_scale=0.99,
+            inference_options=livelier_inference_options,
+            pronunciation_overrides=[
+                {"match": "Talwyn", "spoken_as": "Tallwin", "scope": "whole_phrase", "enabled": True},
+                {"match": "Éibhear", "spoken_as": "Eiwer", "scope": "whole_phrase", "enabled": True},
+                {"match": "Eibhear", "spoken_as": "Eiwer", "scope": "whole_phrase", "enabled": True},
+                {"match": "Rhi", "spoken_as": "Rie", "scope": "whole_phrase", "enabled": True},
+                {"match": "Izzy", "spoken_as": "Issi", "scope": "whole_phrase", "enabled": True},
+            ],
+        ),
+    ]
 
-    accepted = next((attempt for attempt in attempts if attempt.accepted), attempts[-1])
+    variant_results: list[VariantResult] = []
+    try:
+        for variant in variants:
+            logger.info("Rendering dialogue example variant %s with max_chars=%s", variant.key, variant.max_chars)
+            variant_results.append(
+                _render_variant(
+                    paths,
+                    example_dir,
+                    DIALOGUE_EXAMPLE_TEXT,
+                    variant,
+                    setting.pronunciation_rules,
+                    profile,
+                    logger,
+                )
+            )
+    finally:
+        XttsBackend.shutdown_all_servers()
+    accepted_variants = [result for result in variant_results if result.accepted]
     summary = {
-        "accepted": accepted.accepted,
+        "accepted": bool(accepted_variants),
         "setting_id": setting.setting_id,
         "setting_name": setting.display_name,
         "profile_id": profile.profile_id,
         "profile_name": profile.display_name,
         "source_chars": len(DIALOGUE_EXAMPLE_TEXT),
-        "spoken_chars": len(spoken_text),
-        "pronunciation_replacements": transformed.applied_occurrences,
-        "mp3_file": str(example_dir / "fantasy_dialogue_example.mp3"),
+        "base_max_chars": effective_max_chars,
         "source_file": str(source_path),
-        "attempts": [asdict(attempt) for attempt in attempts],
-        "selected_attempt": asdict(accepted),
-        "note": "Dialogue example with shared XTTS normalization, Ramona pronunciation rules, and edge-only WAV trimming.",
+        "variants": [asdict(result) for result in variant_results],
+        "accepted_variants": [result.variant_key for result in accepted_variants],
+        "recommended_feedback_order": [
+            result.variant_key
+            for result in variant_results
+            if result.accepted and result.variant_key != "dialogue_01_current"
+        ],
+        "note": "A/B dialogue examples with shared XTTS normalization, Ramona pronunciation rules, edge-only WAV trimming, and render-only parameter/name variants.",
     }
     (example_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2, ensure_ascii=False))
-    if not accepted.accepted:
+    if not accepted_variants:
         return 1
     return 0
 

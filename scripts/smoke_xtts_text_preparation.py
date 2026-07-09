@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from book2mp3.pipeline.chunking import split_text
 from book2mp3.tts.pronunciation import apply_pronunciation_rules
 from book2mp3.xtts_options import normalize_xtts_dialog_text, safe_xtts_chunk_chars
+from scripts.render_xtts_dialogue_example import _variant_pronunciation_rules
 
 
 def main() -> int:
@@ -32,6 +40,20 @@ def main() -> int:
     oversized = [chunk for chunk in chunks if len(chunk) > max_chars]
     if oversized:
         raise AssertionError(f"Expected chunks <= {max_chars}, got: {oversized!r}")
+    override_rules = _variant_pronunciation_rules(
+        rules,
+        [
+            {"match": "Talwyn", "spoken_as": "Tallwin", "scope": "whole_phrase", "enabled": True},
+            {"match": "Éibhear", "spoken_as": "Eiwer", "scope": "whole_phrase", "enabled": True},
+        ],
+    )
+    override_text = normalize_xtts_dialog_text(apply_pronunciation_rules(source, override_rules).spoken_text)
+    for expected in ("Tallwin", "Eiwer"):
+        if expected not in override_text:
+            raise AssertionError(f"Expected override {expected!r} in prepared XTTS text: {override_text!r}")
+    for replaced in ("Talwin", "Eber"):
+        if replaced in override_text:
+            raise AssertionError(f"Expected old rule {replaced!r} to be replaced: {override_text!r}")
     print(
         {
             "source_chars": len(source),
@@ -39,6 +61,7 @@ def main() -> int:
             "chunk_count": len(chunks),
             "chunk_lengths": [len(chunk) for chunk in chunks],
             "replacements": transformed.applied_occurrences,
+            "override_text": override_text,
         }
     )
     return 0
