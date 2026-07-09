@@ -18,6 +18,11 @@ def parse_args() -> argparse.Namespace:
         default="/usr/lib/python3/dist-packages",
         help="System dist-packages path to copy for runtime completeness",
     )
+    parser.add_argument(
+        "--skip-system-dist-packages",
+        action="store_true",
+        help="Do not copy host system dist-packages into the portable runtime",
+    )
     return parser.parse_args()
 
 
@@ -95,11 +100,11 @@ def main() -> int:
         copied_sources.append(str(user_site))
 
     system_dist = Path(args.system_dist_packages).resolve()
-    if system_dist.exists():
+    if not args.skip_system_dist_packages and system_dist.exists():
         for item in system_dist.iterdir():
             target = dist_target / item.name
             if item.is_dir():
-                shutil.copytree(item, target, dirs_exist_ok=True)
+                shutil.copytree(item, target, dirs_exist_ok=True, symlinks=True, ignore_dangling_symlinks=True)
             else:
                 shutil.copy2(item, target)
 
@@ -113,7 +118,7 @@ def main() -> int:
         "python_executable": str(bin_dir / "python3"),
         "stdlib_source": str(stdlib_source),
         "site_package_sources": copied_sources,
-        "system_dist_packages": str(system_dist),
+        "system_dist_packages": "" if args.skip_system_dist_packages else str(system_dist),
     }
     manifest_path = python_root / "linux-python-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

@@ -73,7 +73,14 @@ def main() -> int:
         ]
     )
     if not use_existing_linux_python:
-        run([sys.executable, str(ROOT / "scripts" / "populate_bundle_python_linux.py"), str(program_root(output_dir))])
+        run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "populate_bundle_python_linux.py"),
+                str(program_root(output_dir)),
+                "--skip-system-dist-packages",
+            ]
+        )
     if args.include_xtts_in_app_python:
         run(
             [
