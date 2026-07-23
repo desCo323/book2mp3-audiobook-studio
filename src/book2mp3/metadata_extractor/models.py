@@ -45,6 +45,11 @@ class MetadataExtractionResult:
     online_results: list[dict[str, Any]]
     online_errors: list[str]
     cover_url: str = ""
+    series: str = ""
+    series_index: str = ""
+    display_title: str = ""
+    sort_title: str = ""
+    subtitle: str = ""
     debug: dict[str, Any] = field(default_factory=dict)
 
     def guessed_metadata(self) -> dict[str, str]:
@@ -72,6 +77,11 @@ class MetadataExtractionResult:
             "author_source": self.author_source,
             "source_path": self.source_path,
             "cover_url": self.cover_url,
+            "series": self.series.strip(),
+            "series_index": self.series_index.strip(),
+            "display_title": self.display_title.strip(),
+            "sort_title": self.sort_title.strip(),
+            "subtitle": self.subtitle.strip(),
         }
 
     def mp3_transfer_payload(self, *, narrator: str = "") -> dict[str, Any]:
@@ -114,6 +124,11 @@ class MetadataExtractionResult:
             "publisher": self.publisher,
             "year": int(self.year or 0),
             "cover_url": self.cover_url,
+            "series": self.series,
+            "series_index": self.series_index,
+            "display_title": self.display_title,
+            "sort_title": self.sort_title,
+            "subtitle": self.subtitle,
             "identifiers": list(self.identifiers),
             "subjects": list(self.subjects),
             "comment": self.comment,

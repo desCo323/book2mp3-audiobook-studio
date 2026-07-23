@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -14,6 +15,34 @@ from book2mp3.ui.main_window import MainWindow
 
 
 ROOT = Path("/home/codex/repo/book2mp3")
+ASYNC_RUNNER_ATTRS = (
+    "_source_analysis_runner",
+    "_metadata_runner",
+    "_metadata_save_runner",
+    "_metadata_search_runner",
+    "_finished_metadata_runner",
+    "_finished_metadata_search_runner",
+    "_finished_metadata_save_runner",
+    "_finished_metadata_redetect_runner",
+    "_delete_job_runner",
+    "_delete_finished_job_runner",
+    "_diagnostics_runner",
+)
+
+
+def wait_for(app: QApplication, predicate, *, timeout_seconds: float = 10.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        app.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.05)
+    app.processEvents()
+    return predicate()
+
+
+def window_async_idle(window: MainWindow) -> bool:
+    return all(getattr(window, attr, None) is None for attr in ASYNC_RUNNER_ATTRS)
 
 
 def ensure_fixture_link(app_root: Path, name: str) -> None:
@@ -55,7 +84,7 @@ def main() -> int:
         window = MainWindow(paths)
         window.set_selected_source_files([source])
         window.refresh_jobs()
-        app.processEvents()
+        wait_for(app, lambda: bool(window.meta_title_edit.text().strip()), timeout_seconds=10.0)
 
         if window.windowTitle() != "book2mp3 Audiobook Studio":
             raise AssertionError(f"Unexpected English window title: {window.windowTitle()!r}")
@@ -74,16 +103,26 @@ def main() -> int:
         if "Pride and Prejudice" not in first_item.text():
             raise AssertionError(f"Finished books overview did not show metadata title: {first_item.text()!r}")
         window.finished_books_list.setCurrentRow(0)
-        app.processEvents()
+        wait_for(app, lambda: bool(window.finished_meta_title_edit.text().strip()), timeout_seconds=5.0)
         if window.finished_meta_title_edit.text() != "Pride and Prejudice":
             raise AssertionError(f"Finished metadata editor did not load title: {window.finished_meta_title_edit.text()!r}")
         if window.finished_meta_author_edit.text() != "Jane Austen":
             raise AssertionError(f"Finished metadata editor did not load author: {window.finished_meta_author_edit.text()!r}")
+        if not window.finished_metadata_redetect_button.isEnabled():
+            raise AssertionError("Finished metadata re-detect button is not enabled for the selected finished book")
+        if not window.finished_metadata_redetect_all_button.isEnabled():
+            raise AssertionError("Finished metadata re-detect-all button is not enabled with finished books present")
+        wait_for(app, lambda: window.finished_metadata_results_list.count() >= 1, timeout_seconds=10.0)
         if window.finished_metadata_results_list.count() < 1:
             raise AssertionError("Finished metadata suggestions list stayed empty")
         window.finished_meta_comment_edit.setPlainText("Test comment for final MP3 tags")
         window.save_finished_job_metadata()
-        app.processEvents()
+        wait_for(
+            app,
+            lambda: service.manager.load_state(str(created["job_id"])).audiobook_metadata.comment
+            == "Test comment for final MP3 tags",
+            timeout_seconds=10.0,
+        )
         refreshed = service.manager.load_state(str(created["job_id"]))
         if refreshed.audiobook_metadata.comment != "Test comment for final MP3 tags":
             raise AssertionError(
@@ -107,7 +146,9 @@ def main() -> int:
             )
         )
 
+        wait_for(app, lambda: window_async_idle(window), timeout_seconds=10.0)
         window.close()
+        app.processEvents()
         app.quit()
     return 0
 

@@ -15,6 +15,7 @@ from .normalize import (
     clean_title_fragment,
     cleanup_label_text,
     is_generic_file_stem,
+    looks_like_author_handle,
     looks_like_noise,
     looks_like_person_name,
     repair_mojibake,
@@ -26,7 +27,7 @@ from .providers import online_result_as_candidate, search_online_book_metadata
 
 
 FRONTMATTER_BY_RE = re.compile(
-    r"^(?P<title>.+?)\s+(?:by|von)\s+(?P<author>.+?)(?:\s*\||\s*$)",
+    r"^(?P<title>.+?)\s+(?P<marker>by|von)\s+(?P<author>.+?)(?:\s*\||\s*$)",
     re.IGNORECASE,
 )
 QUOTED_TITLE_RE = re.compile(
@@ -35,6 +36,20 @@ QUOTED_TITLE_RE = re.compile(
 )
 GENERIC_PATH_LABELS = {
     "ebooks",
+    "ebooks alina",
+    "ebook",
+    "epub",
+    "epubs",
+    "epubfe",
+    "fanfiction",
+    "fanfic",
+    "ff",
+    "pdf",
+    "txt",
+    "mobi",
+    "azw",
+    "azw3",
+    "ebubtest",
     "library",
     "books",
     "synthetic",
@@ -42,6 +57,63 @@ GENERIC_PATH_LABELS = {
     "metadata fixture",
     "workspace",
     "input",
+}
+GERMAN_LANGUAGE_WORDS = {
+    "der",
+    "die",
+    "das",
+    "und",
+    "ich",
+    "nicht",
+    "mit",
+    "ist",
+    "ein",
+    "eine",
+    "den",
+    "dem",
+    "des",
+    "sich",
+    "auf",
+    "für",
+    "war",
+    "hatte",
+    "aber",
+    "auch",
+    "dass",
+    "wenn",
+    "wie",
+    "sein",
+    "sie",
+    "er",
+    "wir",
+    "ihr",
+}
+ENGLISH_LANGUAGE_WORDS = {
+    "the",
+    "and",
+    "i",
+    "you",
+    "he",
+    "she",
+    "it",
+    "we",
+    "they",
+    "to",
+    "of",
+    "in",
+    "that",
+    "was",
+    "with",
+    "for",
+    "not",
+    "his",
+    "her",
+    "had",
+    "have",
+    "this",
+    "but",
+    "from",
+    "as",
 }
 
 
@@ -97,10 +169,11 @@ class BookMetadataExtractor:
                 candidates.append(chosen_online)
 
         extended = self._aggregate_extended_metadata(candidates)
+        series = self._series_metadata(final_title, candidates, source)
 
         cover_url = self._pick_cover_url(
             candidates,
-            fallback=(title.strip() or source.stem),
+            fallback=(final_title.strip() or source.stem),
             fallback_author=final_author.strip(),
             online_results=online_results,
         )
@@ -123,10 +196,21 @@ class BookMetadataExtractor:
             candidates=sorted(candidates, key=lambda item: item.confidence, reverse=True),
             online_results=online_results,
             online_errors=online_errors,
+            series=series["series"],
+            series_index=series["series_index"],
+            display_title=series["display_title"],
+            sort_title=series["sort_title"],
+            subtitle=series["subtitle"],
             debug={
                 "offline_confidence": round(offline["confidence"], 4),
                 "offline_title_confidence": round(offline["title_confidence"], 4),
                 "offline_author_confidence": round(offline["author_confidence"], 4),
+                "field_sources": offline["field_sources"],
+                "conflicts": offline["conflicts"],
+                "warnings": offline["warnings"],
+                "raw_metadata": offline["raw_metadata"],
+                "language_source": offline["language_source"],
+                "language_confidence": round(float(offline["language_confidence"]), 4),
             },
         )
 
@@ -171,11 +255,11 @@ class BookMetadataExtractor:
         return self._boost_consensus(candidates)
 
     def _build_offline_result(self, source: Path, candidates: list[MetadataCandidate]) -> dict[str, Any]:
-        title_choice = max((candidate for candidate in candidates if candidate.title), key=lambda item: item.confidence, default=None)
-        author_choice = max((candidate for candidate in candidates if candidate.author), key=lambda item: item.confidence, default=None)
-        language_choice = max((candidate for candidate in candidates if candidate.language), key=lambda item: item.confidence, default=None)
-        comment_choice = max((candidate for candidate in candidates if candidate.comment), key=lambda item: item.confidence, default=None)
-        genre_choice = max((candidate for candidate in candidates if candidate.genre), key=lambda item: item.confidence, default=None)
+        title_choice = self._choose_field_candidate(source, candidates, "title")
+        author_choice = self._choose_field_candidate(source, candidates, "author")
+        language_choice = self._choose_field_candidate(source, candidates, "language")
+        comment_choice = self._choose_field_candidate(source, candidates, "comment")
+        genre_choice = self._choose_field_candidate(source, candidates, "genre")
 
         title = title_choice.title if title_choice else cleanup_label_text(source.stem)
         author = author_choice.author if author_choice else ""
@@ -198,7 +282,150 @@ class BookMetadataExtractor:
             "author_confidence": author_confidence,
             "title_source": title_choice.source if title_choice else "",
             "author_source": author_choice.source if author_choice else "",
+            "field_sources": self._field_sources(
+                {
+                    "title": title_choice,
+                    "author": author_choice,
+                    "language": language_choice,
+                    "genre": genre_choice,
+                    "comment": comment_choice,
+                }
+            ),
+            "conflicts": self._field_conflicts(candidates),
+            "warnings": self._candidate_warnings(candidates),
+            "raw_metadata": self._compact_raw_metadata(candidates),
+            "language_source": (
+                str(language_choice.extra.get("language_source") or language_choice.source)
+                if language_choice
+                else ""
+            ),
+            "language_confidence": (
+                float(language_choice.extra.get("language_confidence") or language_choice.confidence)
+                if language_choice
+                else 0.0
+            ),
         }
+
+    def _choose_field_candidate(
+        self,
+        source: Path,
+        candidates: list[MetadataCandidate],
+        field: str,
+    ) -> MetadataCandidate | None:
+        field_candidates = [candidate for candidate in candidates if str(getattr(candidate, field, "") or "").strip()]
+        if not field_candidates:
+            return None
+        if source.suffix.lower() == ".epub" and field in {"title", "author"}:
+            epub_choice = max(
+                (
+                    candidate
+                    for candidate in field_candidates
+                    if candidate.source == "epub.dc_metadata" and self._candidate_field_sane(candidate, field)
+                ),
+                key=lambda item: item.confidence,
+                default=None,
+            )
+            if epub_choice is not None:
+                return epub_choice
+        return max(
+            field_candidates,
+            key=lambda item: (
+                item.confidence + self._field_source_bonus(item, field),
+                self._source_rank(item.source),
+            ),
+        )
+
+    def _candidate_field_sane(self, candidate: MetadataCandidate, field: str) -> bool:
+        if field == "title":
+            return self._plausible_title(candidate.title)
+        if field == "author":
+            return self._plausible_author(candidate.author)
+        return True
+
+    def _field_source_bonus(self, candidate: MetadataCandidate, field: str) -> float:
+        if candidate.source == "epub.dc_metadata" and field in {"title", "author", "language"}:
+            return 0.08
+        if candidate.source.startswith("filename.") and field in {"title", "author"}:
+            return 0.02
+        if candidate.source.startswith("path.parent"):
+            return -0.08
+        if candidate.source.startswith("path.grandparent"):
+            return -0.12
+        return 0.0
+
+    def _source_rank(self, source: str) -> int:
+        if source == "epub.dc_metadata":
+            return 5
+        if source.startswith("filename."):
+            return 4
+        if source.startswith(("pdf.", "txt.", "epub.text")):
+            return 3
+        if source.startswith("path.parent"):
+            return 1
+        return 0
+
+    def _field_sources(self, choices: dict[str, MetadataCandidate | None]) -> dict[str, dict[str, Any]]:
+        field_sources: dict[str, dict[str, Any]] = {}
+        for field, candidate in choices.items():
+            if candidate is None:
+                continue
+            field_sources[field] = {
+                "source": candidate.source,
+                "confidence": round(float(candidate.confidence), 4),
+                "value": str(getattr(candidate, field, "") or ""),
+            }
+        return field_sources
+
+    def _field_conflicts(self, candidates: list[MetadataCandidate]) -> list[dict[str, Any]]:
+        conflicts: list[dict[str, Any]] = []
+        for field, threshold in (("title", 0.86), ("author", 0.84)):
+            epub_choice = max(
+                (candidate for candidate in candidates if candidate.source == "epub.dc_metadata" and getattr(candidate, field)),
+                key=lambda item: item.confidence,
+                default=None,
+            )
+            filename_choice = max(
+                (
+                    candidate
+                    for candidate in candidates
+                    if candidate.source.startswith("filename.") and getattr(candidate, field)
+                ),
+                key=lambda item: item.confidence,
+                default=None,
+            )
+            if epub_choice is None or filename_choice is None:
+                continue
+            epub_value = str(getattr(epub_choice, field) or "")
+            filename_value = str(getattr(filename_choice, field) or "")
+            score = similarity(epub_value, filename_value)
+            if score < threshold:
+                conflicts.append(
+                    {
+                        "field": field,
+                        "left_source": epub_choice.source,
+                        "left": epub_value,
+                        "right_source": filename_choice.source,
+                        "right": filename_value,
+                        "similarity": round(score, 4),
+                    }
+                )
+        return conflicts
+
+    def _candidate_warnings(self, candidates: list[MetadataCandidate]) -> list[str]:
+        warnings: list[str] = []
+        for candidate in candidates:
+            for warning in candidate.extra.get("warnings", []):
+                text = str(warning or "").strip()
+                if text and text not in warnings:
+                    warnings.append(text)
+        return warnings
+
+    def _compact_raw_metadata(self, candidates: list[MetadataCandidate]) -> dict[str, Any]:
+        for candidate in candidates:
+            raw = candidate.extra.get("raw_metadata")
+            if isinstance(raw, dict):
+                return raw
+        return {}
 
     def _path_content_combo_candidates(self, source: Path, candidates: list[MetadataCandidate]) -> list[MetadataCandidate]:
         if source.suffix.lower() not in {".pdf", ".txt"}:
@@ -282,6 +509,87 @@ class BookMetadataExtractor:
             "subjects": subjects[:8],
         }
 
+    def _series_metadata(
+        self,
+        final_title: str,
+        candidates: list[MetadataCandidate],
+        source: Path,
+    ) -> dict[str, str]:
+        labels: list[str] = [final_title]
+        for candidate in sorted(candidates, key=lambda item: item.confidence, reverse=True):
+            if candidate.title:
+                labels.append(candidate.title)
+            if candidate.evidence:
+                labels.append(Path(candidate.evidence).stem)
+        labels.append(source.stem)
+        for label in labels:
+            parsed = self._parse_series_label(label)
+            if parsed["series"] or parsed["series_index"]:
+                return parsed
+        display_title = clean_title_fragment(final_title)
+        return {
+            "series": "",
+            "series_index": "",
+            "display_title": display_title,
+            "sort_title": self._sort_title(display_title),
+            "subtitle": self._subtitle(display_title),
+        }
+
+    def _parse_series_label(self, label: str) -> dict[str, str]:
+        text = clean_title_fragment(label)
+        text = re.sub(r"\s+", " ", text).strip()
+        patterns = [
+            re.compile(
+                r"^(?P<series>.+?)\s+Bd\.?\s*(?P<index>\d+(?:[.,]\d+)?)\s*-\s*(?P<title>.+)$",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"^(?P<series>.+?)\s+(?:Band|Teil|Book|Vol\.?|Volume)\s*(?P<index>\d+(?:[.,]\d+)?)\s*-\s*(?P<title>.+)$",
+                re.IGNORECASE,
+            ),
+            re.compile(r"^(?P<series>.+?)\.(?P<index>\d{1,3})\s*-\s*(?P<title>.+)$", re.IGNORECASE),
+        ]
+        for pattern in patterns:
+            match = pattern.match(text)
+            if not match:
+                continue
+            display_title = clean_title_fragment(match.group("title"))
+            return {
+                "series": clean_title_fragment(match.group("series")),
+                "series_index": match.group("index").replace(",", "."),
+                "display_title": display_title,
+                "sort_title": self._sort_title(display_title),
+                "subtitle": self._subtitle(display_title),
+            }
+        numbered_match = re.match(r"^(?P<title>.+?)\s*\((?P<index>\d+(?:[.,]\d+)?)\)$", text)
+        if numbered_match:
+            display_title = clean_title_fragment(numbered_match.group("title"))
+            return {
+                "series": display_title,
+                "series_index": numbered_match.group("index").replace(",", "."),
+                "display_title": display_title,
+                "sort_title": self._sort_title(display_title),
+                "subtitle": self._subtitle(display_title),
+            }
+        return {
+            "series": "",
+            "series_index": "",
+            "display_title": clean_title_fragment(text),
+            "sort_title": self._sort_title(text),
+            "subtitle": self._subtitle(text),
+        }
+
+    def _sort_title(self, title: str) -> str:
+        text = clean_title_fragment(title)
+        return re.sub(r"^(das|der|die|the|a|an|le|la|les)\s+", "", text, flags=re.IGNORECASE).strip() or text
+
+    def _subtitle(self, title: str) -> str:
+        text = clean_title_fragment(title)
+        for separator in (" - ", ": "):
+            if separator in text:
+                return clean_title_fragment(text.split(separator, 1)[1])
+        return ""
+
     def _pick_cover_url(
         self,
         candidates: list[MetadataCandidate],
@@ -321,9 +629,9 @@ class BookMetadataExtractor:
 
         cleaned_parent = cleanup_label_text(parent_label)
         cleaned_grandparent = cleanup_label_text(grandparent_label)
-        if cleaned_parent.casefold() in GENERIC_PATH_LABELS:
+        if self._is_generic_path_label(cleaned_parent):
             cleaned_parent = ""
-        if cleaned_grandparent.casefold() in GENERIC_PATH_LABELS:
+        if self._is_generic_path_label(cleaned_grandparent):
             cleaned_grandparent = ""
         if cleaned_parent and not is_generic_file_stem(parent_label):
             parent_candidates = self._parse_label_candidates(parent_label, source_prefix="path.parent")
@@ -334,7 +642,7 @@ class BookMetadataExtractor:
                         title="",
                         author=clean_author_fragment(cleaned_parent),
                         source="path.parent.author_only",
-                        confidence=0.7,
+                        confidence=0.52,
                         evidence=cleaned_parent,
                     )
                 )
@@ -371,27 +679,54 @@ class BookMetadataExtractor:
                 )
         return candidates
 
+    def _is_generic_path_label(self, label: str) -> bool:
+        cleaned = cleanup_label_text(label).casefold()
+        if not cleaned:
+            return True
+        if cleaned in GENERIC_PATH_LABELS:
+            return True
+        if re.fullmatch(r"(epub|pdf|txt|mobi|azw3?|fb2|cbz|cbr)s?", cleaned):
+            return True
+        if re.fullmatch(r"(fanfic|fanfiction|ebooks?)(\s+[a-z0-9]+)?", cleaned):
+            return True
+        return False
+
     def _parse_label_candidates(self, label: str, *, source_prefix: str) -> list[MetadataCandidate]:
         raw = repair_mojibake(label or "").strip()
         cleaned = cleanup_label_text(raw)
         if not cleaned:
             return []
         candidates: list[MetadataCandidate] = []
+        path_label = source_prefix == "filename" or source_prefix.startswith("path.")
 
-        match = FRONTMATTER_BY_RE.match(cleaned)
-        if match:
+        def append_by_pattern_candidate() -> None:
+            match = FRONTMATTER_BY_RE.match(cleaned)
+            if not match:
+                return
+            marker = match.group("marker")
             title = clean_title_fragment(match.group("title"))
             author = clean_author_fragment(match.group("author"))
+            if not self._accept_by_pattern(
+                cleaned,
+                source_prefix=source_prefix,
+                marker=marker,
+                title=title,
+                author=author,
+            ):
+                return
             if title or author:
                 candidates.append(
                     MetadataCandidate(
                         title=title,
                         author=author,
                         source=f"{source_prefix}.by_pattern",
-                        confidence=0.82,
+                        confidence=0.78 if path_label else 0.82,
                         evidence=cleaned,
                     )
                 )
+
+        if not path_label:
+            append_by_pattern_candidate()
 
         if "__" in raw:
             left, right = raw.split("__", 1)
@@ -408,35 +743,68 @@ class BookMetadataExtractor:
                     )
                 )
 
-        if " - " in raw:
-            left, right = raw.split(" - ", 1)
+        dash_text = cleaned
+        if " - " in dash_text:
+            parts = [part.strip() for part in dash_text.split(" - ") if part.strip()]
+            left = " - ".join(parts[:-1]) if len(parts) > 1 else ""
+            first = parts[0] if parts else ""
+            middle_right = " - ".join(parts[1:]) if len(parts) > 1 else ""
+            right = parts[-1] if len(parts) > 1 else ""
             left_clean = clean_title_fragment(left)
             right_clean = clean_title_fragment(right)
-            right_is_author = looks_like_person_name(right_clean)
-            left_is_author = looks_like_person_name(left_clean)
+            right_author = clean_author_fragment(right)
+            left_author = clean_author_fragment(left)
+            first_author = clean_author_fragment(first)
+            right_is_author = self._looks_like_author_label(right_author, strong_delimiter=True)
+            left_is_author = len(parts) == 2 and self._looks_like_author_label(left_author, strong_delimiter=True)
+            first_is_author = (
+                len(parts) > 2
+                and not self._looks_like_series_prefix(first_author)
+                and self._looks_like_author_label(first_author, strong_delimiter=True)
+            )
             right_looks_like_title_phrase = self._looks_like_title_phrase(right)
             left_looks_like_title_phrase = self._looks_like_title_phrase(left)
-            if left_is_author and (not right_is_author or right_looks_like_title_phrase):
+            added_dash_candidate = False
+            if right_is_author and (not left_is_author or left_looks_like_title_phrase or len(parts) > 2):
+                candidates.append(
+                    MetadataCandidate(
+                        title=left_clean,
+                        author=right_author,
+                        source=f"{source_prefix}.title_dash_author",
+                        confidence=0.86 if not first_is_author else 0.8,
+                        evidence=cleaned,
+                    )
+                )
+                added_dash_candidate = True
+            if first_is_author:
+                first_author_confidence = 0.88 if ("," in first_author or looks_like_author_handle(first_author)) else 0.78
+                candidates.append(
+                    MetadataCandidate(
+                        title=clean_title_fragment(middle_right),
+                        author=first_author,
+                        source=f"{source_prefix}.author_dash_title",
+                        confidence=first_author_confidence,
+                        evidence=cleaned,
+                    )
+                )
+                added_dash_candidate = True
+            elif left_is_author and (
+                not right_is_author
+                or right_looks_like_title_phrase
+                or "," in left_author
+                or looks_like_author_handle(left_author)
+            ):
                 candidates.append(
                     MetadataCandidate(
                         title=clean_title_fragment(right),
-                        author=clean_author_fragment(left),
+                        author=left_author,
                         source=f"{source_prefix}.author_dash_title",
-                        confidence=0.8,
+                        confidence=0.82,
                         evidence=cleaned,
                     )
                 )
-            elif right_is_author and (not left_is_author or left_looks_like_title_phrase):
-                candidates.append(
-                    MetadataCandidate(
-                        title=clean_title_fragment(left),
-                        author=clean_author_fragment(right),
-                        source=f"{source_prefix}.title_dash_author",
-                        confidence=0.8,
-                        evidence=cleaned,
-                    )
-                )
-            else:
+                added_dash_candidate = True
+            if not added_dash_candidate:
                 candidates.append(
                     MetadataCandidate(
                         title=clean_title_fragment(left),
@@ -455,6 +823,9 @@ class BookMetadataExtractor:
                         evidence=cleaned,
                     )
                 )
+
+        if path_label:
+            append_by_pattern_candidate()
 
         if "," in cleaned and not any(candidate.author for candidate in candidates):
             candidates.append(
@@ -488,6 +859,67 @@ class BookMetadataExtractor:
                 )
             )
         return candidates
+
+    def _looks_like_author_label(self, value: str, *, strong_delimiter: bool) -> bool:
+        if looks_like_person_name(value):
+            return True
+        if not strong_delimiter:
+            return False
+        if looks_like_author_handle(value):
+            return True
+        return self._looks_like_delimited_author(value)
+
+    def _looks_like_series_prefix(self, value: str) -> bool:
+        text = cleanup_label_text(value)
+        return bool(
+            re.search(r"\b(Bd|Band|Teil|Book|Vol|Volume)\.?\s*\d+\b", text, flags=re.IGNORECASE)
+            or re.search(r"\.\d{1,3}\b", text)
+        )
+
+    def _looks_like_delimited_author(self, value: str) -> bool:
+        text = clean_author_fragment(value)
+        if not text or len(text) > 70:
+            return False
+        if any(marker in text for marker in (":", "!", "?", " - ")):
+            return False
+        parts = [part for part in re.split(r"[\s,;/•·-]+", text) if part]
+        if not parts or len(parts) > 5:
+            return False
+        if parts[0].casefold() in {"das", "der", "die", "the", "a", "an"}:
+            return False
+        capitalized = 0
+        for part in parts:
+            if part.casefold() in AUTHOR_PARTICLES:
+                capitalized += 1
+                continue
+            if re.fullmatch(r"[A-ZÄÖÜ]\.?", part):
+                capitalized += 1
+                continue
+            if part[:1].isupper() or any(character.isupper() for character in part[1:]):
+                capitalized += 1
+        return capitalized >= max(1, len(parts) - 1)
+
+    def _accept_by_pattern(
+        self,
+        cleaned: str,
+        *,
+        source_prefix: str,
+        marker: str,
+        title: str,
+        author: str,
+    ) -> bool:
+        path_label = source_prefix == "filename" or source_prefix.startswith("path.")
+        if not title or not author:
+            return False
+        if not path_label:
+            return self._plausible_author(author)
+        if title.casefold() in {"kopie", "copy"} or cleaned.casefold().startswith(("kopie von ", "copy of ")):
+            return False
+        if marker.casefold() == "von":
+            if " - " in author or "__" in author:
+                return False
+            return self._looks_like_author_label(author, strong_delimiter=True)
+        return self._looks_like_author_label(author, strong_delimiter=True)
 
     def _looks_like_title_phrase(self, value: str) -> bool:
         repaired = repair_mojibake(value or "").strip()
@@ -527,6 +959,13 @@ class BookMetadataExtractor:
             if match:
                 year = int(match.group(1))
                 break
+        snippet = self._first_epub_text_snippet(book)
+        language_info = self._verified_language(
+            language,
+            "\n".join(part for part in (title, comment, snippet) if part),
+        )
+        language = language_info["language"] or language
+        warnings = list(language_info.get("warnings", []))
         if title or author:
             candidates.append(
                 MetadataCandidate(
@@ -542,10 +981,24 @@ class BookMetadataExtractor:
                     year=year,
                     identifiers=[value for value in identifiers if value],
                     subjects=[value for value in subjects if value],
+                    extra={
+                        "language_source": language_info["source"],
+                        "language_confidence": language_info["confidence"],
+                        "original_language": language_info["original_language"],
+                        "warnings": warnings,
+                        "raw_metadata": {
+                            "titles": titles[:3],
+                            "creators": authors[:5],
+                            "languages": languages[:3],
+                            "publisher": publisher,
+                            "dates": dates[:3],
+                            "subjects": subjects[:5],
+                            "identifiers": identifiers[:5],
+                        },
+                    },
                 )
             )
         if not title:
-            snippet = self._first_epub_text_snippet(book)
             candidates.extend(self._content_candidates(snippet, source_label="epub.text_frontmatter", confidence=0.62))
         return candidates
 
@@ -607,6 +1060,73 @@ class BookMetadataExtractor:
             if cleaned.strip():
                 return cleaned[:4000]
         return ""
+
+    def _verified_language(self, opf_language: str, text: str) -> dict[str, Any]:
+        original = cleanup_label_text(opf_language).casefold()
+        normalized_opf = self._normalize_language_code(original)
+        signal = self._text_language_signal(text)
+        if not normalized_opf and signal["language"]:
+            return {
+                "language": signal["language"],
+                "source": "text_heuristic",
+                "confidence": signal["confidence"],
+                "original_language": original,
+                "warnings": [],
+            }
+        if signal["language"] and signal["confidence"] >= 0.72:
+            if normalized_opf and normalized_opf != signal["language"]:
+                return {
+                    "language": signal["language"],
+                    "source": "text_heuristic_conflict",
+                    "confidence": signal["confidence"],
+                    "original_language": original,
+                    "warnings": [
+                        f"OPF language {normalized_opf!r} conflicts with strong text signal {signal['language']!r}."
+                    ],
+                }
+            return {
+                "language": normalized_opf or signal["language"],
+                "source": "opf_text_agree" if normalized_opf else "text_heuristic",
+                "confidence": max(signal["confidence"], 0.8),
+                "original_language": original,
+                "warnings": [],
+            }
+        return {
+            "language": normalized_opf,
+            "source": "opf" if normalized_opf else "",
+            "confidence": 0.7 if normalized_opf else 0.0,
+            "original_language": original,
+            "warnings": [],
+        }
+
+    def _normalize_language_code(self, value: str) -> str:
+        text = (value or "").strip().casefold().replace("_", "-")
+        if not text:
+            return ""
+        if text.startswith("de") or text in {"ger", "deu", "deutsch", "german"}:
+            return "de"
+        if text.startswith("en") or text in {"eng", "english"}:
+            return "en"
+        return text.split("-", 1)[0]
+
+    def _text_language_signal(self, text: str) -> dict[str, Any]:
+        repaired = repair_mojibake(text or "").casefold()
+        words = re.findall(r"[a-zäöüß]+", repaired)
+        if not words:
+            return {"language": "", "confidence": 0.0, "de_score": 0, "en_score": 0}
+        de_score = sum(1 for word in words if word in GERMAN_LANGUAGE_WORDS)
+        en_score = sum(1 for word in words if word in ENGLISH_LANGUAGE_WORDS)
+        de_score += min(6, sum(1 for char in repaired if char in "äöüß"))
+        total = de_score + en_score
+        if total < 4:
+            return {"language": "", "confidence": 0.0, "de_score": de_score, "en_score": en_score}
+        if de_score >= en_score + 4 and de_score >= int(en_score * 1.45):
+            confidence = min(0.97, 0.58 + ((de_score - en_score) / max(total, 1)) * 0.42)
+            return {"language": "de", "confidence": confidence, "de_score": de_score, "en_score": en_score}
+        if en_score >= de_score + 4 and en_score >= int(de_score * 1.45):
+            confidence = min(0.97, 0.58 + ((en_score - de_score) / max(total, 1)) * 0.42)
+            return {"language": "en", "confidence": confidence, "de_score": de_score, "en_score": en_score}
+        return {"language": "", "confidence": 0.0, "de_score": de_score, "en_score": en_score}
 
     def _pdf_frontmatter_text(self, reader: PdfReader) -> str:
         collected: list[str] = []

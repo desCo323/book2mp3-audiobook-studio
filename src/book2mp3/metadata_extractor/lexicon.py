@@ -98,6 +98,39 @@ def build_pronunciation_rules(
     return normalize_pronunciation_rules(rules)
 
 
+def build_known_name_identity_rules(
+    payload: dict[str, Any] | None = None,
+    *,
+    authors: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Return known lexicon names as no-op rules for detection/learning context."""
+    lexicon = payload or load_global_lexicon()
+    rules: list[dict[str, Any]] = []
+    pronunciation_matches = {
+        _normalize_label(rule["match"])
+        for rule in build_pronunciation_rules(lexicon, authors=authors)
+        if str(rule.get("match", "") or "").strip()
+    }
+    for character in iter_lexicon_characters(lexicon, authors=authors):
+        variants = [str(character.get("name", "") or "").strip()]
+        variants.extend(str(alias).strip() for alias in character.get("aliases", []) if str(alias).strip())
+        variants.extend(str(alias).strip() for alias in character.get("rule_aliases", []) if str(alias).strip())
+        for match in variants:
+            if not match:
+                continue
+            if _normalize_label(match) in pronunciation_matches:
+                continue
+            rules.append(
+                {
+                    "match": match,
+                    "spoken_as": match,
+                    "scope": "whole_phrase",
+                    "enabled": True,
+                }
+            )
+    return normalize_pronunciation_rules(rules)
+
+
 def build_author_pronunciation_rules(
     payload: dict[str, Any] | None = None,
     *,
@@ -455,8 +488,11 @@ def _character_alias_spoken_as(name: str, spoken_as: str, alias: str) -> str:
             alias_token == name_token
             for alias_token, name_token in zip(alias_tokens, name_tokens, strict=False)
         ):
-            return " ".join(spoken_tokens[:len(name_tokens)]).strip() or _author_spoken_hint(alias)
-        return _author_spoken_hint(alias)
+            return _distinct_alias_spoken_hint(
+                alias,
+                " ".join(spoken_tokens[:len(name_tokens)]).strip() or _author_spoken_hint(alias),
+            )
+        return _distinct_alias_spoken_hint(alias, _author_spoken_hint(alias))
     if len(spoken_tokens) >= len(name_tokens):
         selected = spoken_tokens[span_start:span_start + len(alias_tokens)]
     elif len(alias_tokens) == 1 and span_start == 0:
@@ -469,7 +505,21 @@ def _character_alias_spoken_as(name: str, spoken_as: str, alias: str) -> str:
         selected = spoken_tokens[-len(alias_tokens):]
     else:
         selected = []
-    return " ".join(selected).strip() or _author_spoken_hint(alias)
+    return _distinct_alias_spoken_hint(alias, " ".join(selected).strip() or _author_spoken_hint(alias))
+
+
+def _distinct_alias_spoken_hint(alias: str, proposed: str) -> str:
+    proposed = " ".join(str(proposed or "").split()).strip()
+    if proposed and _normalize_label(alias) != _normalize_label(proposed):
+        return proposed
+    try:
+        from book2mp3.tts.pronunciation import spoken_hint
+
+        hinted = spoken_hint(alias)
+    except Exception:
+        hinted = _author_spoken_hint(alias)
+    hinted = " ".join(str(hinted or "").split()).strip()
+    return hinted or proposed or alias
 
 
 def _name_tokens(value: str) -> list[str]:

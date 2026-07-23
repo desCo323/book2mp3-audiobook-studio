@@ -27,9 +27,16 @@ from book2mp3.pipeline.audio import (
 )
 from book2mp3.pipeline.chunking import split_text
 from book2mp3.pipeline.extract import extract_document
+from book2mp3.pipeline.prosody import ProsodyChunk, split_text_prosody_aware
 from book2mp3.presets import get_preset
 from book2mp3.runtime_stats import estimate_runtime, preferred_processing_mode, record_runtime_stat
-from book2mp3.tts.pronunciation import apply_pronunciation_rules, suggest_document_pronunciation_rules
+from book2mp3.tts.learned_lexicon import learn_name_observations, learned_pronunciation_rules
+from book2mp3.tts.pronunciation import (
+    NameMarkerScorer,
+    apply_pronunciation_rules,
+    suggest_document_name_markers,
+    suggest_document_pronunciation_rules,
+)
 from book2mp3.tts.piper import PiperBackend
 from book2mp3.tts.xtts import XttsBackend
 from book2mp3.utils.logging_utils import attach_job_file_logger, get_logger
@@ -48,6 +55,12 @@ class StopRequested(Exception):
     pass
 
 
+XTTS_DENSE_NAME_CHUNK_MIN_CHARS = 85
+XTTS_DENSE_NAME_CHUNK_RATIO = 0.82
+XTTS_DENSE_NAME_MIN_SCORE = 2
+XTTS_MIN_RENDER_CHUNK_CHARS = 80
+
+
 def _safe_file_component(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
     cleaned = re.sub(r"_+", "_", cleaned).strip("._-")
@@ -62,6 +75,15 @@ def _safe_final_book_name(value: str) -> str:
     if not name:
         return "Audiobook"
     return name[:100] or "Audiobook"
+
+
+def _safe_output_file_stem(value: str) -> str:
+    name = (value or "").strip().strip(". ")
+    name = re.sub(r"[\\/:*?\"<>|]+", "_", name)
+    name = re.sub(r"\s+", " ", name)
+    name = re.sub(r"\s*-\s*", " - ", name)
+    name = re.sub(r"[._]+", " ", name).strip("._ -")
+    return name[:120] or "Audiobook"
 
 
 class JobManager:
@@ -344,13 +366,18 @@ class JobManager:
         payload = json.loads(state_file.read_text(encoding="utf-8"))
         if not include_details:
             raw_chunks = payload.get("chunks", []) or []
-            payload["cached_total_chunks"] = len(raw_chunks)
-            payload["cached_completed_chunks"] = sum(
-                1 for chunk in raw_chunks if str(chunk.get("status", "")) == "done"
-            )
-            payload["cached_failed_chunks"] = sum(
-                1 for chunk in raw_chunks if str(chunk.get("status", "")) == "failed"
-            )
+            if raw_chunks:
+                payload["cached_total_chunks"] = len(raw_chunks)
+                payload["cached_completed_chunks"] = sum(
+                    1 for chunk in raw_chunks if str(chunk.get("status", "")) == "done"
+                )
+                payload["cached_failed_chunks"] = sum(
+                    1 for chunk in raw_chunks if str(chunk.get("status", "")) == "failed"
+                )
+            else:
+                payload["cached_total_chunks"] = int(payload.get("cached_total_chunks", 0) or 0)
+                payload["cached_completed_chunks"] = int(payload.get("cached_completed_chunks", 0) or 0)
+                payload["cached_failed_chunks"] = int(payload.get("cached_failed_chunks", 0) or 0)
             payload["chunks"] = []
             payload["chapters"] = []
             logs = payload.get("logs", []) or []
@@ -376,72 +403,83 @@ class JobManager:
 
     def recover_interrupted_jobs(self) -> None:
         for job_summary in self.list_jobs():
-            job = self.load_state(job_summary.job_id)
-            logger = self.job_logger(job)
-            if job.chunks:
-                job = self._reconcile_chunk_artifacts(
-                    job,
-                    logger=logger,
-                    append_log=job.status in {"running", "failed", "stopped"},
-                )
-                job = self._catch_up_xtts_deferred_mp3_artifacts(
-                    job,
-                    logger=logger,
-                    append_log=job.status in {"running", "failed", "stopped"},
-                )
-                job = self._rechunk_xtts_job_chunks_if_needed(
-                    job,
-                    logger=logger,
-                )
-            if job.status == "running":
-                job.status = "queued"
-                job.append_log("Recovered running job after restart and returned it to the queue")
-                self.save_state(job)
-                logger.warning("Recovered interrupted running job after restart")
-            elif job.status == "failed" and job.backend == "xtts":
-                reason = self.backend_block_reason(job)
-                if reason:
-                    if self._should_attempt_xtts_self_heal(reason) and job.auto_recovery_attempts < 1:
-                        job.auto_recovery_attempts += 1
-                        repaired, repair_message = self._attempt_xtts_self_heal(logger=logger, detail=reason)
-                        if repaired:
+            logger: logging.Logger | None = None
+            try:
+                job = self.load_state(job_summary.job_id)
+                logger = self.job_logger(job)
+                if not self._job_workspace_writable(job):
+                    logger.warning(
+                        "Skipping startup recovery for non-writable job %s: %s",
+                        job.job_id,
+                        job.job_dir(self.paths.jobs),
+                    )
+                    continue
+                if job.chunks and job.status == "running":
+                    job = self._reconcile_chunk_artifacts(
+                        job,
+                        logger=logger,
+                        append_log=job.status in {"running", "failed", "stopped"},
+                    )
+                    job = self._catch_up_xtts_deferred_mp3_artifacts(
+                        job,
+                        logger=logger,
+                        append_log=job.status in {"running", "failed", "stopped"},
+                    )
+                if job.status == "running":
+                    job.status = "queued"
+                    job.append_log("Recovered running job after restart and returned it to the queue")
+                    self.save_state(job)
+                    logger.warning("Recovered interrupted running job after restart")
+                elif job.status == "failed" and job.backend == "xtts":
+                    reason = self.backend_block_reason(job)
+                    if reason:
+                        if self._should_attempt_xtts_self_heal(reason) and job.auto_recovery_attempts < 1:
+                            job.auto_recovery_attempts += 1
+                            repaired, repair_message = self._attempt_xtts_self_heal(logger=logger, detail=reason)
+                            if repaired:
+                                job.status = "queued"
+                                job.block_reason = ""
+                                job.append_log(f"Recovered failed XTTS job after automatic runtime repair: {repair_message}")
+                                self.save_state(job)
+                                logger.warning("Recovered failed XTTS job %s after runtime repair", job.job_id)
+                                continue
+                            job.append_log(f"Automatic XTTS repair failed during restart recovery: {repair_message}")
+                        job.status = "blocked"
+                        job.block_reason = reason
+                        job.append_log(f"Recovered failed XTTS job into blocked state: {reason}")
+                        job = self._write_failure_report(
+                            job,
+                            category="xtts_runtime_incomplete",
+                            error=reason,
+                            recovery_result="Automatische Prüfung beim Neustart ergab eine unvollständige XTTS-Runtime.",
+                            auto_recovery_attempted=job.auto_recovery_attempts > 0,
+                            recommended_action="XTTS-Setup prüfen oder Piper nutzen, bis die Runtime wieder vollständig ist.",
+                            details={"source": "recover_interrupted_jobs"},
+                        )
+                        self.save_state(job)
+                        logger.warning("Recovered failed XTTS job %s into blocked state", job.job_id)
+                    else:
+                        failed_error_text = " | ".join(chunk.error for chunk in job.failed_chunks if chunk.error)
+                        if (
+                            job.failed_chunks
+                            and (
+                                job.last_failure_category == "xtts_runtime_incomplete"
+                                or "XTTS synthesis failed with exit code 1" in failed_error_text
+                                or "XTTS server returned no response" in failed_error_text
+                            )
+                        ):
                             job.status = "queued"
                             job.block_reason = ""
-                            job.append_log(f"Recovered failed XTTS job after automatic runtime repair: {repair_message}")
+                            job.auto_recovery_attempts += 1
+                            job.append_log("Recovered failed XTTS job after transient/runtime failure and returned it to the queue")
                             self.save_state(job)
-                            logger.warning("Recovered failed XTTS job %s after runtime repair", job.job_id)
-                            continue
-                        job.append_log(f"Automatic XTTS repair failed during restart recovery: {repair_message}")
-                    job.status = "blocked"
-                    job.block_reason = reason
-                    job.append_log(f"Recovered failed XTTS job into blocked state: {reason}")
-                    job = self._write_failure_report(
-                        job,
-                        category="xtts_runtime_incomplete",
-                        error=reason,
-                        recovery_result="Automatische Prüfung beim Neustart ergab eine unvollständige XTTS-Runtime.",
-                        auto_recovery_attempted=job.auto_recovery_attempts > 0,
-                        recommended_action="XTTS-Setup prüfen oder Piper nutzen, bis die Runtime wieder vollständig ist.",
-                        details={"source": "recover_interrupted_jobs"},
-                    )
-                    self.save_state(job)
-                    logger.warning("Recovered failed XTTS job %s into blocked state", job.job_id)
+                            logger.warning("Recovered failed XTTS job %s back into queue", job.job_id)
+            except PermissionError as exc:
+                message = f"Skipping startup recovery for job {job_summary.job_id} because it is not writable: {exc}"
+                if logger is not None:
+                    logger.warning(message)
                 else:
-                    failed_error_text = " | ".join(chunk.error for chunk in job.failed_chunks if chunk.error)
-                    if (
-                        job.failed_chunks
-                        and (
-                            job.last_failure_category == "xtts_runtime_incomplete"
-                            or "XTTS synthesis failed with exit code 1" in failed_error_text
-                            or "XTTS server returned no response" in failed_error_text
-                        )
-                    ):
-                        job.status = "queued"
-                        job.block_reason = ""
-                        job.auto_recovery_attempts += 1
-                        job.append_log("Recovered failed XTTS job after transient/runtime failure and returned it to the queue")
-                        self.save_state(job)
-                        logger.warning("Recovered failed XTTS job %s back into queue", job.job_id)
+                    self.logger.warning(message)
         self.refresh_queue_availability()
 
     def _xtts_backend(self, logger: logging.Logger | None = None) -> XttsBackend:
@@ -463,13 +501,71 @@ class JobManager:
 
     def _xtts_effective_max_chars(self, state: JobState) -> int:
         requested = max(1, int(state.max_chars or 0))
+        return safe_xtts_chunk_chars(requested, self._xtts_language_code(state))
+
+    def _xtts_language_code(self, state: JobState) -> str:
         language_code = "de"
         if state.voice_profile_id:
             try:
                 language_code = load_voice_profile(self.paths.voice_profiles, state.voice_profile_id).target_language
             except Exception as exc:
                 self.logger.debug("Could not load XTTS voice profile language for %s: %s", state.voice_profile_id, exc)
-        return safe_xtts_chunk_chars(requested, language_code)
+        return language_code
+
+    def _xtts_dense_name_max_chars(self, max_chars: int) -> int:
+        if max_chars <= XTTS_DENSE_NAME_CHUNK_MIN_CHARS:
+            return max_chars
+        dense_max = int(round(max_chars * XTTS_DENSE_NAME_CHUNK_RATIO))
+        return max(XTTS_DENSE_NAME_CHUNK_MIN_CHARS, min(max_chars, dense_max))
+
+    def _xtts_document_name_markers(
+        self,
+        state: JobState,
+        *,
+        logger: logging.Logger,
+    ) -> list[dict[str, object]]:
+        source_text = self._xtts_pronunciation_detection_text(state)
+        if not source_text.strip():
+            return []
+        markers = suggest_document_name_markers(
+            source_text,
+            seed_terms=self._xtts_pronunciation_seed_terms(state),
+            existing_rules=[
+                *state.pronunciation_rules,
+                *self._xtts_matching_global_identity_rules(source_text, logger=logger),
+            ],
+            limit=180,
+            min_occurrences=2,
+        )
+        logger.debug("Detected %s XTTS name marker(s) for job %s", len(markers), state.job_id)
+        return markers
+
+    def _split_xtts_text(
+        self,
+        text: str,
+        *,
+        max_chars: int,
+        name_markers: list[dict[str, object]],
+        language_code: str,
+    ) -> list[ProsodyChunk]:
+        dense_max_chars = self._xtts_dense_name_max_chars(max_chars)
+        if not name_markers or dense_max_chars >= max_chars:
+            return split_text_prosody_aware(
+                text,
+                max_chars,
+                min_length=XTTS_MIN_RENDER_CHUNK_CHARS,
+                language_code=language_code,
+            )
+        marker_scorer = NameMarkerScorer(name_markers)
+        return split_text_prosody_aware(
+            text,
+            max_chars,
+            dense_max_length=dense_max_chars,
+            name_score=marker_scorer.score,
+            dense_min_score=XTTS_DENSE_NAME_MIN_SCORE,
+            min_length=XTTS_MIN_RENDER_CHUNK_CHARS,
+            language_code=language_code,
+        )
 
     def _xtts_batch_parameters(self, state: JobState) -> tuple[int, int]:
         app_settings = load_app_settings(self.paths.app_settings_file)
@@ -805,34 +901,70 @@ class JobManager:
             merged,
             self._xtts_matching_global_lexicon_rules(source_text, logger=logger),
         )
+        added_from_learned = self._append_unique_pronunciation_rules(
+            merged,
+            learned_pronunciation_rules(self.paths.workspace, source_text),
+        )
         seed_terms = self._xtts_pronunciation_seed_terms(state)
+        identity_rules = self._xtts_matching_global_identity_rules(source_text, logger=logger)
         suggestions = suggest_document_pronunciation_rules(
             source_text,
             seed_terms=seed_terms,
-            existing_rules=merged,
+            existing_rules=[*merged, *identity_rules],
             limit=80,
         )
         added_from_document = self._append_unique_pronunciation_rules(merged, suggestions)
-        added = added_from_lexicon + added_from_document
+        self._update_xtts_learned_lexicon(state, source_text, [*merged, *identity_rules], logger=logger)
+        added = added_from_lexicon + added_from_learned + added_from_document
         if added <= 0:
             return state
         state.pronunciation_rules = normalize_pronunciation_rules(merged)
-        if added_from_lexicon and added_from_document:
-            state.append_log(
-                f"Added {added} automatic XTTS pronunciation rule(s) from lexicon and this book"
-            )
-        elif added_from_lexicon:
-            state.append_log(f"Added {added_from_lexicon} automatic XTTS pronunciation rule(s) from lexicon")
-        else:
-            state.append_log(f"Added {added_from_document} automatic XTTS pronunciation rule(s) from this book")
+        state.append_log(
+            "Added "
+            f"{added} automatic XTTS pronunciation rule(s) "
+            f"(global={added_from_lexicon}, learned={added_from_learned}, document={added_from_document})"
+        )
         logger.info(
-            "Added %s automatic XTTS pronunciation rule(s) for job %s (lexicon=%s document=%s)",
+            "Added %s automatic XTTS pronunciation rule(s) for job %s (global=%s learned=%s document=%s)",
             added,
             state.job_id,
             added_from_lexicon,
+            added_from_learned,
             added_from_document,
         )
         return state
+
+    def _update_xtts_learned_lexicon(
+        self,
+        state: JobState,
+        source_text: str,
+        rules: list[dict[str, object]],
+        *,
+        logger: logging.Logger,
+    ) -> None:
+        try:
+            language_code = "de"
+            if state.voice_profile_id:
+                language_code = load_voice_profile(self.paths.voice_profiles, state.voice_profile_id).target_language
+            result = learn_name_observations(
+                self.paths.workspace,
+                source_text,
+                source_id=state.job_id,
+                source_kind="job",
+                language_code=language_code,
+                existing_rules=rules,
+                min_occurrences=2,
+            )
+        except Exception as exc:
+            logger.debug("Skipped XTTS learned lexicon update for job %s: %s", state.job_id, exc)
+            return
+        if int(result.get("updated_entries", 0) or 0) > 0:
+            logger.info(
+                "Updated XTTS learned lexicon for job %s (entries=%s observed=%s)",
+                state.job_id,
+                result.get("entry_count", 0),
+                result.get("observed_markers", 0),
+            )
 
     def _append_unique_pronunciation_rules(
         self,
@@ -881,6 +1013,30 @@ class JobManager:
             match = str(rule.get("match", "") or "").strip()
             spoken_as = str(rule.get("spoken_as", "") or "").strip()
             if not match or not spoken_as or match.casefold() == spoken_as.casefold():
+                continue
+            if not self._xtts_text_contains_rule_match(source_text, match):
+                continue
+            matches.append(rule)
+            if len(matches) >= limit:
+                break
+        return matches
+
+    def _xtts_matching_global_identity_rules(
+        self,
+        source_text: str,
+        *,
+        logger: logging.Logger,
+        limit: int = 240,
+    ) -> list[dict[str, object]]:
+        try:
+            from book2mp3.metadata_extractor.lexicon import build_known_name_identity_rules
+        except Exception as exc:
+            logger.debug("Skipped global identity lexicon for XTTS job: %s", exc)
+            return []
+        matches: list[dict[str, object]] = []
+        for rule in build_known_name_identity_rules():
+            match = str(rule.get("match", "") or "").strip()
+            if not match:
                 continue
             if not self._xtts_text_contains_rule_match(source_text, match):
                 continue
@@ -1054,7 +1210,27 @@ class JobManager:
             total_chars += text_size
         return selected[:batch_limit] or pending_chunks[:1]
 
-    def _xtts_chunk_too_large(self, chunk: ChunkRecord, max_chars: int) -> bool:
+    def _xtts_current_spoken_text_for_chunk(
+        self,
+        chunk: ChunkRecord,
+        rules: list[dict[str, object]],
+    ) -> str:
+        original_text = Path(chunk.text_file).read_text(encoding="utf-8")
+        transformed = apply_pronunciation_rules(original_text, rules)
+        return normalize_xtts_dialog_text(transformed.spoken_text)
+
+    def _xtts_chunk_too_large(
+        self,
+        chunk: ChunkRecord,
+        max_chars: int,
+        *,
+        rules: list[dict[str, object]] | None = None,
+    ) -> bool:
+        if rules is not None:
+            try:
+                return len(self._xtts_current_spoken_text_for_chunk(chunk, rules)) > max_chars
+            except OSError:
+                pass
         if chunk.spoken_text_length > max_chars:
             return True
         spoken_path = Path(chunk.spoken_text_file) if chunk.spoken_text_file else None
@@ -1074,30 +1250,83 @@ class JobManager:
         except OSError:
             return False
 
+    def _xtts_chunk_name_dense_too_large(
+        self,
+        chunk: ChunkRecord,
+        *,
+        max_chars: int,
+        name_markers: list[dict[str, object]],
+        name_scorer: NameMarkerScorer | None = None,
+        rules: list[dict[str, object]] | None = None,
+    ) -> bool:
+        if not name_markers:
+            return False
+        dense_max_chars = self._xtts_dense_name_max_chars(max_chars)
+        if dense_max_chars >= max_chars:
+            return False
+        try:
+            text = (
+                self._xtts_current_spoken_text_for_chunk(chunk, rules)
+                if rules is not None
+                else self._chunk_render_text(chunk)
+            )
+        except OSError:
+            return False
+        if len(text) <= dense_max_chars:
+            return False
+        scorer = name_scorer or NameMarkerScorer(name_markers)
+        return scorer.is_dense(text, min_score=XTTS_DENSE_NAME_MIN_SCORE)
+
     def _rechunk_xtts_job_chunks_if_needed(self, state: JobState, logger: logging.Logger) -> JobState:
         if state.backend != "xtts":
+            return state
+        if state.status == "completed":
+            return state
+        if not self._job_workspace_writable(state):
+            reason = f"Job-Arbeitsbereich ist nicht beschreibbar: {state.job_dir(self.paths.jobs)}"
+            if state.status != "completed":
+                state.status = "blocked"
+                state.block_reason = reason
+            logger.warning("Skipping XTTS rechunk for non-writable job %s: %s", state.job_id, reason)
             return state
         max_chars = self._xtts_effective_max_chars(state)
         if not state.chunks:
             state.max_chars = max_chars
             return state
-        if all(not self._xtts_chunk_too_large(chunk, max_chars) for chunk in state.chunks):
+        state = self._augment_xtts_pronunciation_rules(state, logger=logger)
+        name_markers = self._xtts_document_name_markers(state, logger=logger)
+        name_scorer = NameMarkerScorer(name_markers)
+        if all(
+            not self._xtts_chunk_too_large(chunk, max_chars, rules=state.pronunciation_rules)
+            and not self._xtts_chunk_name_dense_too_large(
+                chunk,
+                max_chars=max_chars,
+                name_markers=name_markers,
+                name_scorer=name_scorer,
+                rules=state.pronunciation_rules,
+            )
+            for chunk in state.chunks
+        ):
             if state.max_chars != max_chars:
                 state.max_chars = max_chars
                 state.append_log(f"Adjusted XTTS chunk size cap to {max_chars}")
                 self.save_state(state)
             return state
         logger.warning(
-            "Rechunking job %s because one or more XTTS chunks exceed %s chars",
+            "Rechunking job %s because one or more XTTS chunks exceed %s chars or dense-name target",
             state.job_id,
             max_chars,
         )
         # Remove stale artifacts to avoid mismatched audio-to-text chunk mappings.
         for chunk in state.chunks:
             for artifact in (chunk.text_file, chunk.spoken_text_file, chunk.wav_file, chunk.mp3_file):
+                if not artifact:
+                    continue
                 path = Path(artifact)
-                if path.exists():
+                if path.is_file() or path.is_symlink():
                     path.unlink()
+                elif path.exists():
+                    logger.debug("Skipping stale chunk artifact path that is not a file: %s", path)
         chunks_dir = state.job_dir(self.paths.jobs) / "chunks"
         if chunks_dir.exists():
             shutil.rmtree(chunks_dir)
@@ -1111,7 +1340,7 @@ class JobManager:
         state.status = "queued"
         state.block_reason = ""
         state.append_log(
-            "Rechunking job because existing chunk files exceeded XTTS safety limit; chunks will be recreated before processing."
+            "Rechunking job because existing chunk files exceeded XTTS safety or dense-name chunk targets; chunks will be recreated before processing."
         )
         state.max_chars = max_chars
         self._delete_export_artifacts(state)
@@ -1270,7 +1499,7 @@ class JobManager:
     def refresh_job_availability(self, state: JobState) -> JobState:
         if not self._job_workspace_writable(state):
             reason = f"Job-Arbeitsbereich ist nicht beschreibbar: {state.job_dir(self.paths.jobs)}"
-            if state.status in {"queued", "prepared", "blocked"}:
+            if state.status != "completed":
                 state.status = "blocked"
                 state.block_reason = reason
             return state
@@ -1320,7 +1549,7 @@ class JobManager:
     def refresh_queue_availability(self) -> list[JobState]:
         refreshed: list[JobState] = []
         for job in self.list_jobs():
-            if job.status in {"queued", "prepared", "blocked"}:
+            if job.status in {"queued", "prepared", "blocked", "running"}:
                 refreshed.append(self.refresh_job_availability(job))
             else:
                 refreshed.append(job)
@@ -1402,6 +1631,8 @@ class JobManager:
         state.append_log("Audiobook metadata updated")
         logger = self.job_logger(state)
         if reapply_outputs and self._job_has_existing_mp3_outputs(state):
+            self._rename_existing_outputs_for_metadata(state, logger)
+        if reapply_outputs and self._job_has_existing_mp3_outputs(state):
             self._finalize_outputs(state, logger)
             self._sync_final_books_outputs(state, logger, previous_dir=previous_dir)
             state.append_log("Updated MP3 tags and export manifests for all existing job MP3 files")
@@ -1410,6 +1641,76 @@ class JobManager:
         self.save_state(state)
         logger.info("Updated audiobook metadata for job %s", job_id)
         return state
+
+    def _metadata_output_stem(self, state: JobState) -> str:
+        title = (state.audiobook_metadata.title or state.title or "").strip()
+        author = (state.audiobook_metadata.author or "").strip()
+        label = f"{author} - {title}" if author and title else title or author
+        return _safe_output_file_stem(label or Path(state.source_file or "Audiobook").stem)
+
+    def _unique_output_target(self, target: Path, source: Path) -> Path:
+        if target == source or not target.exists():
+            return target
+        stem = target.stem
+        suffix = target.suffix
+        for index in range(2, 1000):
+            candidate = target.with_name(f"{stem}_{index}{suffix}")
+            if candidate == source or not candidate.exists():
+                return candidate
+        return target.with_name(f"{stem}_{int(time.time())}{suffix}")
+
+    def _rename_existing_outputs_for_metadata(self, state: JobState, logger: logging.Logger) -> None:
+        first_existing_output = next(
+            (Path(path) for path in state.final_output_files if path and Path(path).exists()),
+            None,
+        )
+        if state.final_output_file:
+            output_dir = Path(state.final_output_file).parent
+        elif first_existing_output is not None:
+            output_dir = first_existing_output.parent
+        else:
+            output_dir = self.paths.jobs / state.job_id / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_stem = self._metadata_output_stem(state)
+        existing_outputs = [Path(path) for path in state.final_output_files if path and Path(path).exists()]
+        if not existing_outputs:
+            state.final_output_file = str(output_dir / f"{output_stem}.mp3")
+            return
+
+        chapter_by_path = {chapter.output_file: chapter for chapter in state.chapters if chapter.output_file}
+        renamed_outputs: list[str] = []
+        total = len(existing_outputs)
+        for index, source_path in enumerate(existing_outputs, start=1):
+            if total == 1 and state.output_mode == "single_file":
+                target_name = f"{output_stem}.mp3"
+            elif state.output_mode == "timed_parts":
+                target_name = f"{output_stem}_part_{index - 1:03d}.mp3"
+            elif state.output_mode == "chapter_files":
+                chapter = chapter_by_path.get(str(source_path))
+                chapter_title = chapter.title if chapter else f"Kapitel {index:03d}"
+                chapter_slug = _safe_file_component(chapter_title)[:48]
+                target_name = f"{output_stem}_chapter_{index:03d}_{chapter_slug}.mp3"
+            elif state.output_mode == "segments":
+                target_name = f"{output_stem}_segment_{index:03d}.mp3"
+            else:
+                target_name = f"{output_stem}_file_{index:03d}.mp3"
+            target_path = self._unique_output_target(output_dir / target_name, source_path)
+            if target_path != source_path:
+                try:
+                    source_path.rename(target_path)
+                    logger.info("Renamed finished MP3 %s to %s", source_path, target_path)
+                except OSError as exc:
+                    logger.warning("Could not rename finished MP3 %s to %s: %s", source_path, target_path, exc)
+                    target_path = source_path
+            chapter = chapter_by_path.get(str(source_path))
+            if chapter is not None:
+                chapter.output_file = str(target_path)
+            renamed_outputs.append(str(target_path))
+        state.final_output_files = renamed_outputs
+        if state.output_mode == "single_file" and renamed_outputs:
+            state.final_output_file = renamed_outputs[0]
+        else:
+            state.final_output_file = str(output_dir / f"{output_stem}.mp3")
 
     def _job_has_existing_mp3_outputs(self, state: JobState) -> bool:
         for path_str in state.final_output_files:
@@ -1503,6 +1804,8 @@ class JobManager:
         extracted_path = Path(state.extracted_file)
         if state.backend == "xtts":
             state = self._rechunk_xtts_job_chunks_if_needed(state, logger=logger)
+            if state.status == "blocked":
+                return state
         if not extracted_path.exists() or not state.chapters:
             extracted_path.parent.mkdir(parents=True, exist_ok=True)
             logger.info("Extracting source text from %s", state.source_file)
@@ -1549,9 +1852,18 @@ class JobManager:
             chunk_index = 1
             xtts_chapters_with_replacements = 0
             xtts_applied_occurrences = 0
+            xtts_name_markers: list[dict[str, object]] = []
+            xtts_language_code = "de"
             if state.backend == "xtts":
                 state.max_chars = self._xtts_effective_max_chars(state)
+                xtts_language_code = self._xtts_language_code(state)
                 state = self._augment_xtts_pronunciation_rules(state, logger=logger)
+                xtts_name_markers = self._xtts_document_name_markers(state, logger=logger)
+                if xtts_name_markers:
+                    dense_max_chars = self._xtts_dense_name_max_chars(state.max_chars)
+                    state.append_log(
+                        f"Detected {len(xtts_name_markers)} XTTS name marker(s); dense-name chunks target {dense_max_chars} chars"
+                    )
             logger.info("Preparing chunks with max_chars=%s across %s chapter(s)", state.max_chars, len(state.chapters))
             for chapter in state.chapters or [
                 ChapterRecord(
@@ -1571,16 +1883,36 @@ class JobManager:
                     if transformed.applied_occurrences > 0:
                         xtts_chapters_with_replacements += 1
                         xtts_applied_occurrences += transformed.applied_occurrences
-                parts = split_text(chunk_source_text, state.max_chars)
+                if state.backend == "xtts":
+                    parts = self._split_xtts_text(
+                        chunk_source_text,
+                        max_chars=state.max_chars,
+                        name_markers=xtts_name_markers,
+                        language_code=xtts_language_code,
+                    )
+                else:
+                    parts = split_text(chunk_source_text, state.max_chars)
                 if not parts:
                     continue
                 chapter.chunk_start_index = chunk_index
                 for part in parts:
+                    if isinstance(part, ProsodyChunk):
+                        part_text = part.text
+                        prosody_style = part.style
+                        pause_after_ms = part.pause_after_ms
+                        prosody_reasons = list(part.reasons)
+                        marker_score = part.name_marker_score
+                    else:
+                        part_text = part
+                        prosody_style = ""
+                        pause_after_ms = 0
+                        prosody_reasons = []
+                        marker_score = 0
                     text_file = chunks_dir / f"{chunk_index:05d}.txt"
                     wav_file = job_dir / "audio" / "wav" / f"{chunk_index:05d}.wav"
                     mp3_file = job_dir / "audio" / "mp3" / f"{chunk_index:05d}.mp3"
-                    text_file.write_text(part, encoding="utf-8")
-                    text_length = len(part)
+                    text_file.write_text(part_text, encoding="utf-8")
+                    text_length = len(part_text)
                     chunks.append(
                         ChunkRecord(
                             index=chunk_index,
@@ -1590,6 +1922,10 @@ class JobManager:
                             text_length=text_length,
                             chapter_index=chapter.index,
                             chapter_title=chapter.title,
+                            prosody_style=prosody_style,
+                            pause_after_ms=pause_after_ms,
+                            prosody_reasons=prosody_reasons,
+                            name_marker_score=marker_score,
                         )
                     )
                     chunk_index += 1
@@ -2212,6 +2548,10 @@ class JobManager:
                     "chapter_title": chunk.chapter_title,
                     "pronunciation_rule_count": chunk.pronunciation_rule_count,
                     "pronunciation_applied_occurrences": chunk.pronunciation_applied_occurrences,
+                    "prosody_style": chunk.prosody_style,
+                    "pause_after_ms": chunk.pause_after_ms,
+                    "prosody_reasons": chunk.prosody_reasons,
+                    "name_marker_score": chunk.name_marker_score,
                     "start_ms": current_ms,
                     "end_ms": current_ms + duration_ms,
                     "duration_seconds": round(duration_seconds, 3),

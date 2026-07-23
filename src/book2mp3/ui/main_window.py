@@ -136,6 +136,8 @@ class MainWindow(QMainWindow):
         self._finished_metadata_search_runner: AsyncTaskRunner | None = None
         self._active_finished_metadata_save_request_id = 0
         self._finished_metadata_save_runner: AsyncTaskRunner | None = None
+        self._active_finished_metadata_redetect_request_id = 0
+        self._finished_metadata_redetect_runner: AsyncTaskRunner | None = None
         self._active_delete_job_request_id = 0
         self._delete_job_runner: AsyncTaskRunner | None = None
         self._active_delete_finished_job_request_id = 0
@@ -219,6 +221,8 @@ class MainWindow(QMainWindow):
             self._metadata_save_runner = None
         if self._finished_metadata_save_runner is runner:
             self._finished_metadata_save_runner = None
+        if self._finished_metadata_redetect_runner is runner:
+            self._finished_metadata_redetect_runner = None
         if self._delete_job_runner is runner:
             self._delete_job_runner = None
         if self._delete_finished_job_runner is runner:
@@ -989,6 +993,12 @@ class MainWindow(QMainWindow):
         self.finished_metadata_apply_button = QPushButton("Ausgewählten Treffer übernehmen")
         self.finished_metadata_apply_button.clicked.connect(self.apply_finished_metadata_result)
         finished_meta_actions.addWidget(self.finished_metadata_apply_button)
+        self.finished_metadata_redetect_button = QPushButton("Neu erkennen & ersetzen")
+        self.finished_metadata_redetect_button.clicked.connect(self.redetect_selected_finished_metadata)
+        finished_meta_actions.addWidget(self.finished_metadata_redetect_button)
+        self.finished_metadata_redetect_all_button = QPushButton("Alle neu erkennen")
+        self.finished_metadata_redetect_all_button.clicked.connect(self.redetect_all_finished_metadata)
+        finished_meta_actions.addWidget(self.finished_metadata_redetect_all_button)
         self.finished_metadata_save_button = QPushButton("Tags speichern")
         self.finished_metadata_save_button.clicked.connect(self.save_finished_job_metadata)
         finished_meta_actions.addWidget(self.finished_metadata_save_button)
@@ -2044,6 +2054,150 @@ class MainWindow(QMainWindow):
             )
 
         self._connect_async_runner(self._finished_metadata_save_runner, on_success, on_failure)
+
+    def _set_finished_metadata_redetect_busy(self, busy: bool) -> None:
+        selected = self._selected_finished_job() is not None
+        self.finished_metadata_redetect_button.setEnabled(not busy and selected)
+        self.finished_metadata_redetect_all_button.setEnabled(not busy and self.finished_books_list.count() > 0)
+        self.finished_metadata_guess_button.setEnabled(not busy and selected)
+        self.finished_metadata_search_button.setEnabled(not busy and selected)
+        self.finished_metadata_apply_button.setEnabled(not busy and selected)
+        self.finished_metadata_save_button.setEnabled(not busy and selected)
+
+    def redetect_selected_finished_metadata(self) -> None:
+        job = self._selected_finished_job()
+        if job is None:
+            return
+        if self._finished_metadata_redetect_runner is not None:
+            return
+        job_id = job.job_id
+        request_id = self._next_async_request_id()
+        self._active_finished_metadata_redetect_request_id = request_id
+        self._set_finished_metadata_redetect_busy(True)
+        self.finished_metadata_status_label.setText(
+            {
+                "de": "Metadaten werden neu erkannt, vorhandene Daten ersetzt und MP3-/Ordnernamen aktualisiert …",
+                "en": "Re-detecting metadata, replacing existing data and updating MP3/folder names …",
+                "es": "Redetectando metadatos, reemplazando datos existentes y actualizando nombres de MP3/carpetas …",
+                "pt": "Redetectando metadados, substituindo dados existentes e atualizando nomes de MP3/pastas …",
+            }.get(self.ui_language, "Re-detecting metadata, replacing existing data and updating MP3/folder names …")
+        )
+
+        def _redetect() -> dict[str, Any]:
+            return self.service.redetect_finished_job_metadata(job_id)
+
+        self._finished_metadata_redetect_runner = AsyncTaskRunner(request_id, _redetect, parent=self)
+
+        def on_success(rid: int, payload: dict[str, Any]) -> None:
+            if rid != self._active_finished_metadata_redetect_request_id:
+                return
+            self.current_job_id = job_id
+            self.refresh_jobs()
+            self.refresh_all_metadata_completers()
+            updated_state = self.manager.load_state(job_id)
+            self.show_job(updated_state)
+            self.refresh_finished_metadata_editor(updated_state)
+            metadata = payload.get("metadata") if isinstance(payload, dict) else {}
+            confidence = float(metadata.get("confidence") or 0.0) if isinstance(metadata, dict) else 0.0
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Neu erkannt und ersetzt: {updated_state.audiobook_metadata.title}. MP3-Tags, Dateinamen und Ausgabeordner wurden aktualisiert. Konfidenz {confidence:.2f}.",
+                    "en": f"Re-detected and replaced: {updated_state.audiobook_metadata.title}. MP3 tags, file names and output folder were updated. Confidence {confidence:.2f}.",
+                    "es": f"Redetectado y reemplazado: {updated_state.audiobook_metadata.title}. Se actualizaron etiquetas, nombres de archivo y carpeta de salida. Confianza {confidence:.2f}.",
+                    "pt": f"Redetectado e substituído: {updated_state.audiobook_metadata.title}. Tags, nomes de arquivo e pasta de saída foram atualizados. Confiança {confidence:.2f}.",
+                }.get(
+                    self.ui_language,
+                    f"Re-detected and replaced: {updated_state.audiobook_metadata.title}. MP3 tags, file names and output folder were updated. Confidence {confidence:.2f}.",
+                )
+            )
+            self._set_finished_metadata_redetect_busy(False)
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_finished_metadata_redetect_request_id:
+                return
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Neu-Erkennung fehlgeschlagen: {message}",
+                    "en": f"Re-detection failed: {message}",
+                    "es": f"Falló la redetección: {message}",
+                    "pt": f"A redetecção falhou: {message}",
+                }.get(self.ui_language, f"Re-detection failed: {message}")
+            )
+            self._set_finished_metadata_redetect_busy(False)
+
+        self._connect_async_runner(self._finished_metadata_redetect_runner, on_success, on_failure)
+
+    def redetect_all_finished_metadata(self) -> None:
+        if self._finished_metadata_redetect_runner is not None:
+            return
+        if self.finished_books_list.count() <= 0:
+            return
+        answer = QMessageBox.question(
+            self,
+            self._text("Metadaten neu erkennen"),
+            {
+                "de": "Sollen die Metadaten für alle fertigen Hörbücher neu erkannt werden? Vorhandene Metadaten werden ersetzt und MP3-Dateinamen sowie Ausgabeordner werden aktualisiert.",
+                "en": "Re-detect metadata for all finished audiobooks? Existing metadata will be replaced and MP3 file names plus output folders will be updated.",
+                "es": "¿Redetectar metadatos para todos los audiolibros terminados? Se reemplazarán los metadatos existentes y se actualizarán nombres de MP3 y carpetas.",
+                "pt": "Redetectar metadados para todos os audiolivros concluídos? Metadados existentes serão substituídos e nomes de MP3/pastas serão atualizados.",
+            }.get(
+                self.ui_language,
+                "Re-detect metadata for all finished audiobooks? Existing metadata will be replaced and MP3 file names plus output folders will be updated.",
+            ),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        request_id = self._next_async_request_id()
+        self._active_finished_metadata_redetect_request_id = request_id
+        self._set_finished_metadata_redetect_busy(True)
+        self.finished_metadata_status_label.setText(
+            {
+                "de": "Alle fertigen Hörbücher werden neu erkannt und aktualisiert …",
+                "en": "Re-detecting and updating all finished audiobooks …",
+                "es": "Redetectando y actualizando todos los audiolibros terminados …",
+                "pt": "Redetectando e atualizando todos os audiolivros concluídos …",
+            }.get(self.ui_language, "Re-detecting and updating all finished audiobooks …")
+        )
+
+        def _redetect_all() -> dict[str, Any]:
+            return self.service.redetect_all_finished_metadata()
+
+        self._finished_metadata_redetect_runner = AsyncTaskRunner(request_id, _redetect_all, parent=self)
+
+        def on_success(rid: int, payload: dict[str, Any]) -> None:
+            if rid != self._active_finished_metadata_redetect_request_id:
+                return
+            self.refresh_jobs()
+            self.refresh_all_metadata_completers()
+            selected = self._selected_finished_job()
+            if selected is not None:
+                self.refresh_finished_metadata_editor(selected)
+            updated_count = int(payload.get("updated_count") or 0)
+            error_count = int(payload.get("error_count") or 0)
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Neu-Erkennung abgeschlossen: {updated_count} fertige Hörbücher aktualisiert, {error_count} Fehler.",
+                    "en": f"Re-detection finished: {updated_count} finished audiobook(s) updated, {error_count} error(s).",
+                    "es": f"Redetección finalizada: {updated_count} audiolibro(s) actualizado(s), {error_count} error(es).",
+                    "pt": f"Redetecção concluída: {updated_count} audiolivro(s) atualizado(s), {error_count} erro(s).",
+                }.get(self.ui_language, f"Re-detection finished: {updated_count} finished audiobook(s) updated, {error_count} error(s).")
+            )
+            self._set_finished_metadata_redetect_busy(False)
+
+        def on_failure(rid: int, message: str) -> None:
+            if rid != self._active_finished_metadata_redetect_request_id:
+                return
+            self.finished_metadata_status_label.setText(
+                {
+                    "de": f"Neu-Erkennung aller fertigen Hörbücher fehlgeschlagen: {message}",
+                    "en": f"Re-detecting all finished audiobooks failed: {message}",
+                    "es": f"Falló la redetección de todos los audiolibros terminados: {message}",
+                    "pt": f"A redetecção de todos os audiolivros concluídos falhou: {message}",
+                }.get(self.ui_language, f"Re-detecting all finished audiobooks failed: {message}")
+            )
+            self._set_finished_metadata_redetect_busy(False)
+
+        self._connect_async_runner(self._finished_metadata_redetect_runner, on_success, on_failure)
 
     def _resolved_output_mode_for_structure(self, requested_mode: str, structure: DocumentStructure) -> str:
         actual_mode = requested_mode or "single_file"
@@ -3464,6 +3618,9 @@ class MainWindow(QMainWindow):
                 )
             )
             self.finished_books_list.addItem(item)
+        self.finished_metadata_redetect_all_button.setEnabled(
+            self.finished_books_list.count() > 0 and self._finished_metadata_redetect_runner is None
+        )
         if self.current_job_id:
             for row in range(self.finished_books_list.count()):
                 item = self.finished_books_list.item(row)
@@ -3544,6 +3701,10 @@ class MainWindow(QMainWindow):
         self.finished_metadata_search_button.setEnabled(job is not None)
         self.finished_metadata_apply_button.setEnabled(job is not None)
         self.finished_metadata_save_button.setEnabled(job is not None)
+        self.finished_metadata_redetect_button.setEnabled(job is not None and self._finished_metadata_redetect_runner is None)
+        self.finished_metadata_redetect_all_button.setEnabled(
+            self.finished_books_list.count() > 0 and self._finished_metadata_redetect_runner is None
+        )
         self.finished_metadata_results_list.setEnabled(job is not None)
         if job is None:
             for field in fields:

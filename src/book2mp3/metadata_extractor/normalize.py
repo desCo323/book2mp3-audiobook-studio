@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from difflib import SequenceMatcher
+import html
 import re
 import unicodedata
 
@@ -48,12 +49,37 @@ COMMON_GIVEN_NAMES = {
     "wolf",
 }
 TITLE_START_STOPWORDS = {"das", "der", "die", "dem", "den", "des", "the", "a", "an", "le", "la", "les"}
+TRAILING_ARTICLES = {
+    "das": "Das",
+    "der": "Der",
+    "die": "Die",
+    "the": "The",
+    "a": "A",
+    "an": "An",
+    "le": "Le",
+    "la": "La",
+    "les": "Les",
+}
+PSEUDO_ENTITY_REPAIRS = {
+    "andauml;": "ä",
+    "andouml;": "ö",
+    "anduuml;": "ü",
+    "andszlig;": "ß",
+    "andAuml;": "Ä",
+    "andOuml;": "Ö",
+    "andUuml;": "Ü",
+}
 
 
 def repair_mojibake(value: str) -> str:
     text = value or ""
     if not text:
         return ""
+    if "&" in text:
+        text = html.unescape(text)
+    if "and" in text:
+        for source, target in PSEUDO_ENTITY_REPAIRS.items():
+            text = text.replace(source, target)
     if any(marker in text for marker in ("Ã", "Â", "â", "Г")):
         replacements = {
             "Ã¤": "ä",
@@ -89,6 +115,24 @@ def repair_mojibake(value: str) -> str:
     return text
 
 
+def normalize_article_inversion(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    if " - " in text:
+        prefix, suffix = text.rsplit(" - ", 1)
+        normalized_suffix = normalize_article_inversion(suffix)
+        return f"{prefix.strip()} - {normalized_suffix}" if normalized_suffix else prefix.strip()
+    match = re.match(r"^(?P<title>.+?),\s*(?P<article>Das|Der|Die|The|A|An|Le|La|Les)\s*$", text, re.IGNORECASE)
+    if not match:
+        return text
+    title = match.group("title").strip()
+    article = TRAILING_ARTICLES.get(match.group("article").casefold(), match.group("article").strip().title())
+    if title.casefold().startswith(f"{article.casefold()} "):
+        return title
+    return f"{article} {title}".strip()
+
+
 def _protect_decimal_dots(value: str) -> str:
     return re.sub(r"(?<=\d)\.(?=\d)", "<DECIMAL_DOT>", value)
 
@@ -115,9 +159,10 @@ def cleanup_label_text(value: str) -> str:
 
 def clean_title_fragment(value: str) -> str:
     text = cleanup_label_text(value)
+    text = re.sub(r"^(kopie von|copy of|copy)\s+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(German Edition|Deutsche Ausgabe)\b", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+", " ", text).strip(" -_.,;|")
-    return text
+    return normalize_article_inversion(text)
 
 
 def clean_author_fragment(value: str) -> str:
@@ -210,6 +255,24 @@ def looks_like_person_name(value: str) -> bool:
         if re.fullmatch(r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß'`.-]+", part):
             capitalized += 1
     return capitalized >= max(1, len(parts) - 1)
+
+
+def looks_like_author_handle(value: str) -> bool:
+    text = clean_author_fragment(value)
+    if not text:
+        return False
+    if len(text) < 3 or len(text) > 48:
+        return False
+    if not re.search(r"[A-Za-zÄÖÜäöüß]", text):
+        return False
+    if looks_like_noise(text):
+        return False
+    compact = re.sub(r"[\s._-]+", "", text)
+    if re.fullmatch(r"ff\d{3,}", compact, flags=re.IGNORECASE):
+        return False
+    if re.search(r"\d", compact):
+        return bool(re.fullmatch(r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß0-9._-]{2,47}", text))
+    return False
 
 
 def refine_author_fragment(value: str) -> str:

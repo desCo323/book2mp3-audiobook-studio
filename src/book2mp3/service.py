@@ -5,6 +5,7 @@ import json
 from dataclasses import asdict
 import os
 import mimetypes
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -393,7 +394,7 @@ class Book2Mp3Service:
         self,
         job_id: str,
         *,
-        audiobook_metadata: dict[str, str],
+        audiobook_metadata: dict[str, Any],
         reapply_outputs: bool = True,
     ) -> dict[str, Any]:
         state = self.manager.update_audiobook_metadata(
@@ -403,6 +404,79 @@ class Book2Mp3Service:
         )
         self.record_metadata_history(state.audiobook_metadata.to_dict())
         return self.serialize_job(state)
+
+    def redetect_finished_job_metadata(self, job_id: str) -> dict[str, Any]:
+        state = self.manager.load_state(job_id)
+        if state.status != "completed":
+            raise ValueError(f"Job {job_id} is not completed")
+        source_path = Path(state.source_file)
+        if not source_path.exists():
+            raise FileNotFoundError(f"Source file for finished job is missing: {source_path}")
+        result = extract_metadata_from_source(
+            source_path,
+            allow_online=True,
+            cache_path=self.paths.workspace / "statistics" / "metadata_online_cache.json",
+        )
+        metadata_payload = self._metadata_payload_from_extraction_result(
+            result,
+            narrator=state.audiobook_metadata.narrator,
+        )
+        updated = self.manager.update_audiobook_metadata(
+            job_id,
+            metadata_overrides=metadata_payload,
+            reapply_outputs=True,
+        )
+        self.record_metadata_history(updated.audiobook_metadata.to_dict())
+        return {
+            "job": self.serialize_job(updated),
+            "metadata": result.to_dict(),
+        }
+
+    def redetect_all_finished_metadata(self) -> dict[str, Any]:
+        results: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for state in self.manager.list_jobs():
+            if state.status != "completed" or not state.final_output_files:
+                continue
+            try:
+                results.append(self.redetect_finished_job_metadata(state.job_id))
+            except Exception as exc:
+                self.logger.exception("Finished metadata re-detection failed for job %s", state.job_id)
+                errors.append({"job_id": state.job_id, "title": state.audiobook_metadata.title, "error": str(exc)})
+        return {
+            "updated_count": len(results),
+            "error_count": len(errors),
+            "results": results,
+            "errors": errors,
+        }
+
+    def _metadata_payload_from_extraction_result(self, result, *, narrator: str = "") -> dict[str, Any]:
+        transfer = result.mp3_transfer_payload(narrator=narrator)
+        core = dict(transfer.get("core_metadata", {}) or {})
+        tags = dict(transfer.get("ffmetadata_tags", {}) or {})
+        extended = dict(transfer.get("extended_book_metadata", {}) or {})
+        payload: dict[str, Any] = {
+            **core,
+            "cover_url": str(transfer.get("cover_url") or ""),
+            "publisher": str(tags.get("publisher") or extended.get("publisher") or ""),
+            "year": self._metadata_year_value(tags.get("year") or extended.get("year")),
+            "subject": str(tags.get("subject") or "; ".join(extended.get("subjects") or []) or ""),
+            "isbn": str(tags.get("isbn") or ""),
+            "description": str(tags.get("description") or core.get("comment") or ""),
+            "comment": str(core.get("comment") or tags.get("comment") or tags.get("description") or ""),
+        }
+        if narrator:
+            payload["narrator"] = narrator
+        payload.pop("artist", None)
+        payload.pop("album_artist", None)
+        return {key: value for key, value in payload.items() if value != ""}
+
+    @staticmethod
+    def _metadata_year_value(value: Any) -> int:
+        if isinstance(value, int):
+            return value if value > 0 else 0
+        match = re.search(r"\b(1[5-9]\d{2}|20\d{2}|21\d{2})\b", str(value or ""))
+        return int(match.group(1)) if match else 0
 
     def metadata_history_suggestions(self, field_name: str, prefix: str = "", limit: int = 12) -> list[str]:
         payload = self._load_metadata_history()
@@ -890,7 +964,7 @@ class Book2Mp3Service:
                         **transfer.get("core_metadata", {}),
                         "cover_url": str(transfer.get("cover_url") or ""),
                         "publisher": str(transfer.get("ffmetadata_tags", {}).get("publisher") or ""),
-                        "year": int(str(transfer.get("ffmetadata_tags", {}).get("year") or "0") or 0),
+                        "year": self._metadata_year_value(transfer.get("ffmetadata_tags", {}).get("year")),
                         "subject": str(transfer.get("ffmetadata_tags", {}).get("subject") or ""),
                         "isbn": str(transfer.get("ffmetadata_tags", {}).get("isbn") or ""),
                         "description": str(transfer.get("ffmetadata_tags", {}).get("description") or ""),
@@ -898,8 +972,12 @@ class Book2Mp3Service:
                     suggested_payload.pop("artist", None)
                     suggested_payload.pop("album_artist", None)
                     suggested_payload.pop("narrator", None)
-                except Exception:
-                    suggested_payload = {}
+                except Exception as exc:
+                    self.logger.exception(
+                        "Metadata extraction failed for %s; using filename fallback",
+                        source_path,
+                    )
+                    suggested_payload = guess_metadata_from_filename(source_path)
         resolved = AudiobookMetadata.from_dict(suggested_payload or None, fallback=fallback)
         with_overrides = AudiobookMetadata.from_dict(overrides_dict, fallback=resolved)
         resolved_cover_file = self._resolve_cover_art_file(

@@ -74,6 +74,10 @@ class ChunkRecord:
     chapter_title: str = ""
     pronunciation_rule_count: int = 0
     pronunciation_applied_occurrences: int = 0
+    prosody_style: str = ""
+    pause_after_ms: int = 0
+    prosody_reasons: list[str] = field(default_factory=list)
+    name_marker_score: int = 0
     status: str = "pending"
     error: str = ""
     updated_at: str = field(default_factory=utc_now)
@@ -247,6 +251,10 @@ class JobState:
             chunk.setdefault("spoken_text_length", 0)
             chunk.setdefault("pronunciation_rule_count", 0)
             chunk.setdefault("pronunciation_applied_occurrences", 0)
+            chunk.setdefault("prosody_style", "")
+            chunk.setdefault("pause_after_ms", 0)
+            chunk.setdefault("prosody_reasons", [])
+            chunk.setdefault("name_marker_score", 0)
         payload["chunks"] = [ChunkRecord(**chunk) for chunk in payload.get("chunks", [])]
         return cls(**payload)
 

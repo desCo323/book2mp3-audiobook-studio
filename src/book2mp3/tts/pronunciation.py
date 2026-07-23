@@ -27,13 +27,31 @@ _COMMON_NAME_WORDS = {
     "Also",
     "Am",
     "An",
+    "Anblick",
     "And",
     "Audiobook",
+    "Augen",
     "Auf",
     "Aus",
+    "Außer",
     "Bei",
     "Beim",
+    "Beinpartie",
+    "Bevor",
+    "Bibliothek",
     "Bis",
+    "Blick",
+    "Brust",
+    "Café",
+    "Chance",
+    "College",
+    "Computer",
+    "Couch",
+    "Couchtisch",
+    "Cousin",
+    "Cousine",
+    "Cousins",
+    "Dank",
     "Das",
     "Dass",
     "De",
@@ -47,6 +65,7 @@ _COMMON_NAME_WORDS = {
     "Drachen",
     "Diesmal",
     "Durch",
+    "Dieser",
     "Ein",
     "Eine",
     "Einem",
@@ -57,13 +76,20 @@ _COMMON_NAME_WORDS = {
     "Er",
     "Es",
     "Eva",
+    "Farben",
     "Freitag",
     "Fuer",
     "Für",
+    "Fürs",
+    "Geringsten",
     "Gebrüll",
     "Gesamttext",
     "Gestalt",
+    "Gesicht",
+    "Gesichtsausdruck",
+    "Gesichtszüge",
     "Greifen",
+    "Gute",
     "Gänsehaut",
     "Form",
     "Haar",
@@ -73,12 +99,32 @@ _COMMON_NAME_WORDS = {
     "Heiliger",
     "Hell",
     "Heute",
+    "Hinter",
     "Hohen",
+    "Hundert",
+    "Hatte",
     "Ich",
+    "Ihr",
+    "Ihre",
+    "Ihren",
+    "Ihrer",
     "Kapitel",
+    "Katastrophe",
+    "Kehlen",
     "Kein",
     "Keine",
+    "Klang",
+    "Krieger",
+    "Kurzem",
+    "Körper",
+    "Lebensspanne",
+    "Lächeln",
+    "Lippen",
+    "Luft",
     "Man",
+    "Mann",
+    "Meine",
+    "Menschengestalt",
     "Mit",
     "Mittwoch",
     "Montag",
@@ -86,11 +132,19 @@ _COMMON_NAME_WORDS = {
     "Noch",
     "Nun",
     "Oder",
+    "Ohrenentzündung",
+    "Pancakes",
+    "Pelz",
     "Prolog",
     "Samstag",
     "Schon",
     "Segment",
     "Selbst",
+    "Selbstheilungskräfte",
+    "Sein",
+    "Seine",
+    "Seinen",
+    "Seiner",
     "Sie",
     "Silber",
     "Schäferhundmischling",
@@ -100,12 +154,15 @@ _COMMON_NAME_WORDS = {
     "Rüstung",
     "Überraschung",
     "Teil",
+    "Thema",
+    "Thron",
     "Tiergestalten",
     "Und",
     "Vom",
     "Von",
     "Vor",
     "Was",
+    "Während",
     "Wenn",
     "Wer",
     "Wie",
@@ -117,6 +174,118 @@ _COMMON_NAME_WORDS = {
     "Zur",
     "Chapter",
 }
+_COMMON_NAME_WORDS.update(
+    {
+        "Agentur",
+        "Art",
+        "Arm",
+        "Arme",
+        "Armen",
+        "Artwork",
+        "Atmosphäre",
+        "Aufmerksamkeit",
+        "Autorin",
+        "Babysitterin",
+        "Bewusstsein",
+        "Blitze",
+        "Bestie",
+        "Bruder",
+        "Champion",
+        "City",
+        "Company",
+        "Copyright",
+        "Cover",
+        "Cowboyhut",
+        "Cousinen",
+        "Dutzend",
+        "Entscheidung",
+        "Einzelheiten",
+        "Energie",
+        "Feuer",
+        "Forces",
+        "Fluss",
+        "Foundation",
+        "Freundin",
+        "Familie",
+        "Gasthof",
+        "GmbH",
+        "Gedanken",
+        "Geschichte",
+        "Griechische",
+        "Götter",
+        "Göttin",
+        "Haupthalle",
+        "Heilige",
+        "Hand",
+        "Haus",
+        "Herz",
+        "Kaffee",
+        "Kanister",
+        "Kleinkindbett",
+        "Kopf",
+        "König",
+        "Königin",
+        "Lady",
+        "Lektorat",
+        "Leiche",
+        "Literarische",
+        "Lord",
+        "Morgen",
+        "Milch",
+        "Mutter",
+        "Mythologie",
+        "Nachthemd",
+        "Onkel",
+        "Originalverlag",
+        "Phiole",
+        "Prinzessin",
+        "Prophezeiung",
+        "Prophezeiungen",
+        "Published",
+        "Publishing",
+        "Qualen",
+        "Quelle",
+        "Quellen",
+        "Quere",
+        "Redaktion",
+        "Reiche",
+        "Reichen",
+        "Rhythmus",
+        "Rauch",
+        "Scheiße",
+        "Schwester",
+        "Sachen",
+        "Schreibtisch",
+        "Schulter",
+        "Seite",
+        "Sekunden",
+        "Sir",
+        "Sohn",
+        "Special",
+        "Stellvertreter",
+        "Stimme",
+        "Studio",
+        "Tante",
+        "Tasse",
+        "Theke",
+        "Theorie",
+        "Theaterwissenschaft",
+        "Tochter",
+        "Treppe",
+        "Truppen",
+        "Umschlaggestaltung",
+        "Verlag",
+        "Verlagsgesellschaften",
+        "Vision",
+        "Vater",
+        "Violence",
+        "Wagen",
+        "Wasser",
+        "Weitere",
+        "Worte",
+        "Zimmer",
+    }
+)
 _SPECIAL_SHORT_NAME_TOKENS = {
     "Wyr",
 }
@@ -132,6 +301,7 @@ _FANTASY_SPOKEN_EXCEPTIONS = {
     "carling": "Karling",
     "constantine": "Konstantin",
     "cuelebre": "Kuelebre",
+    "dragos": "Dragoss",
     "eibhear": "Eiwer",
     "graydon": "Greydon",
     "grym": "Grimm",
@@ -159,6 +329,55 @@ _GERMAN_DIACRITICS = str.maketrans(
     }
 )
 _NAME_TOKEN_RE = re.compile(rf"[{_NAME_LETTERS}]+")
+_COMMON_NAME_WORD_KEYS = {word.casefold() for word in _COMMON_NAME_WORDS}
+_METADATA_CANDIDATE_RE = re.compile(
+    r"\b(?:part\d+|copyright|verlag|verlagsgesellschaft|originalverlag|published|publishing|"
+    r"lektorat|umschlag|cover|artwork|redaktion|isbn|gmbh|foundation|agentur|studio)\b",
+    re.IGNORECASE,
+)
+_COMMON_NOUN_SUFFIXES = (
+    "heit",
+    "keit",
+    "ung",
+    "ungen",
+    "schaft",
+    "schaften",
+    "wesen",
+    "tradition",
+    "traditionen",
+    "haendler",
+    "händler",
+    "schmuggler",
+    "kaefig",
+    "käfig",
+    "kaefigen",
+    "käfigen",
+)
+
+
+def _is_common_name_token(token: str) -> bool:
+    return str(token or "").casefold() in _COMMON_NAME_WORD_KEYS
+
+
+def _is_common_noun_like_token(token: str) -> bool:
+    folded = str(token or "").casefold()
+    if folded in _COMMON_NAME_WORD_KEYS:
+        return True
+    return len(folded) >= 7 and any(folded.endswith(suffix) for suffix in _COMMON_NOUN_SUFFIXES)
+
+
+def _looks_like_metadata_candidate(candidate: str) -> bool:
+    clean = " ".join(str(candidate or "").split()).strip()
+    if not clean:
+        return True
+    if _METADATA_CANDIDATE_RE.search(clean):
+        return True
+    if re.match(r"^\d+[\s._-]", clean):
+        return True
+    tokens = _NAME_TOKEN_RE.findall(clean)
+    if len(tokens) >= 5 and not any(marker in clean for marker in ("'", "’")):
+        return True
+    return len(clean) > 70
 
 
 def spoken_hint(candidate: str) -> str:
@@ -246,10 +465,40 @@ class PronunciationTransformResult:
     applied_occurrences: int = 0
 
 
-def _rule_pattern(match: str) -> re.Pattern[str]:
+def _rule_pattern(match: str, *, ignore_case: bool = True) -> re.Pattern[str]:
     escaped = re.escape(match)
     escaped = escaped.replace(r"\ ", r"\s+")
-    return re.compile(rf"(?<!\w)({escaped})(?!\w)", re.IGNORECASE)
+    flags = re.IGNORECASE if ignore_case else 0
+    return re.compile(rf"(?<!\w)({escaped})(?!\w)", flags)
+
+
+class NameMarkerScorer:
+    def __init__(self, markers: list[dict[str, Any]] | None) -> None:
+        terms: set[str] = set()
+        for marker in markers or []:
+            for key in ("spoken_as", "match"):
+                term = " ".join(str(marker.get(key, "") or "").split()).strip()
+                if len(term) < 3:
+                    continue
+                terms.add(term)
+        fragments = []
+        for term in sorted(terms, key=len, reverse=True):
+            escaped = re.escape(term).replace(r"\ ", r"\s+")
+            fragments.append(escaped)
+        self._patterns: list[re.Pattern[str]] = []
+        for index in range(0, len(fragments), 80):
+            chunk = fragments[index : index + 80]
+            if chunk:
+                self._patterns.append(re.compile(rf"(?<!\w)(?:{'|'.join(chunk)})(?!\w)", re.IGNORECASE))
+
+    def score(self, text: str) -> int:
+        if not self._patterns or not text:
+            return 0
+        value = str(text or "")
+        return sum(1 for pattern in self._patterns for _ in pattern.finditer(value))
+
+    def is_dense(self, text: str, *, min_score: int = 2) -> bool:
+        return self.score(text) >= max(1, min_score)
 
 
 def apply_pronunciation_rules(
@@ -325,7 +574,9 @@ def suggest_pronunciation_candidates(
         folded = candidate.casefold()
         if not candidate or folded in existing or folded in seen:
             continue
-        if candidate in _COMMON_NAME_WORDS:
+        if _looks_like_metadata_candidate(candidate):
+            continue
+        if all(_is_common_noun_like_token(token) for token in _NAME_TOKEN_RE.findall(candidate)):
             continue
         if len(candidate) < 4:
             continue
@@ -357,19 +608,99 @@ def suggest_document_pronunciation_rules(
     suggestions: list[dict[str, str]] = []
     seen: set[str] = set(existing)
 
+    markers = suggest_document_name_markers(
+        text,
+        seed_terms=seed_terms,
+        existing_rules=existing_rules,
+        limit=limit,
+        min_occurrences=min_occurrences,
+        include_existing_rules=False,
+    )
+    for marker in markers:
+        _append_name_suggestion(
+            suggestions,
+            {
+                "match": str(marker.get("match", "") or ""),
+                "spoken_as": str(marker.get("spoken_as", "") or ""),
+                "reason": str(marker.get("reason", "") or ""),
+            },
+            seen,
+            limit,
+        )
+        if len(suggestions) >= max(1, limit):
+            break
+    return suggestions
+
+
+def suggest_document_name_markers(
+    text: str,
+    *,
+    seed_terms: list[str] | tuple[str, ...] | None = None,
+    existing_rules: list[dict[str, Any]] | None = None,
+    limit: int = 160,
+    min_occurrences: int = 2,
+    include_existing_rules: bool = True,
+) -> list[dict[str, Any]]:
+    """Find likely names for XTTS context, including names that need no rewrite."""
+    markers: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    source_text = str(text or "")
+
+    if include_existing_rules:
+        for rule in normalize_pronunciation_rules(existing_rules):
+            match = _clean_name_candidate(str(rule.get("match", "") or ""))
+            if not match:
+                continue
+            occurrences = _count_rule_occurrences(source_text, match, ignore_case=False)
+            if occurrences <= 0 and len(match) > 4:
+                occurrences = _count_rule_occurrences(source_text, match, ignore_case=True)
+            spoken_as = " ".join(str(rule.get("spoken_as", "") or match).split()).strip() or match
+            if occurrences <= 0 and spoken_as.casefold() != match.casefold():
+                occurrences = _count_rule_occurrences(source_text, spoken_as, ignore_case=False)
+                if occurrences <= 0 and len(spoken_as) > 4:
+                    occurrences = _count_rule_occurrences(source_text, spoken_as, ignore_case=True)
+            if occurrences <= 0:
+                continue
+            _append_name_marker(
+                markers,
+                {
+                    "match": match,
+                    "spoken_as": spoken_as,
+                    "reason": "existing_pronunciation_rule",
+                    "occurrences": occurrences,
+                },
+                seen,
+                limit,
+            )
+
     for suggestion in suggest_explicit_pronunciation_candidates(
         list(seed_terms or []),
-        existing_rules=existing_rules,
+        existing_rules=None,
         limit=24,
         reason="metadata_or_heading_name",
     ):
-        _append_name_suggestion(suggestions, suggestion, seen, limit)
+        _append_name_marker(
+            markers,
+            {
+                **suggestion,
+                "occurrences": max(
+                    1,
+                    _count_rule_occurrences(
+                        source_text,
+                        str(suggestion.get("match", "") or ""),
+                        ignore_case=False,
+                    ),
+                ),
+            },
+            seen,
+            limit,
+        )
 
     counts: Counter[str] = Counter()
     canonical: dict[str, str] = {}
-    for raw_candidate in _iter_name_candidates(text):
+    for raw_candidate in _iter_name_candidates(source_text):
         candidate = _clean_name_candidate(raw_candidate)
-        if not _is_document_name_candidate(candidate):
+        if not _is_countable_name_candidate(candidate):
             continue
         folded = candidate.casefold()
         counts[folded] += 1
@@ -385,24 +716,29 @@ def suggest_document_pronunciation_rules(
         reverse=True,
     )
     for folded, candidate in ranked:
-        if folded in seen:
-            continue
         occurrences = counts[folded]
+        if not _is_document_name_marker_candidate(candidate, occurrences):
+            continue
         if occurrences < max(1, min_occurrences) and not _name_has_strong_signal(candidate):
             continue
-        _append_name_suggestion(
-            suggestions,
+        _append_name_marker(
+            markers,
             {
                 "match": candidate,
                 "spoken_as": spoken_hint(candidate),
                 "reason": _suggestion_reason(candidate),
+                "occurrences": occurrences,
             },
             seen,
             limit,
         )
-        if len(suggestions) >= max(1, limit):
+        if len(markers) >= max(1, limit):
             break
-    return suggestions
+    return markers
+
+
+def name_marker_score(text: str, markers: list[dict[str, Any]] | None) -> int:
+    return NameMarkerScorer(markers).score(text)
 
 
 def suggest_explicit_pronunciation_candidates(
@@ -421,6 +757,8 @@ def suggest_explicit_pronunciation_candidates(
     for raw_term in terms:
         candidate = " ".join(str(raw_term or "").split()).strip()
         if not candidate:
+            continue
+        if _looks_like_metadata_candidate(candidate):
             continue
         folded = candidate.casefold()
         if folded in existing or folded in seen:
@@ -462,6 +800,26 @@ def _clean_name_candidate(candidate: str) -> str:
     return " ".join(str(candidate or "").replace("’", "'").split()).strip(" ,.;:!?()[]{}\"")
 
 
+def _count_rule_occurrences(text: str, match: str, *, ignore_case: bool = True) -> int:
+    clean_match = " ".join(str(match or "").split()).strip()
+    if not clean_match:
+        return 0
+    return len(_rule_pattern(clean_match, ignore_case=ignore_case).findall(str(text or "")))
+
+
+def _is_countable_name_candidate(candidate: str) -> bool:
+    if not candidate or len(candidate) > 80:
+        return False
+    tokens = _NAME_TOKEN_RE.findall(candidate)
+    if not tokens:
+        return False
+    if _looks_like_metadata_candidate(candidate):
+        return False
+    if all(_is_common_noun_like_token(token) for token in tokens):
+        return False
+    return True
+
+
 def _is_document_name_candidate(candidate: str) -> bool:
     tokens = _NAME_TOKEN_RE.findall(candidate)
     has_special_short_token = any(token in _SPECIAL_SHORT_NAME_TOKENS for token in tokens)
@@ -469,15 +827,27 @@ def _is_document_name_candidate(candidate: str) -> bool:
         return False
     if not tokens:
         return False
-    if all(token in _COMMON_NAME_WORDS for token in tokens):
+    if _looks_like_metadata_candidate(candidate):
         return False
-    if len(tokens) == 1 and tokens[0] in _COMMON_NAME_WORDS:
+    if all(_is_common_noun_like_token(token) for token in tokens):
+        return False
+    if len(tokens) == 1 and _is_common_noun_like_token(tokens[0]):
         return False
     return any(
         (len(token) >= 4 or token in _SPECIAL_SHORT_NAME_TOKENS)
-        and token not in _COMMON_NAME_WORDS
+        and not _is_common_noun_like_token(token)
         for token in tokens
     )
+
+
+def _is_document_name_marker_candidate(candidate: str, occurrences: int) -> bool:
+    if _is_document_name_candidate(candidate):
+        return True
+    tokens = _NAME_TOKEN_RE.findall(candidate)
+    if len(tokens) != 1:
+        return False
+    token = tokens[0]
+    return 3 <= len(token) <= 4 and occurrences >= 2 and not _is_common_noun_like_token(token)
 
 
 def _interesting_name_tokens(candidate: str) -> list[str]:
@@ -486,7 +856,7 @@ def _interesting_name_tokens(candidate: str) -> list[str]:
         token
         for token in raw_tokens
         if (len(token) >= 4 or token in _SPECIAL_SHORT_NAME_TOKENS)
-        and token not in _COMMON_NAME_WORDS
+        and not _is_common_noun_like_token(token)
     ]
     if len(raw_tokens) <= 1:
         return []
@@ -548,11 +918,50 @@ def _append_name_suggestion(
     )
 
 
+def _append_name_marker(
+    markers: list[dict[str, Any]],
+    marker: dict[str, Any],
+    seen: set[str],
+    limit: int,
+) -> None:
+    if len(markers) >= max(1, limit):
+        return
+    match = _clean_name_candidate(str(marker.get("match", "") or ""))
+    if not match:
+        return
+    if _is_common_noun_phrase(match):
+        return
+    folded = match.casefold()
+    if folded in seen:
+        return
+    try:
+        occurrences = int(marker.get("occurrences", 0) or 0)
+    except (TypeError, ValueError):
+        occurrences = 0
+    if not _is_document_name_marker_candidate(match, occurrences):
+        return
+    seen.add(folded)
+    spoken_as = " ".join(str(marker.get("spoken_as", "") or spoken_hint(match)).split()).strip() or match
+    markers.append(
+        {
+            "match": match,
+            "spoken_as": spoken_as,
+            "scope": "whole_phrase",
+            "enabled": True,
+            "reason": str(marker.get("reason", "") or _suggestion_reason(match)),
+            "occurrences": occurrences,
+            "changes_spoken_text": spoken_as.casefold() != match.casefold(),
+        }
+    )
+
+
 def _is_common_noun_phrase(candidate: str) -> bool:
     tokens = _NAME_TOKEN_RE.findall(candidate)
     if len(tokens) <= 1:
         return False
-    if any(token in _COMMON_NAME_WORDS for token in tokens):
+    if _looks_like_metadata_candidate(candidate):
+        return True
+    if any(_is_common_noun_like_token(token) for token in tokens):
         return True
     return False
 
