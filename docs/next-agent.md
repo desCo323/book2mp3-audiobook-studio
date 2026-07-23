@@ -170,7 +170,7 @@ The improved ebook quality render was promoted to the approved production profil
 
 Production profile values:
 
-- Backend/profile: XTTS, voice `de_DE-ramona-low`, voice profile `xtts_deutsch_weiblich_warm`
+- Backend/profile: XTTS, voice `de_DE-ramona-low`, voice profile `xtts_kerstin_hq_female`
 - Output: `chapter_files`, target part length 20 minutes
 - Text sizing: `max_chars=130`, `length_scale=0.96`, `sentence_silence=0.24`
 - Quality: `xtts_quality_mode=max_quality`

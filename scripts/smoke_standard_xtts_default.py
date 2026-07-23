@@ -7,6 +7,7 @@ from pathlib import Path
 from book2mp3.config import AppPaths
 from book2mp3.service import Book2Mp3Service
 from book2mp3.voice_settings import (
+    DEFAULT_RAMONA_VOICE_PROFILE_ID,
     PROFILE_STATUS_APPROVED,
     STANDARD_XTTS_DISPLAY_NAME,
     STANDARD_XTTS_LENGTH_SCALE,
@@ -68,6 +69,10 @@ def main() -> int:
             raise AssertionError(f"Expected length_scale={STANDARD_XTTS_LENGTH_SCALE}, got {migrated.length_scale}")
         if migrated.xtts_inference != expected_inference:
             raise AssertionError(f"Expected Standard XTTS inference, got {migrated.xtts_inference}")
+        if migrated.voice_profile_id != DEFAULT_RAMONA_VOICE_PROFILE_ID:
+            raise AssertionError(
+                f"Expected Standard XTTS profile {DEFAULT_RAMONA_VOICE_PROFILE_ID}, got {migrated.voice_profile_id}"
+            )
 
         source_path = root / "Talwyn Test.txt"
         source_path.write_text("Talwyn sprach mit Éibhear und Rhi.", encoding="utf-8")
@@ -96,6 +101,7 @@ def main() -> int:
                     "job_id": state.job_id,
                     "job_backend": state.backend,
                     "job_profile": state.saved_profile_id,
+                    "voice_profile_id": stored.voice_profile_id,
                     "max_chars": state.max_chars,
                     "length_scale": state.length_scale,
                     "xtts_inference": state.xtts_inference,

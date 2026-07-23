@@ -98,12 +98,18 @@ Important note:
 ### XTTS starter profiles and samples
 
 - `book2mp3` can install starter profile samples from:
+  - https://github.com/rhasspy/dataset-voice-kerstin
+  - https://huggingface.co/datasets/alibabasglab/LJSpeech-1.1-48kHz
+  - https://huggingface.co/voices/VCTK_British_English_Females
   - https://github.com/daswer123/xtts-webui
   - https://huggingface.co/datasets/Thorsten-Voice/TV-44kHz-Full
+- Kerstin voice dataset license: CC0-1.0
+- LJSpeech-1.1-48kHz sample pack license: Apache-2.0; derived from public-domain LJ Speech recordings
+- VCTK British English female sample model card license: CC-BY-4.0
 - `xtts-webui` repository license: MIT
 - Thorsten-Voice dataset license: CC0
 
-The app currently pulls sample WAV files from these public upstream sources when the user installs starter XTTS profiles. Those sources should be documented in distributed bundles.
+The app currently pulls sample WAV/FLAC files from these public upstream sources when the user installs starter XTTS profiles. Those sources should be documented in distributed bundles.
 
 ## EPUB dependency risk
 

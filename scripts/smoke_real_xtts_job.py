@@ -27,6 +27,7 @@ Als sie das Licht einschaltete, antwortete der Raum mit einem warmen Echo, und f
 
 def choose_profile(paths: AppPaths) -> str:
     preferred = [
+        "xtts_kerstin_hq_female",
         "xtts_thorsten_neutral",
         "xtts_thorsten_emotional",
         "xtts_deutsch_weiblich_warm",

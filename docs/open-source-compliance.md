@@ -35,6 +35,9 @@ Diese Datei ist eine technische Compliance-Einschaetzung und keine Rechtsberatun
 | EbookLib | AGPL-3.0 | fuer eine Bundle-Distribution ein echter juristischer Punkt |
 | Coqui TTS Toolkit | MPL-2.0 | fuer den Code selbst grundsaetzlich brauchbar |
 | XTTS-v2 Modell | Coqui Public Model License 1.0.0 | laut offizieller Lizenz nur nicht-kommerziell |
+| XTTS Kerstin Startersamples | CC0-1.0 | native deutsche Sprecherin, gut nutzbar mit Quellenhinweis |
+| XTTS LJSpeech-HQ Startersamples | Apache-2.0, abgeleitet von Public-Domain-LJ-Speech | gut nutzbar mit Quellenhinweis |
+| XTTS VCTK-Frauen Startersamples | CC-BY-4.0 | nutzbar mit Attribution |
 | XTTS Startersamples aus `xtts-webui` | MIT-Repo, Samples aus Upstream-Ordner | Herkunft und Beipackzettel mitfuehren |
 | Thorsten-Voice Dataset | CC0 | grundsaetzlich gut nutzbar |
 | FFmpeg Binary im Bundle | haeufig GPLv3-Builds | Bundle nur mit GPL-konformer Weitergabe und Notices |
@@ -101,6 +104,9 @@ Wichtig:
 - [Coqui TTS Repository](https://github.com/coqui-ai/TTS)
 - [XTTS-v2 Modellseite](https://huggingface.co/coqui/XTTS-v2)
 - [XTTS-v2 Modelllizenz](https://huggingface.co/coqui/XTTS-v2/blob/main/LICENSE.txt)
+- [Kerstin Voice Dataset](https://github.com/rhasspy/dataset-voice-kerstin)
+- [LJSpeech-1.1-48kHz Sample Pack](https://huggingface.co/datasets/alibabasglab/LJSpeech-1.1-48kHz)
+- [VCTK British English Female Voices](https://huggingface.co/voices/VCTK_British_English_Females)
 - [Thorsten-Voice Dataset](https://huggingface.co/datasets/Thorsten-Voice/TV-44kHz-Full)
 - [xtts-webui Repository](https://github.com/daswer123/xtts-webui)
 - [Python Lizenz](https://docs.python.org/3/license.html)

@@ -14,8 +14,20 @@ def main() -> int:
         paths = AppPaths.from_project_root(root)
         paths.ensure()
         manifests = install_starter_xtts_profiles(paths)
-        if len(manifests) < 7:
-            raise AssertionError(f"Expected at least 7 starter manifests, got {len(manifests)}")
+        installed_profile_ids = {manifest.parent.name for manifest in manifests}
+        expected_profile_ids = {
+            "xtts_kerstin_hq_female",
+            "xtts_ljspeech_hq_female",
+            "xtts_vctk_hq_female_clear",
+            "xtts_vctk_hq_female_north",
+            "xtts_vctk_hq_female_oxford",
+            "xtts_vctk_hq_female_southern",
+        }
+        missing_profile_ids = expected_profile_ids - installed_profile_ids
+        if missing_profile_ids:
+            raise AssertionError(f"Missing high-quality XTTS starter profiles: {sorted(missing_profile_ids)}")
+        if len(manifests) < 13:
+            raise AssertionError(f"Expected at least 13 starter manifests, got {len(manifests)}")
         print(
             json.dumps(
                 {

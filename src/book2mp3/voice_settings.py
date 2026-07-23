@@ -26,7 +26,7 @@ VALID_PROFILE_STATUSES = {
     PROFILE_STATUS_ARCHIVED,
 }
 DEFAULT_RAMONA_SETTING_ID = "xtts1"
-DEFAULT_RAMONA_VOICE_PROFILE_ID = "xtts_deutsch_weiblich_warm"
+DEFAULT_RAMONA_VOICE_PROFILE_ID = "xtts_kerstin_hq_female"
 STANDARD_XTTS_SETTING_ID = DEFAULT_RAMONA_SETTING_ID
 STANDARD_XTTS_DISPLAY_NAME = "Standard XTTS"
 STANDARD_XTTS_PRESET_HINT = "premium_natural"
@@ -422,7 +422,7 @@ def ensure_standard_xtts_setting(root: Path, voice_profiles_root: Path) -> Voice
 
 
 def seed_default_voice_settings(root: Path, voice_profiles_root: Path) -> list[VoiceSetting]:
-    """Ensure the approved Standard XTTS profile exists when the Ramona voice profile is present."""
+    """Ensure the approved Standard XTTS profile exists when the default German XTTS profile is present."""
     existed = _setting_path(root, STANDARD_XTTS_SETTING_ID).exists()
     setting = ensure_standard_xtts_setting(root, voice_profiles_root)
     if setting is None or existed:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from urllib.request import urlopen
@@ -14,6 +15,126 @@ from book2mp3.voice_settings import seed_default_voice_settings
 
 LANGUAGE_HINTS = {"de", "en", "fr", "es", "it", "nl", "pl", "pt", "tr", "ru", "cs", "ar", "zh", "ja", "hu", "ko"}
 STARTER_XTTS_SPEAKERS = (
+    {
+        "display_name": "XTTS Kerstin HQ Female",
+        "language": "de",
+        "notes": (
+            "High-quality native German female starter profile from rhasspy/dataset-voice-kerstin "
+            "(CC0-1.0). Uses trimmed/cleaned 48 kHz mono references and converts them to 24 kHz "
+            "mono WAV during installation when ffmpeg is available."
+        ),
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "kerstin_0007.flac",
+                "convert_to_wav": "kerstin_0007.wav",
+                "url": "https://raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/master/verified/de_rhasspy-0007.flac",
+            },
+            {
+                "kind": "url",
+                "filename": "kerstin_0011.flac",
+                "convert_to_wav": "kerstin_0011.wav",
+                "url": "https://raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/master/verified/de_rhasspy-0011.flac",
+            },
+            {
+                "kind": "url",
+                "filename": "kerstin_0012.flac",
+                "convert_to_wav": "kerstin_0012.wav",
+                "url": "https://raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/master/verified/de_rhasspy-0012.flac",
+            },
+            {
+                "kind": "url",
+                "filename": "kerstin_0019.flac",
+                "convert_to_wav": "kerstin_0019.wav",
+                "url": "https://raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/master/verified/de_rhasspy-0019.flac",
+            },
+        ],
+    },
+    {
+        "display_name": "XTTS LJSpeech HQ Female",
+        "language": "en",
+        "notes": (
+            "High-quality English female starter profile from the Apache-2.0 LJSpeech-1.1-48kHz "
+            "sample pack on Hugging Face, derived from the public-domain LJ Speech recordings."
+        ),
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "ljspeech_hq_0010.wav",
+                "url": "https://huggingface.co/datasets/alibabasglab/LJSpeech-1.1-48kHz/resolve/main/samples/48kHz/LJ001-0010.wav",
+            },
+            {
+                "kind": "url",
+                "filename": "ljspeech_hq_0012.wav",
+                "url": "https://huggingface.co/datasets/alibabasglab/LJSpeech-1.1-48kHz/resolve/main/samples/48kHz/LJ001-0012.wav",
+            },
+            {
+                "kind": "url",
+                "filename": "ljspeech_hq_0014.wav",
+                "url": "https://huggingface.co/datasets/alibabasglab/LJSpeech-1.1-48kHz/resolve/main/samples/48kHz/LJ001-0014.wav",
+            },
+        ],
+    },
+    {
+        "display_name": "XTTS VCTK HQ Female Southern",
+        "language": "en",
+        "notes": (
+            "High-quality British English female starter profile from voices/VCTK_British_English_Females "
+            "on Hugging Face (CC-BY-4.0), speaker p228, Southern England."
+        ),
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "vctk_p228_southern_female.wav",
+                "url": "https://huggingface.co/voices/VCTK_British_English_Females/resolve/main/samples/VCTK_p228.wav",
+            },
+        ],
+    },
+    {
+        "display_name": "XTTS VCTK HQ Female North",
+        "language": "en",
+        "notes": (
+            "High-quality British English female starter profile from voices/VCTK_British_English_Females "
+            "on Hugging Face (CC-BY-4.0), speaker p277, Northeast England."
+        ),
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "vctk_p277_north_female.wav",
+                "url": "https://huggingface.co/voices/VCTK_British_English_Females/resolve/main/samples/VCTK_p277.wav",
+            },
+        ],
+    },
+    {
+        "display_name": "XTTS VCTK HQ Female Oxford",
+        "language": "en",
+        "notes": (
+            "High-quality British English female starter profile from voices/VCTK_British_English_Females "
+            "on Hugging Face (CC-BY-4.0), speaker p276, Oxford."
+        ),
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "vctk_p276_oxford_female.wav",
+                "url": "https://huggingface.co/voices/VCTK_British_English_Females/resolve/main/samples/VCTK_p276.wav",
+            },
+        ],
+    },
+    {
+        "display_name": "XTTS VCTK HQ Female Clear",
+        "language": "en",
+        "notes": (
+            "High-quality British English female starter profile from voices/VCTK_British_English_Females "
+            "on Hugging Face (CC-BY-4.0), speaker p230, Stockton-on-Tees."
+        ),
+        "samples": [
+            {
+                "kind": "url",
+                "filename": "vctk_p230_clear_female.wav",
+                "url": "https://huggingface.co/voices/VCTK_British_English_Females/resolve/main/samples/VCTK_p230.wav",
+            },
+        ],
+    },
     {
         "display_name": "XTTS Calm Female",
         "language": "en",
@@ -314,25 +435,70 @@ def _download_from_hf_first_rows(
     return target
 
 
+def _ffmpeg_executable() -> str | None:
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return shutil.which("ffmpeg")
+
+
+def _convert_to_mono_wav(source: Path, target: Path) -> Path:
+    ffmpeg = _ffmpeg_executable()
+    if not ffmpeg:
+        return source
+    result = subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(source),
+            "-ac",
+            "1",
+            "-ar",
+            "24000",
+            "-sample_fmt",
+            "s16",
+            str(target),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0 or not target.exists():
+        return source
+    return target
+
+
+def _finalize_starter_sample(tmp_root: Path, downloaded: Path, sample: dict[str, object]) -> Path:
+    wav_filename = sample.get("convert_to_wav")
+    if not wav_filename:
+        return downloaded
+    return _convert_to_mono_wav(downloaded, tmp_root / str(wav_filename))
+
+
 def _resolve_starter_samples(tmp_root: Path, starter: dict[str, object]) -> list[Path]:
     resolved: list[Path] = []
     for sample in starter["samples"]:
         if sample["kind"] == "url":
-            downloaded = tmp_root / sample["filename"]
-            with urlopen(sample["url"], timeout=20) as response, downloaded.open("wb") as target:
+            downloaded = tmp_root / str(sample["filename"])
+            with urlopen(str(sample["url"]), timeout=20) as response, downloaded.open("wb") as target:
                 shutil.copyfileobj(response, target)
-            resolved.append(downloaded)
+            resolved.append(_finalize_starter_sample(tmp_root, downloaded, sample))
         elif sample["kind"] == "hf_first_rows":
-            resolved.append(
-                _download_from_hf_first_rows(
-                    tmp_root,
-                    sample["dataset"],
-                    sample["config"],
-                    sample["split"],
-                    sample["row_index"],
-                    sample["filename"],
-                )
+            downloaded = _download_from_hf_first_rows(
+                tmp_root,
+                sample["dataset"],
+                sample["config"],
+                sample["split"],
+                sample["row_index"],
+                sample["filename"],
             )
+            resolved.append(_finalize_starter_sample(tmp_root, downloaded, sample))
         else:
             raise RuntimeError(f"Unsupported XTTS starter sample kind: {sample['kind']}")
     return resolved
@@ -348,15 +514,19 @@ def install_starter_xtts_profiles(paths: AppPaths) -> list[Path]:
             if profile_id in existing_ids:
                 continue
             sample_paths = _resolve_starter_samples(tmp_root, starter)
+            notes = str(
+                starter.get(
+                    "notes",
+                    "Starter XTTS profile imported from curated public demo sources. "
+                    "Current sources include xtts-webui sample speakers and Thorsten-Voice CC0 German dataset rows.",
+                )
+            )
             manifest = create_voice_profile(
                 paths.voice_profiles,
                 display_name=starter["display_name"],
                 target_language=starter["language"],
                 backend="xtts_v2",
-                notes=(
-                    "Starter XTTS profile imported from curated public demo sources. "
-                    "Current sources include xtts-webui sample speakers and Thorsten-Voice CC0 German dataset rows."
-                ),
+                notes=notes,
                 sample_paths=sample_paths,
             )
             manifests.append(manifest)

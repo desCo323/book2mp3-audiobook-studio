@@ -138,7 +138,7 @@ def write_start_here(output_dir: Path) -> Path:
         "",
         "- Linux: `./start.sh --install-xtts`",
         "- Windows: `start.bat --install-xtts`",
-        "- When the German warm XTTS starter profile is present, the app auto-creates the approved `Standard XTTS` production profile.",
+        "- When the German Kerstin HQ XTTS starter profile is present, the app auto-creates the approved `Standard XTTS` production profile.",
         "",
         "After XTTS setup, open `XTTS-Profile` or `Diagnostics` in the app to verify the runtime.",
         "",
